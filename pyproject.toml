@@ -1,0 +1,24 @@
+[project]
+name = "gridsignal"
+version = "0.1.0"
+description = "ERCOT grid data to battery dispatch signals"
+requires-python = ">=3.11"
+dependencies = [
+  "pandas>=2.2",
+  "pyarrow>=15",
+  "gridstatus>=0.27",
+  "scikit-learn>=1.4",
+  "streamlit>=1.35",
+  "plotly>=5.20",
+  "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.4"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
