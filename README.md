@@ -173,10 +173,17 @@ python -m gridsignal.replay          # 10,000 batteries; --devices to scale down
 |---|---:|
 | kW lost to the three faults | 1,638 kW |
 | At risk with no orchestration (the kW never comes back) | $13,618 |
+| Spare headroom left in the healthy fleet when the faults landed | 9,617 kW (5.9x the kW lost) |
 | Protected after one human approval | $13,618 (100%) |
 | Dollars protected per minute of fault | $3,982 / min (3.4 simulated min) |
 | Spoofed capacity refused on signature | 480 kW, 12 cards |
 | Wall-clock runtime | 0.7 s |
+
+**The 100% is not a guarantee.** All of the exposure came back only because 9,617 kW of
+uncommitted, deliverable headroom — 5.9x the 1,638 kW lost — was still sitting in the healthy
+fleet above every member's reserve. Recovery is capped by that headroom: on a fleet already
+committed to its target, or with the faults hitting a larger share of it, the same orchestration
+would recover only part. The replay prints the headroom next to the recovery for that reason.
 
 The prices are real cached ERCOT settlement prints; the batteries, the faults and the spoofing
 are simulated. Stale homes are dropped from the commitment rather than assumed good, spoofed
@@ -202,12 +209,33 @@ python -m gridsignal.ancillary       # real ERCOT AS clearing prices, simulated 
 |---|---:|---:|
 | Energy (home-first, as scored before) | −$0.06 | $2.61 |
 | Ancillary capacity | $0.88 | $3.59 |
-| Uplift over energy alone | +$0.88 | +$3.59 |
+| Uplift over energy alone, **mean** | +$0.88 | +$3.59 |
+| Uplift over energy alone, **median day** | +$0.17 | +$0.74 |
 | Backup reserve violations | 0 | 0 |
+
+**The mean is one day.** Per held-out day, Base Core-style unit:
+
+| Day | Uplift | Reg Down | Mean Reg Down price |
+|---|---:|---:|---:|
+| 2023-04-06 | $2.59 | $2.36 | $6.68/MW-h |
+| **2024-05-08** | **$19.23** | **$17.50** | **$99.33/MW-h** |
+| 2024-12-20 | $0.55 | $0.48 | $1.31/MW-h |
+| 2025-04-07 | $1.09 | $0.85 | $3.19/MW-h |
+| 2025-05-03 | $0.74 | $0.46 | $1.88/MW-h |
+| 2026-09-23 | $0.58 | $0.37 | $2.08/MW-h |
+| 2026-09-24 | $0.38 | $0.19 | $1.32/MW-h |
+
+2024-05-08 alone carries **76%** of the held-out uplift. Ancillary capacity is not a daily
+annuity for a home battery: it is a rare-day product, and any business case built on the mean
+is built on one May afternoon.
 
 On the 2023-09-06 scarcity day the Base Core-style unit earns $88.44 of energy plus $27.76 of
 capacity ($116.20 total). Scaled to 10,000 simulated batteries the held-out uplift is
-$35,900/day — but the honest headline is **which** product pays: 88% of it is **Reg Down**, money
+$35,900/day — **as a price taker, which at that size is not credible**: 10,000 × 20 kW is
+200 MW, and against ERCOT's published AS plan for the checked day that is 51% of the 392 MW of
+Reg Down procured in the peak hour. A fleet that large moves the price it is being paid, so the
+fleet-scale figure is an upper bound, not a forecast; the CLI prints the check and says so.
+The honest headline is **which** product pays: 88% of it is **Reg Down**, money
 for having room to charge, not energy to sell. The hours that clear highest for reserves are the
 scarcity evenings, and that is exactly when a home battery has already emptied itself into the
 price spike and has nothing left to pledge.
@@ -817,6 +845,7 @@ unchanged on the rules.
 | `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
 | `scripts/fetch_tuning.py` | Caches the tuning split, chosen so it can never overlap the held-out dates |
 | `scripts/fetch_dam.py` | Caches the day-ahead curve and provenance for every bundled trade date |
+| `scripts/fetch_as_plan.py` | Caches ERCOT's published ancillary procurement volumes, used to size the simulated fleet's offer against the market |
 | `scripts/tune_policy.py` | Grid search for the frozen policy parameters, run on the tuning split only |
 | `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
 | `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
@@ -856,6 +885,7 @@ Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal
 | Day-ahead settlement point prices | ERCOT MIS [NP4-190-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD) and the DAM historical archive via `gridstatus` | **Real data.** LZ_HOUSTON, DAY_AHEAD_HOURLY, 24 hours for every bundled trade date, cached beside each real-time trace as `*_dam.parquet` with a sidecar `*_dam.json`; refresh with `python scripts/fetch_dam.py`. DAM results clear the afternoon **before** the trade day, which is why the plan may use them |
 | All-zone settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report and [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** All eight load zones (`LZ_WEST`, `LZ_NORTH`, `LZ_HOUSTON`, `LZ_SOUTH`, `LZ_AEN`, `LZ_CPS`, `LZ_LCRA`, `LZ_RAYBN`) plus the hub average `HB_HUBAVG`, REAL_TIME_15_MIN, 96 intervals for each of the same 15 bundled trade dates. One file per date under `data/zones/zones_rtm_spp_<YYYYMMDD>.parquet` with a sidecar `.json` carrying market, locations, date, source and `fetched_at`; refresh with `python scripts/fetch_zones.py` |
 | Ancillary clearing prices | ERCOT MIS [NP4-188-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-188-CD) daily DAM clearing prices for capacity and the [NP4-181-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER) historical annual archive (report type 13091) via `gridstatus`, public and credential-free | **Real data.** ERCOT system-wide Reg Up, Reg Down, RRS, ECRS and Non-Spin, DAM hourly, 24 hours for every bundled trade date, in $/MW per hour of capacity held. Cached beside each real-time trace as `*_as.parquet` with a sidecar `*_as.json` carrying market, location, date, source URL, `fetched_at`, products and units; refresh with `python scripts/fetch_as_prices.py`. ECRS did not exist before 2023-06-10, so it is zero on earlier dates rather than imputed |
+| Ancillary procurement volume | ERCOT MIS [NP3-905-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP3-905-ER) AS plan via `gridstatus`, public and credential-free | **Real data, partial.** MW of each product ERCOT procured per hour, cached at `data/as_plan/as_plan_<date>.parquet` with the same sidecar fields; refresh with `python scripts/fetch_as_plan.py`. The MIS only keeps the plan for roughly the last month, so the older bundled dates have none and the price-taker check says so instead of assuming the offer is small |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
@@ -970,7 +1000,7 @@ real Base Power device or fleet.
 | Round-trip efficiency | 90% | `backtest.ROUND_TRIP_EFFICIENCY` |
 | Naive baseline schedule | charge 01:00–05:00, export 17:00–21:00 | `backtest.NAIVE_CHARGE_HOURS`, `NAIVE_EXPORT_HOURS` |
 | Starting state of charge | empty at 00:00 | `backtest.value_captured` |
-| Market participation | price taker settling at the RTM SPP; no bidding, no ancillary revenue, no degradation cost, no losses beyond round-trip efficiency | `backtest.py` |
+| Market participation | price taker settling at the RTM SPP; no bidding, no degradation cost, no losses beyond round-trip efficiency. The energy backtest carries no ancillary revenue; ancillary capacity is scored separately in `ancillary.py` | `backtest.py` |
 | Control Room event | 5 kW of capacity per affected device over a 2-hour window | `control_room/engine.py` |
 | Household load shape | synthetic summer-weekday profile, 0.8–2.3 kW, scaled 0.7x–1.4x per home | `load.py` |
 | Base Core-style unit | 40 kWh, 20 kW inverter, every 4th simulated device — per public interview, **not official specs** | `fleet.py` |
@@ -984,8 +1014,16 @@ real Base Power device or fleet.
   (state lives in the Streamlit session and resets on server restart).
 - Detection is a single rule (telemetry staleness) on one scripted device rather than a monitor
   over a real event stream.
-- The spike forecast is a fixed-coefficient logistic score, not a trained model, and the backtest
-  is a price-taker single-day replay: no bidding, no ancillary services, no degradation cost.
+- The spike forecast is a fixed-coefficient logistic score, not a trained model, and the energy
+  backtest is a price-taker single-day replay: no bidding, no degradation cost, and ancillary
+  capacity scored in a separate ledger (`ancillary.py`) rather than inside the energy numbers.
+- **The ancillary uplift is concentrated in rare days and assumes a price taker.** The
+  +$3.59/battery/day held-out mean for a Base Core-style unit has a median of $0.74, and
+  2024-05-08 alone carries 76% of it (Reg Down averaged $99.33/MW-h that day against $1–$7 on
+  the others). At fleet scale the assumption also breaks: 10,000 × 20 kW is 200 MW, 51% of the
+  392 MW of Reg Down ERCOT procured in the checked hour, so the fleet-scale dollars are an upper
+  bound — a fleet that size moves the price it is paid. Both checks print in
+  `python -m gridsignal.ancillary`.
 - **Home load is synthetic.** The per-home profile is a shaped weekday curve hashed per device,
   not metered data, so the export split and member savings move with that assumption.
 - The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in

@@ -44,7 +44,6 @@ from gridsignal.prices import PriceTrace, energy_value_usd, load_price_trace
 # Each home commits this many *exported* kW to the event — what is left after its own
 # load is served — so the target scales with the operator-controlled fleet.
 TARGET_KW_PER_DEVICE = 4.5
-GRID_EVENT_TARGET_KW = TARGET_KW_PER_DEVICE * FLEET_SIZE
 GRID_EVENT_HOURS = 2.0
 TELEMETRY_STALE_SECONDS = 120
 #: Floor on the hours left in the event, so headroom never divides by zero at the

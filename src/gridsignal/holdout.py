@@ -74,11 +74,6 @@ class DayResult:
     def won(self) -> bool:
         return self.uplift_usd > 0
 
-    @property
-    def member_value_usd(self) -> float:
-        """Export revenue plus the purchases the home did not have to make."""
-        return round(self.signal_usd + self.member_savings_usd, 2)
-
 
 def score_day(
     trace: PriceTrace,

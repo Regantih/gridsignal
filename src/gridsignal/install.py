@@ -35,8 +35,6 @@ EVENT_HOURS = 2.0
 #: A newly installed unit's simulated nameplate, before its own card is trusted.
 NEW_UNIT_KW = 5.0
 NEW_UNIT_KWH = 13.5
-#: Backup energy a new unit must still be holding to clear the probation gate, in kWh.
-PROBATION_RESERVE_KWH = 4.0
 #: How long the commissioning health check takes, in simulated seconds.
 DEFAULT_HEALTH_CHECK_S = 120
 #: Simulated installer throughput, units commissioned per hour across all crews.

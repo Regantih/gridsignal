@@ -32,7 +32,7 @@ from gridsignal.jev.questions import (
 from gridsignal.mesh.build import card_for, gateway_id, heartbeat_all, register_fleet
 from gridsignal.mesh.cards import AgentCard, CardStatus, derived_signing_key
 from gridsignal.mesh.llm import LLMCoordinator
-from gridsignal.mesh.messages import MessageBus, MessageKind, read_jsonl
+from gridsignal.mesh.messages import MessageBus, MessageKind
 from gridsignal.mesh.negotiation import (
     BACKUP_RESERVE_KWH,
     AwardSet,
@@ -917,11 +917,6 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary())
         print(f"  trace: {destination}")
     return 0
-
-
-def load_trace(path: Path) -> list[dict[str, object]]:
-    """Read a previously written JSONL trace back for replay in the dashboard."""
-    return read_jsonl(path)
 
 
 if __name__ == "__main__":  # pragma: no cover - CLI entry point

@@ -7,7 +7,6 @@ fact: call -> bids -> proposed award -> human approval -> executed award -> esca
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Iterator
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -90,8 +89,3 @@ class MessageBus:
 def read_jsonl(path: Path) -> list[dict[str, object]]:
     with path.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
-
-
-def iter_messages(messages: Iterable[Message]) -> Iterator[dict[str, object]]:
-    for message in messages:
-        yield message.as_dict()

@@ -7,7 +7,6 @@ no credentials.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 
 from gridsignal.jev.client import Question, QuestionKind
@@ -199,7 +198,3 @@ def incident_questions(snapshot: IncidentSnapshot) -> dict[str, Question]:
     for suspect in snapshot.suspects:
         questions[f"{TRUST_PREFIX}{suspect.agent_id}"] = trust_question(suspect.agent_id)
     return questions
-
-
-def trust_ids(questions: Mapping[str, Question]) -> list[str]:
-    return sorted(q for q in questions if q.startswith(TRUST_PREFIX))

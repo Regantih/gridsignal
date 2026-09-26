@@ -451,7 +451,7 @@ def render_fleet_replay() -> None:
     cols[2].metric(
         "Protected",
         f"${result.dollars_recovered:,.0f}",
-        delta=f"${result.dollars_unprotected:,.0f} not recovered",
+        delta=f"{result.spare_kw_at_fault:,.0f} kW spare headroom made it possible",
         delta_color="off",
     )
     cols[3].metric(
@@ -476,8 +476,11 @@ def render_fleet_replay() -> None:
         "the devices, the faults and the spoofed cards are simulated. Without orchestration "
         f"the {result.kw_lost:,.0f} kW stays lost for the rest of the window. "
         f"{result.rejected_cards} spoofed cards claiming {result.phantom_kw_rejected:,.0f} kW "
-        f"were refused on signature. {result.runtime_s:.1f}s wall clock; reproduce with "
-        "`python -m gridsignal.replay`."
+        f"were refused on signature. All of it came back only because "
+        f"{result.spare_kw_at_fault:,.0f} kW of uncommitted, deliverable headroom was left in "
+        f"the healthy fleet \u2014 {result.headroom_cover:.1f}x the {result.kw_lost:,.0f} kW "
+        "lost. With a thinner fleet the recovery would be partial. "
+        f"{result.runtime_s:.1f}s wall clock; reproduce with `python -m gridsignal.replay`."
     )
 
 
@@ -1643,6 +1646,23 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
     )
 
 
+def _price_taker_note(fleet_size: int) -> str:
+    """How the simulated fleet's Reg Down offer sizes up against what ERCOT procures."""
+    flag = ancillary.procurement_flag(devices=fleet_size)
+    if flag is None:
+        return (
+            "Fleet dollars assume a price taker; ERCOT no longer publishes an AS plan for the "
+            "bundled days, so the offer is not sized against procurement and the fleet figure "
+            "is an upper bound."
+        )
+    return (
+        f"Price-taker check: {fleet_size:,} simulated batteries would offer "
+        f"{flag.fleet_mw:,.0f} MW into Reg Down against {flag.procured_mw:,.0f} MW ERCOT "
+        f"procured in that hour on {flag.date} ({flag.share:.0%}), so a fleet this size would "
+        "move the price it is paid; fleet dollars are an upper bound, not a forecast."
+    )
+
+
 def render_ancillary(fleet_size: int) -> None:
     """What the same battery earns for capacity it never has to move."""
     scarcity = ancillary_day()
@@ -1673,9 +1693,9 @@ def render_ancillary(fleet_size: int) -> None:
         delta=f"+{scarcity.uplift_usd:,.2f} vs energy alone",
     )
     cols[2].metric(
-        "Held-out fleet uplift",
-        f"${summary.fleet_usd(fleet_size):,.0f}/day",
-        delta=f"{fleet_size:,} simulated batteries",
+        "Median held-out day",
+        f"${summary.median_uplift_usd:,.2f}",
+        delta=f"mean ${summary.mean_uplift_usd:,.2f}, concentrated in rare days",
         delta_color="off",
     )
     cols[3].metric(
@@ -1695,6 +1715,26 @@ def render_ancillary(fleet_size: int) -> None:
     with left:
         st.dataframe(
             split.style.format({"Held-out $": "{:,.2f}"}), hide_index=True, use_container_width=True
+        )
+        per_day = pd.DataFrame(
+            [
+                {
+                    "Held-out day": day.date,
+                    "Uplift $": day.uplift_usd,
+                    "Reg Down $": day.by_product["regdn"],
+                }
+                for day in sorted(summary.per_day, key=lambda d: d.date)
+            ]
+        )
+        st.dataframe(
+            per_day.style.format({"Uplift $": "{:,.2f}", "Reg Down $": "{:,.2f}"}),
+            hide_index=True,
+            use_container_width=True,
+        )
+        top_date, top_share = summary.top_day_share
+        st.caption(
+            f"{top_date} alone carries {top_share:.0%} of the held-out uplift: this is a "
+            "rare-day product, not a daily annuity."
         )
     with right:
         awards = pd.DataFrame(
@@ -1725,6 +1765,7 @@ def render_ancillary(fleet_size: int) -> None:
             "deployment energy is not modelled, and every battery, load profile and award is "
             "simulated. An award is only offered when the state of charge can sustain it for "
             "the product's full duration above the member's backup reserve. "
+            f"{_price_taker_note(fleet_size)} "
             "Reproduce: python -m gridsignal.ancillary"
         )
     )

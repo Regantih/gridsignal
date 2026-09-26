@@ -118,3 +118,63 @@ def test_cli_reports_the_source_and_the_split(capsys):
     assert "ercot.com" in out
     assert "backup reserve violations: 0" in out
     assert "Reg Down" in out
+
+
+def test_the_mean_is_reported_next_to_the_median_it_hides():
+    """One rare day carries the headline, so the median has to travel with it."""
+    summary = ancillary.holdout_summary(ancillary.BASE_CORE)
+    per_day = sorted(d.uplift_usd for d in summary.per_day)
+    assert len(summary.per_day) == summary.days
+    assert summary.median_uplift_usd == pytest.approx(per_day[len(per_day) // 2], abs=0.01)
+    assert summary.median_uplift_usd < summary.mean_uplift_usd
+
+
+def test_the_headline_names_the_day_that_carries_the_value():
+    summary = ancillary.holdout_summary(ancillary.BASE_CORE)
+    date, share = summary.top_day_share
+    assert share > 0.5
+    text = ancillary.headline(summary)
+    assert date in text
+    assert "concentrated in rare days" in text
+    assert f"{summary.median_uplift_usd:,.2f}" in text
+
+
+def test_a_median_of_an_even_number_of_days_averages_the_middle_pair():
+    days = ancillary.evaluate(holdout.load_holdout()[:4], ancillary.BASE_CORE)
+    middle = sorted(d.uplift_usd for d in days.per_day)[1:3]
+    assert days.median_uplift_usd == pytest.approx(sum(middle) / 2, abs=0.01)
+
+
+def test_a_missing_procurement_plan_is_reported_not_assumed(monkeypatch, tmp_path):
+    """ERCOT drops the AS plan after about a month; silence must not read as 'small'."""
+    monkeypatch.setattr(ancillary, "AS_PLAN_DIR", tmp_path)
+    assert ancillary.load_as_plan("2024-05-08") is None
+    assert ancillary.procurement_flag() is None
+    out = "\n".join(ancillary.lines())
+    assert "Price-taker assumption unchecked" in out
+
+
+def test_the_fleet_offer_is_flagged_against_what_ercot_procures():
+    flag = ancillary.procurement_flag()
+    assert flag is not None, "no bundled day has a cached AS plan; run scripts/fetch_as_plan.py"
+    assert flag.fleet_mw == pytest.approx(
+        ancillary.FLEET_DEVICES * ancillary.BASE_CORE.power_kw / 1000.0, abs=1.0
+    )
+    assert flag.procured_mw > 0
+    assert flag.share > ancillary.PRICE_TAKER_SHARE
+    assert not flag.price_taker_credible
+
+
+def test_a_small_fleet_can_still_call_itself_a_price_taker():
+    flag = ancillary.procurement_flag(devices=100)
+    assert flag is not None
+    assert flag.price_taker_credible
+
+
+def test_cli_prints_the_per_day_split_and_the_price_taker_check(capsys):
+    assert ancillary.main() == 0
+    out = capsys.readouterr().out
+    assert "uplift per held-out day" in out
+    assert "median day" in out
+    assert "Price-taker check" in out
+    assert "upper bound" in out

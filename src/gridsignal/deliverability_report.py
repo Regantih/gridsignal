@@ -75,6 +75,15 @@ class Report:
         return sum(r.backup_violations for r in self.rows)
 
     @property
+    def unchecked_backup_violations(self) -> int:
+        return sum(r.unchecked_backup_violations for r in self.rows)
+
+    @property
+    def overstated_kw(self) -> float:
+        """Coverage the unchecked auction would have reported but not delivered."""
+        return round(sum(r.overstated_kw for r in self.rows), 2)
+
+    @property
     def share_pct(self) -> float:
         if not self.awards:
             return 0.0
@@ -124,7 +133,9 @@ def headline(report: Report) -> str:
         f"committed {report.undeliverable_kw:,.2f} kW that the battery could not have held for "
         "the whole award window. The check trimmed "
         f"{report.trimmed} and refused {report.rejected}, with "
-        f"{report.backup_violations} member backup reserve violations."
+        f"{report.backup_violations} member backup reserve violations "
+        f"({report.unchecked_backup_violations} unchecked). The unchecked run would have "
+        f"reported {report.overstated_kw:,.2f} kW more coverage than it could deliver."
     )
 
 

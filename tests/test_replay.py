@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
+
+import pytest
+
 from gridsignal import replay
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import DeviceStatus
@@ -69,3 +73,21 @@ def test_cli_reports_runtime_and_the_per_minute_figure(capsys):
     assert "protected per minute of fault" in out
     assert "wall clock" in out
     assert "spoofed agents" in out
+
+
+def test_full_recovery_is_reported_with_the_headroom_that_allowed_it():
+    """100% recovered is a fact about spare capacity, not a property of the orchestrator."""
+    result = replay.run()
+    assert result.recovered_share == pytest.approx(1.0, abs=1e-6)
+    assert result.spare_kw_at_fault >= result.kw_lost
+    assert result.headroom_cover == round(result.spare_kw_at_fault / result.kw_lost, 2)
+    text = "\n".join(replay.lines(result))
+    assert f"{result.spare_kw_at_fault:,.0f} kW" in text
+    assert "not guaranteed by orchestration" in text
+    assert f"{result.spare_kw_at_fault:,.0f} kW" in replay.summary(result)
+
+
+def test_headroom_cover_is_zero_when_nothing_was_lost():
+    result = replay.run()
+    nothing_lost = dataclasses.replace(result, kw_lost=0.0)
+    assert nothing_lost.headroom_cover == 0.0

@@ -64,6 +64,9 @@ class ReplayResult:
     dollars_recovered: float
     rejected_cards: int
     phantom_kw_rejected: float
+    #: Uncommitted, deliverable kW the healthy fleet still had when the faults landed.
+    #: Recovery is only possible up to this number; it is not a guarantee.
+    spare_kw_at_fault: float
     fault_minutes: float
     runtime_s: float
 
@@ -78,6 +81,13 @@ class ReplayResult:
         if self.fault_minutes <= 0:
             return 0.0
         return round(self.dollars_recovered / self.fault_minutes, 2)
+
+    @property
+    def headroom_cover(self) -> float:
+        """Spare kW as a multiple of the kW lost: below 1.0 no full recovery exists."""
+        if self.kw_lost <= 0:
+            return 0.0
+        return round(self.spare_kw_at_fault / self.kw_lost, 2)
 
     @property
     def recovered_share(self) -> float:
@@ -126,6 +136,8 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
     hours = engine.remaining_hours()
     kw_lost = round(stale_kw + incident.lost_kw, 2)
     dollars_at_risk = energy_value_usd(kw_lost, hours, price_mwh)
+    # Measured before the approval: what the healthy fleet could still take on.
+    spare_kw = engine.surplus_offer().offerable_kw
 
     # The one human step. Nothing above this line changed a dispatch.
     engine.approve_recovery(OWNERS[Role.FLEET_OPERATOR])
@@ -168,6 +180,7 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
         ),
         rejected_cards=rejected,
         phantom_kw_rejected=phantom_kw,
+        spare_kw_at_fault=spare_kw,
         fault_minutes=round((engine.snapshot().now - fault_start).total_seconds() / 60.0, 2),
         runtime_s=round(time.perf_counter() - started, 2),
     )
@@ -180,7 +193,9 @@ def summary(result: ReplayResult) -> str:
         f"{result.date} scarcity day: {result.kw_lost:,.0f} kW lost to three faults at the peak "
         f"(${result.dollars_at_risk:,.0f} at risk), one approval recovered "
         f"${result.dollars_recovered:,.0f} in {result.fault_minutes:.1f} simulated minutes "
-        f"= ${result.protected_usd_per_fault_minute:,.0f} protected per minute of fault; "
+        f"= ${result.protected_usd_per_fault_minute:,.0f} protected per minute of fault "
+        f"(only because {result.spare_kw_at_fault:,.0f} kW of spare headroom was left, "
+        f"{result.headroom_cover:.1f}x what was lost); "
         f"{result.runtime_s:.1f}s wall clock"
     )
 
@@ -201,6 +216,10 @@ def lines(result: ReplayResult) -> list[str]:
         f"with orchestration: ${result.dollars_recovered:,.0f} recovered after one human "
         f"approval ({result.recovered_share:.0%} of what was at risk), "
         f"${result.dollars_unprotected:,.0f} not recovered",
+        f"why that was possible: {result.spare_kw_at_fault:,.0f} kW of uncommitted, "
+        f"deliverable headroom sat in the healthy fleet when the faults landed, "
+        f"{result.headroom_cover:.1f}x the {result.kw_lost:,.0f} kW lost — recovery is "
+        f"capped by that headroom, not guaranteed by orchestration",
         f"spoofing: {result.rejected_cards} cards rejected on signature, "
         f"{result.phantom_kw_rejected:,.0f} kW of claimed capacity never entered the plan",
     ]

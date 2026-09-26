@@ -20,6 +20,10 @@ Simulation assumptions, documented because they set the numbers:
   the ``sustain_h`` values below, a simplification of ERCOT's ESR qualification rules.
 * One product per hour. Offering the same kW into two products would be selling it
   twice, so the hour goes to the best-paying product it can actually deliver.
+* Price taker. The fleet is assumed to clear at the published price without moving it.
+  That is only credible while the fleet is small next to what ERCOT procures, so the
+  report flags the offer against the published AS plan (MW procured) where the MIS
+  still publishes it — 10,000 × 20 kW is 200 MW, which is *not* small against Reg Down.
 
     python -m gridsignal.ancillary
 """
@@ -33,12 +37,17 @@ from pathlib import Path
 import pandas as pd
 
 from gridsignal import backtest, dam, detect, forecast, holdout, ingest
+from gridsignal.paths import DATA_DIR
 from gridsignal.prices import AS_SUFFIX, PriceTrace, load_price_trace, load_scenario
 from gridsignal.signals import Signal
 
 #: Share of usable capacity held back for the member's backup, never sold.
 RESERVE_SHARE = 0.20
 FLEET_DEVICES = 10_000
+#: ERCOT's published ancillary procurement volumes, cached by scripts/fetch_as_plan.py.
+AS_PLAN_DIR = DATA_DIR / "as_plan"
+#: Above this share of a product's procured MW, calling the fleet a price taker is not honest.
+PRICE_TAKER_SHARE = 0.05
 
 
 @dataclass(frozen=True)
@@ -131,6 +140,17 @@ class DayValue:
 def as_path_for(path: Path) -> Path:
     """Where the ancillary clearing prices for a real-time trace are cached."""
     return path.with_name(f"{path.stem}{AS_SUFFIX}{path.suffix}")
+
+
+def as_plan_path(date: str) -> Path:
+    """Where ERCOT's published procurement volume for one trade date is cached."""
+    return AS_PLAN_DIR / f"as_plan_{date.replace('-', '')}.parquet"
+
+
+def load_as_plan(date: str) -> pd.DataFrame | None:
+    """Procured MW per product per hour, or ``None`` when ERCOT no longer publishes it."""
+    path = as_plan_path(date)
+    return pd.read_parquet(path) if path.exists() else None
 
 
 def load_as_prices(path: Path) -> pd.DataFrame:
@@ -372,6 +392,8 @@ class SplitSummary:
     by_product: dict[str, float]
     held_hours: int
     reserve_violations: int
+    #: Every scored day, so the concentration of the value is visible, not averaged away.
+    per_day: tuple[DayValue, ...] = ()
 
     @property
     def total_usd(self) -> float:
@@ -388,6 +410,25 @@ class SplitSummary:
     @property
     def mean_uplift_usd(self) -> float:
         return round(self.uplift_usd / self.days, 2) if self.days else 0.0
+
+    @property
+    def median_uplift_usd(self) -> float:
+        """The typical day, which the mean hides when one day carries the total."""
+        values = sorted(d.uplift_usd for d in self.per_day)
+        if not values:
+            return 0.0
+        mid = len(values) // 2
+        if len(values) % 2:
+            return round(values[mid], 2)
+        return round((values[mid - 1] + values[mid]) / 2, 2)
+
+    @property
+    def top_day_share(self) -> tuple[str, float]:
+        """The single best day and the share of the total uplift it carries."""
+        if not self.per_day or self.uplift_usd <= 0:
+            return ("", 0.0)
+        best = max(self.per_day, key=lambda d: d.uplift_usd)
+        return (best.date, round(best.uplift_usd / self.uplift_usd, 4))
 
     def fleet_usd(self, devices: int = FLEET_DEVICES) -> float:
         """Mean daily ancillary uplift scaled to a fleet of ``devices`` batteries."""
@@ -410,6 +451,7 @@ def evaluate(traces: list[PriceTrace], battery: Battery = LEGACY) -> SplitSummar
         by_product=split,
         held_hours=sum(d.held_hours for d in days),
         reserve_violations=sum(d.reserve_violations for d in days),
+        per_day=tuple(days),
     )
 
 
@@ -421,14 +463,67 @@ def scarcity_day(battery: Battery = LEGACY) -> DayValue:
     return co_optimize(load_scenario("scarcity"), battery)
 
 
+@dataclass(frozen=True)
+class ProcurementFlag:
+    """How big the simulated fleet's Reg Down offer is next to what ERCOT buys."""
+
+    date: str
+    #: Largest MW this fleet would offer into Reg Down in any hour of the day.
+    fleet_mw: float
+    #: MW of Reg Down ERCOT procured in that hour, from the published AS plan.
+    procured_mw: float
+
+    @property
+    def share(self) -> float:
+        return round(self.fleet_mw / self.procured_mw, 4) if self.procured_mw else 0.0
+
+    @property
+    def price_taker_credible(self) -> bool:
+        """A fleet worth a few percent of the procurement can plausibly take the price."""
+        return self.share <= PRICE_TAKER_SHARE
+
+
+def procurement_flag(
+    battery: Battery = BASE_CORE, devices: int = FLEET_DEVICES
+) -> ProcurementFlag | None:
+    """Flag the fleet's Reg Down offer against ERCOT's published procurement volume.
+
+    ``None`` when no bundled day still has a published AS plan (the MIS keeps about a
+    month), which is itself worth saying rather than assuming the offer is small.
+    """
+    for trace in (*holdout.load_holdout(), load_scenario("normal")):
+        plan = load_as_plan(trace.date)
+        if plan is None:
+            continue
+        day = co_optimize(trace, battery)
+        by_hour: dict[int, float] = {}
+        for award in day.awards:
+            if award.product == "regdn":
+                by_hour[award.hour] = by_hour.get(award.hour, 0.0) + award.kw
+        if not by_hour:
+            continue
+        hours = plan.set_index(plan["interval_start"].dt.hour)["regdn"]
+        hour, kw = max(by_hour.items(), key=lambda item: item[1])
+        return ProcurementFlag(
+            date=trace.date,
+            fleet_mw=round(kw * devices / 1000.0, 1),
+            procured_mw=round(float(hours.get(hour, 0.0)), 1),
+        )
+    return None
+
+
 def headline(summary: SplitSummary) -> str:
     """What the ancillary split says that the energy-only view does not."""
     total = sum(summary.by_product.values())
     share = summary.by_product["regdn"] / total if total else 0.0
+    top_date, top_share = summary.top_day_share
     return (
         f"Selling the capacity the energy plan leaves idle adds "
         f"${summary.mean_uplift_usd:,.2f} per battery per day on the held-out days, and "
-        f"{share:.0%} of it is Reg Down \u2014 paid for room to charge, not energy to sell."
+        f"{share:.0%} of it is Reg Down \u2014 paid for room to charge, not energy to sell. "
+        f"The value is concentrated in rare days: the median day is only "
+        f"${summary.median_uplift_usd:,.2f} and {top_date} alone carries {top_share:.0%} "
+        f"of the total, so this is not income to count on every day."
     )
 
 
@@ -475,8 +570,45 @@ def lines() -> list[str]:
             f"${summary.energy_given_up_usd:,.2f} of energy revenue given up"
         )
         out.append(f"  backup reserve violations: {summary.reserve_violations}")
+        out.append(
+            f"  median day ${summary.median_uplift_usd:,.2f} vs mean "
+            f"${summary.mean_uplift_usd:,.2f} \u2014 the value is concentrated in rare days"
+        )
     out.append("")
-    out.append(headline(holdout_summary(BASE_CORE)))
+
+    core = holdout_summary(BASE_CORE)
+    out.append(f"{BASE_CORE.label}, uplift per held-out day (Reg Down is the bulk of it):")
+    out.append(f"{'date':<14}{'uplift $':>10}{'Reg Down $':>13}{'mean Reg Down $/MW-h':>24}")
+    for day in sorted(core.per_day, key=lambda d: d.date):
+        regdn_awards = [a for a in day.awards if a.product == "regdn"]
+        mean_price = (
+            sum(a.price_mw_h for a in regdn_awards) / len(regdn_awards) if regdn_awards else 0.0
+        )
+        out.append(
+            f"{day.date:<14}{day.uplift_usd:>10.2f}"
+            f"{day.by_product['regdn']:>13.2f}{mean_price:>24.2f}"
+        )
+    out.append("")
+
+    flag = procurement_flag()
+    if flag is None:
+        out.append(
+            "Price-taker assumption unchecked: ERCOT's MIS no longer publishes an AS plan "
+            "for any bundled trade date, so the fleet's offer is not sized against "
+            "procurement. Treat the fleet numbers as an upper bound."
+        )
+    else:
+        verdict = "plausible" if flag.price_taker_credible else "NOT credible"
+        out.append(
+            f"Price-taker check ({flag.date}, ERCOT published AS plan): "
+            f"{FLEET_DEVICES:,} simulated batteries would offer {flag.fleet_mw:,.0f} MW into "
+            f"Reg Down in the peak hour against {flag.procured_mw:,.0f} MW procured "
+            f"({flag.share:.0%}) \u2014 price-taker assumption {verdict}. A fleet this size "
+            "would move the clearing price it is being paid, so the fleet-scale dollars are "
+            "an upper bound, not a forecast."
+        )
+    out.append("")
+    out.append(headline(core))
     return out
 
 

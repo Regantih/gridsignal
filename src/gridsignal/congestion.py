@@ -304,10 +304,6 @@ class ZoneUplift:
         return round(self.zone_timed_usd - self.zone_blind_usd, 2)
 
     @property
-    def win_rate(self) -> float:
-        return round(self.win_days / self.days, 2) if self.days else 0.0
-
-    @property
     def split_summary(self) -> str:
         """The two regimes stated apart, because their averages are nothing alike."""
         return (
