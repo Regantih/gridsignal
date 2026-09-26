@@ -607,17 +607,17 @@ fleet would detect or respond in the field.
 
 ## Deploying to Streamlit Community Cloud
 
-The app is deploy-ready as-is: everything it needs is committed, so it runs on a free Community
-Cloud instance with no secrets.
+Full instructions, including what was verified against a clean non-editable install, are in
+[`docs/DEPLOY.md`](docs/DEPLOY.md). The short version, no secrets required:
 
-1. Push this repo to GitHub (or fork it).
-2. Go to [share.streamlit.io](https://share.streamlit.io), **Create app → Deploy a public app from
-   GitHub**.
-3. Repository `Regantih/gridsignal`, branch `main`, **Main file path** `app/dashboard.py`.
-4. **Advanced settings → Python version 3.11**. Dependencies are read from `requirements.txt`
-   (a pinned mirror of the runtime dependencies in `pyproject.toml`).
-5. Deploy. No secrets are required. To exercise a live Jev path instead of the recorded answers,
-   add `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY` under **Settings → Secrets**.
+1. [share.streamlit.io](https://share.streamlit.io), sign in with GitHub (a private repo is fine;
+   grant the Streamlit GitHub App access to it).
+2. **Create app → Deploy from GitHub**: repository `Regantih/gridsignal`, branch
+   `devin/1790382033-control-room` (or `main` after merge), main file `app/dashboard.py`,
+   **Advanced settings → Python 3.11**. Dependencies come from `requirements.txt`, which installs
+   the repository itself.
+3. Deploy. To exercise a live Jev path instead of the recorded answers, add `AI_GATEWAY_API_KEY`
+   or `TYPESAFE_API_KEY` under **Settings → Secrets**.
 
 If the deployed URL is unavailable, the scripted capture below produces the same walkthrough as a
 video.

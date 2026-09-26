@@ -33,7 +33,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from gridsignal import backtest
+from gridsignal import backtest, paths
 from gridsignal.insight import SCARCITY_PEAK_MWH
 from gridsignal.signals import Signal
 
@@ -44,7 +44,7 @@ HINDSIGHT_NOTE = (
     "so every dollar figure is a ceiling on perfect timing, not a live result"
 )
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DATA_DIR = paths.DATA_DIR
 ZONE_DIR = DATA_DIR / "zones"
 
 #: ERCOT load zones, as published in the settlement point price reports.

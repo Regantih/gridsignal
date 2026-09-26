@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from gridsignal import backtest, dam, detect, forecast
+from gridsignal import backtest, dam, detect, forecast, paths
 from gridsignal.prices import DAM_SUFFIX, PriceTrace, load_price_trace
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DATA_DIR = paths.DATA_DIR
 HOLDOUT_DIR = DATA_DIR / "holdout"
 TUNING_DIR = DATA_DIR / "tuning"
 

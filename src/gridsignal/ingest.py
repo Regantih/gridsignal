@@ -9,12 +9,14 @@ from pathlib import Path
 
 import pandas as pd
 
+from gridsignal import paths
+
 try:  # gridstatus only ships with the optional [ercot] extra
     import gridstatus
 except ImportError:  # pragma: no cover - exercised only without the extra
     gridstatus = None
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = paths.ROOT
 RAW = ROOT / "data" / "raw"
 PROCESSED = ROOT / "data" / "processed"
 

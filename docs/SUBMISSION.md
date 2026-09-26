@@ -45,14 +45,22 @@ revenue — reported as measured, not smoothed.
 
 ## Deployed URL
 
-Streamlit Community Cloud, no secrets required:
+_Not deployed yet: Community Cloud needs a sign-in with the repository owner's GitHub account,
+which this build cannot create. Everything else is done — exact steps in
+[`docs/DEPLOY.md`](DEPLOY.md), two clicks after sign-in._
 
-1. Repo public on GitHub.
-2. [share.streamlit.io](https://share.streamlit.io) → **Create app** → deploy from GitHub.
-3. Repository `Regantih/gridsignal`, branch `main`, main file `app/dashboard.py`, Python 3.11.
-4. Dependencies come from `requirements.txt` (installs the package itself).
-5. Optional: add `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY` under **Settings → Secrets** to run
-   Jev live instead of replaying the recorded answers.
+1. [share.streamlit.io](https://share.streamlit.io) → sign in with GitHub (private repo is fine;
+   grant the Streamlit GitHub App access — the repo does **not** need to be made public).
+2. **Create app → Deploy from GitHub**: repository `Regantih/gridsignal`, branch
+   `devin/1790382033-control-room` (or `main` after merge), main file `app/dashboard.py`,
+   **Advanced settings → Python 3.11**.
+3. Dependencies come from `requirements.txt` (installs the package itself). No secrets required;
+   Jev replays `data/jev_fixtures/`. Optional: `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY` under
+   **Settings → Secrets** to run Jev live.
+
+A clean non-editable install (what the host does) was reproduced from a fresh clone; the one
+deployment bug it found — bundled data not found when the package is installed outside the
+checkout — is fixed in `src/gridsignal/paths.py` and guarded by `tests/test_paths.py`.
 
 Paste the resulting `*.streamlit.app` URL into the submission form.
 

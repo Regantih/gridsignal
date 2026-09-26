@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pandas as pd
 
-PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
+from gridsignal import paths
+
+PROCESSED = paths.PROCESSED_DIR
 SAMPLE_PRICES = PROCESSED / "lz_houston_rtm_spp_sample.parquet"
 SCARCITY_PRICES = PROCESSED / "lz_houston_rtm_spp_scarcity_sample.parquet"
 DAM_SUFFIX = "_dam"

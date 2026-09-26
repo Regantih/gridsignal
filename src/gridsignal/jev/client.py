@@ -34,7 +34,9 @@ from pathlib import Path
 
 import httpx
 
-FIXTURE_DIR = Path(__file__).resolve().parents[3] / "data" / "jev_fixtures"
+from gridsignal import paths
+
+FIXTURE_DIR = paths.FIXTURE_DIR
 GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/evaluate"
 GATEWAY_MODEL = "typesafe-ai/jev"
 TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone"

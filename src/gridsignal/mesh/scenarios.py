@@ -13,11 +13,13 @@ from pathlib import Path
 
 import yaml
 
-SCENARIO_DIR = Path(__file__).resolve().parents[3] / "scenarios"
+from gridsignal import paths
+
+SCENARIO_DIR = paths.SCENARIO_DIR
 # Drills written after the rules and the Jev questions were frozen, kept apart so the
 # tuned set and the held-out set are never scored together by accident.
 HOLDOUT_DIR = SCENARIO_DIR / "holdout"
-TRACE_DIR = Path(__file__).resolve().parents[3] / "data" / "traces"
+TRACE_DIR = paths.TRACE_DIR
 
 
 class Injection(StrEnum):
