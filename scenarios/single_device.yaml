@@ -18,3 +18,7 @@ injections:
   - kind: device_failure
     devices: [BAT-042]
     at_s: 45
+
+# One battery stops answering.
+ground_truth:
+  root_cause: device_fault

@@ -163,6 +163,64 @@ on the seeded fleet: no LLM, no API key, no network. An optional LLM coordinator
 (`src/gridsignal/mesh/llm.py`) can rank bids behind an explicit flag; it is **off by default** and
 falls back to the deterministic ranking when no provider is wired up.
 
+### Jev, the decision layer
+
+*Code acts, Jev decides, humans approve when Jev is unsure.* The mesh does the arithmetic; the
+decisions that need judgement are put to [Jev](https://docs.typesafe.ai/api), TypeSafe AI's
+decision model, as four explicit questions over the incident snapshot (agent cards, telemetry
+ages, prices, bids, plan coverage):
+
+1. **Root cause**, as a choice between device fault, gateway outage, telemetry lag, spoofed agent
+   and grid event.
+2. **Is this card or bid trustworthy?**, asked *alongside* the HMAC check, not instead of it — the
+   signature catches an edited card, this catches an agent that is validly signed and still
+   behaving oddly.
+3. **Risk to the homeowner's backup**, as a 0–1 score.
+4. **A confidence-gated approval policy**: a step is auto-approved only when every answer is at
+   least the confidence threshold (default `0.9`), backup risk is low (≤ 0.35), the dollars at
+   stake are under a cap (default $500) and the plan covers the whole gap and flags nobody as
+   untrustworthy. Anything else routes to the same human approval gate as before, with Jev's
+   probabilities shown next to the button. `Coordinator.approve()` remains the only commit path.
+
+Two transports sit behind one client and whichever key is set wins — Vercel AI Gateway
+(`AI_GATEWAY_API_KEY`, `POST /v1/evaluate`, model `typesafe-ai/jev`, yes/no questions typed
+`boolean`) or TypeSafe direct (`TYPESAFE_API_KEY`, `POST /v1/systemone`, model `jev-latest`,
+typed `noul`). Both normalise to one internal answer shape. Only simulated fleet state is sent;
+keys are read from the environment and never written to fixtures, traces or logs.
+
+**Judges will not have a key, and they do not need one.** Real Jev answers for every bundled
+scenario are recorded in `data/jev_fixtures/*.json` with the model version and timestamp and are
+replayed offline. With no fixture and no key the mesh falls back to deterministic rules and says
+so: **Jev offline, rules fallback**. The default run and the whole test suite pass with no key
+and no network.
+
+```bash
+python -m gridsignal.jev.evaluate          # rules-only vs Jev, from the recorded answers
+python -m gridsignal.jev.record --refresh  # re-record, only if a key is set
+```
+
+| Decision layer | Root-cause accuracy | Human approvals | Auto-approvals | Median decision latency |
+| --- | --- | --- | --- | --- |
+| rules-only | 5/5 (100%) | 6 | 0 | 0 ms |
+| jev | 3/5 (60%) | 6 | 0 | 326 ms |
+
+| Scenario | Injected root cause | rules-only | Jev |
+| --- | --- | --- | --- |
+| `fleet_wide_scarcity` | gateway_outage | gateway_outage ✓ | gateway_outage ✓ |
+| `lying_agent` | gateway_outage | gateway_outage ✓ | spoofed_agent ✗ |
+| `silent_bidder` | device_fault | device_fault ✓ | telemetry_lag ✗ |
+| `single_device` | device_fault | device_fault ✓ | device_fault ✓ |
+| `zone_outage` | gateway_outage | gateway_outage ✓ | gateway_outage ✓ |
+
+Read that honestly. The rules were written against these same five injections, so their 5/5 is a
+ceiling, not evidence they generalise; Jev sees the state cold and gets 3 of 5, missing the two
+scenarios that stack injections (`lying_agent` is a gateway outage *with* a forged card, and it
+names the forgery; `silent_bidder` is two dead devices *and* stale telemetry, and it names the
+staleness). Both are defensible readings of the state and both are wrong about the cause of the
+lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, so **every** award in the
+demo is still approved by a person — the auto-approval path is exercised by tests, not by the
+demo. Latency is the recorded live round trip (median 326 ms); the rules answer in microseconds.
+
 **Inspiration and attribution.** The agent-card, registry and agent-town-scenario ideas are
 inspired by MIT Project NANDA — [nandatown.projectnanda.org](https://nandatown.projectnanda.org)
 and [github.com/projnanda](https://github.com/projnanda). No NANDA code is vendored, copied or
@@ -349,6 +407,13 @@ real Base Power device or fleet.
 - The agent mesh runs in simulated seconds inside one process: there is no transport, no real
   cryptographic identity beyond a shared HMAC key, and agents do not defect strategically — a
   "lying" agent lies about its capabilities, not about delivery it actually made.
+- Jev's root-cause accuracy on the bundled scenarios (3/5) is below the deterministic rules (5/5),
+  and it never reached the 0.9 confidence gate, so the auto-approval path never fires in the demo.
+  Five scenarios is far too small a sample to conclude anything about the model; it is reported as
+  measured rather than tuned away.
+- The Jev fixtures are keyed on the exact incident state, so changing the snapshot schema or the
+  scenarios invalidates them and the mesh silently drops to the rules fallback until they are
+  re-recorded with a key.
 - Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
   exposure change minute to minute rather than as a single window average.
 

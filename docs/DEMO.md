@@ -80,6 +80,26 @@ The design is inspired by MIT Project NANDA and NANDA Town
 [github.com/projnanda](https://github.com/projnanda)); the implementation here is original and
 vendors no NANDA code.
 
+## Who decides: Jev between the code and the human
+
+*Code acts, Jev decides, humans approve when Jev is unsure.* The mesh's arithmetic is
+deterministic; the judgement calls go to Jev (TypeSafe AI's decision model) as four questions
+over the incident snapshot — root cause as a choice, "is this card or bid trustworthy" alongside
+the HMAC check, risk to the homeowner's backup as a score, and a confidence-gated approval
+policy. A step is auto-approved only if every answer clears the confidence threshold (default
+0.9), backup risk is low, the dollars at stake are under a cap and the plan covers the whole gap;
+otherwise it routes to the same human gate, with Jev's probabilities on screen.
+
+On all five bundled scenarios Jev never cleared that gate, so **every** award in the demo is
+approved by a person. Root-cause accuracy is 3/5 for Jev against 5/5 for the deterministic rules
+(which were written against these same injections), at a median 326 ms per decision. The numbers
+are in the Agent Mesh view and the README as measured.
+
+Judges need no API key: real Jev answers for every scenario are recorded in `data/jev_fixtures/`
+with model version and timestamp and replayed offline. With neither fixture nor key the UI says
+**Jev offline, rules fallback** and the rules answer instead — and the rules always report zero
+confidence, so the fallback can never auto-approve anything.
+
 ## Safety boundaries
 
 - **No real-world effect.** No device commands, no utility or market integration, no credentials
@@ -97,7 +117,12 @@ vendors no NANDA code.
 - **The agent mesh is advisory too.** `Coordinator.propose()` only produces a plan; awarded kW is
   committed by `approve(call_id, approver)` and nowhere else, `execute()` raises
   `ApprovalRequired` without a recorded approval, and repeat triggers or double approvals return
-  the award already on file instead of committing twice. No LLM and no API key is involved.
+  the award already on file instead of committing twice.
+- **The model never gets a veto or a back door.** Jev only answers questions; auto-approval still
+  goes through `Coordinator.approve()` and is logged as an auto-approval with the model, the
+  confidence and the reason. Only simulated fleet state is sent, API keys are read from the
+  environment and never committed, and no network call happens without a key — the default run
+  and every test replay recorded answers.
 
 ## How this meets the Orchestration track
 

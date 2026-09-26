@@ -27,3 +27,7 @@ injections:
   - kind: stale_telemetry
     devices: [BAT-201, BAT-202, BAT-203, BAT-204]
     at_s: 55
+
+# The forged card and the silent telemetry are noise: the lost kW comes from the gateway ring.
+ground_truth:
+  root_cause: gateway_outage

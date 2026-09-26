@@ -21,6 +21,11 @@ from gridsignal.control_room.models import (
     TaskStatus,
 )
 from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID
+from gridsignal.jev import evaluate as jev_evaluate
+from gridsignal.jev import incident as jev_incident
+from gridsignal.jev.client import JevResponse, Source
+from gridsignal.jev.policy import ApprovalDecision, ApprovalPolicy
+from gridsignal.jev.questions import BACKUP_RISK, ROOT_CAUSE, TRUST_PREFIX
 from gridsignal.mesh.cards import CardStatus
 from gridsignal.mesh.scenarios import available_scenarios as available_chaos_scenarios
 from gridsignal.prices import (
@@ -87,6 +92,16 @@ CARD_COLOR = {
     CardStatus.STALE: "#f59e0b",
     CardStatus.REJECTED: "#dc2626",
 }
+JEV_COLOR = {
+    Source.LIVE: "#16a34a",
+    Source.FIXTURE: "#38bdf8",
+    Source.FALLBACK: "#f59e0b",
+}
+JEV_LABEL = {
+    Source.LIVE: "Jev live",
+    Source.FIXTURE: "Jev (recorded answer)",
+    Source.FALLBACK: "Jev offline, rules fallback",
+}
 SIGNAL_COLOR = {
     Signal.CHARGE.value: "#38bdf8",
     Signal.HOLD.value: "#6b7280",
@@ -98,6 +113,12 @@ SIGNAL_COLOR = {
 def signals_run(scenario: str) -> pipeline.PipelineResult:
     """Detect -> forecast -> signal -> backtest for one bundled ERCOT day."""
     return pipeline.run(scenario)
+
+
+@st.cache_data(show_spinner=False)
+def jev_eval() -> jev_evaluate.EvalReport:
+    """Rules-only vs Jev across every chaos scenario; replayed from fixtures."""
+    return jev_evaluate.evaluate()
 
 
 @st.cache_data(show_spinner=False)
@@ -348,8 +369,63 @@ def render_incident(eng: ControlRoomEngine) -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+    render_jev(eng, incident)
     render_money(incident)
     render_approval(eng, incident)
+
+
+def jev_answer_rows(response: JevResponse) -> list[dict[str, object]]:
+    rows = []
+    for question_id, answer in sorted(response.answers.items()):
+        if question_id == ROOT_CAUSE:
+            question = "Root cause"
+        elif question_id == BACKUP_RISK:
+            question = "Risk to homeowner backup"
+        else:
+            question = f"{question_id[len(TRUST_PREFIX) :]} trustworthy?"
+        top = sorted(answer.probabilities.items(), key=lambda kv: -kv[1])[:3]
+        rows.append(
+            {
+                "question": question,
+                "answer": answer.value.replace("_", " "),
+                "confidence": round(answer.confidence, 2),
+                "probabilities": ", ".join(f"{k} {v:.2f}" for k, v in top),
+                "latency (ms)": round(response.latency_ms, 1),
+            }
+        )
+    return rows
+
+
+def render_jev_card(response: JevResponse, decision: ApprovalDecision) -> None:
+    """Jev's answers, confidence and latency, plus what the confidence gate did."""
+    policy = ApprovalPolicy()
+    badges = " ".join(
+        [
+            pill(JEV_LABEL[response.source], JEV_COLOR[response.source]),
+            pill(response.model, "#475569"),
+            pill(f"{response.latency_ms:.0f} ms", "#475569"),
+            pill(
+                "auto-approved by Jev" if decision.auto_approved else "human approval required",
+                "#16a34a" if decision.auto_approved else "#dc2626",
+            ),
+        ]
+    )
+    st.markdown(
+        f"<div class='gs-card'><div class='gs-kicker'>Decision layer</div>{badges}"
+        f"<div class='gs-body' style='margin-top:.5rem'>Code acts, Jev decides, humans "
+        f"approve when Jev is unsure. Gate: confidence ≥ {policy.confidence_threshold:.2f}, "
+        f"backup risk ≤ {policy.max_backup_risk:.2f}, under "
+        f"${policy.dollar_cap:,.0f} at stake.</div>"
+        f"<div class='gs-body' style='margin-top:.35rem'><b>Verdict:</b> "
+        f"{decision.reason}</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.dataframe(pd.DataFrame(jev_answer_rows(response)), hide_index=True, use_container_width=True)
+
+
+def render_jev(eng: ControlRoomEngine, incident: Incident) -> None:
+    response, decision = jev_incident.ask(eng, incident)
+    render_jev_card(response, decision)
 
 
 def render_money(incident: Incident) -> None:
@@ -956,6 +1032,10 @@ def render_agent_mesh() -> None:
         unsafe_allow_html=True,
     )
 
+    if result.responses:
+        st.subheader("Jev decision layer")
+        render_jev_card(result.responses[-1], result.decisions[-1])
+
     left, right = st.columns([3, 4], gap="large")
     with left:
         st.subheader("Agent registry")
@@ -963,6 +1043,49 @@ def render_agent_mesh() -> None:
     with right:
         st.subheader("Message log")
         render_mesh_log(result)
+
+    render_jev_eval()
+
+
+def render_jev_eval() -> None:
+    """Does the model earn its place? Score it against the injected ground truth."""
+    st.subheader("Rules-only vs Jev, every chaos scenario")
+    report = jev_eval()
+    summary = pd.DataFrame(
+        [
+            {
+                "decision layer": s.mode,
+                "root-cause accuracy": f"{s.correct}/{s.scenarios} ({s.accuracy:.0%})",
+                "human approvals": s.human_approvals,
+                "auto-approvals": s.auto_approvals,
+                "median decision latency (ms)": s.median_latency_ms,
+            }
+            for s in report.summaries
+        ]
+    )
+    detail = pd.DataFrame(
+        [
+            {
+                "scenario": r.scenario,
+                "decision layer": r.mode,
+                "root cause": r.root_cause,
+                "injected truth": r.truth,
+                "correct": "yes" if r.correct else "no",
+                "human approvals": r.human_approvals,
+                "answers from": r.source,
+            }
+            for r in report.rows
+        ]
+    )
+    st.dataframe(summary, hide_index=True, use_container_width=True)
+    with st.expander("Per-scenario detail"):
+        st.dataframe(detail, hide_index=True, use_container_width=True)
+    st.caption(
+        "Ground truth is the injection that caused the capacity loss, declared in each "
+        "scenario YAML. The rules were written against these same injections, so treat "
+        "their accuracy as a ceiling, not as evidence they generalise. Replayed from "
+        "recorded Jev answers, so these numbers need no API key."
+    )
 
 
 def main() -> None:

@@ -22,3 +22,7 @@ injections:
   - kind: silent_after_award
     devices: [BAT-005, BAT-010]
     at_s: 50
+
+# Two batteries die; the silent winner is a delivery failure, not the cause of the gap.
+ground_truth:
+  root_cause: device_fault

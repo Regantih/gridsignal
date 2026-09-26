@@ -18,3 +18,7 @@ injections:
   - kind: zone_outage
     zone: LZ_HOUSTON
     at_s: 45
+
+# The whole LZ_HOUSTON gateway drops.
+ground_truth:
+  root_cause: gateway_outage

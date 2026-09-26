@@ -51,3 +51,31 @@ here is an original implementation of those ideas and vendors nothing from them.
    dollars at risk and recovered).
 6. `llm.py` is an optional LLM bid ranker behind a flag; disabled by default, and it falls back to
    the deterministic ranking when no provider is configured.
+
+## Jev decision layer (`src/gridsignal/jev/`)
+
+Code acts, Jev decides, humans approve when Jev is unsure. The layer is optional: with no API key
+it replays recorded answers, and with neither key nor fixture it answers with deterministic rules
+labelled "Jev offline, rules fallback".
+
+1. `questions.py` builds the `IncidentSnapshot` — simulated fleet scale, offline agents, zones and
+   gateway rings, card statuses and HMAC validity, telemetry ages, prices, lost kW, dollars at
+   risk, bids, plan coverage, state of charge and backup reserve — and the four questions asked
+   over it (root cause as a choice, one trust question per suspect agent, backup risk as a score).
+2. `client.py` is the one client behind two transports: Vercel AI Gateway (`AI_GATEWAY_API_KEY`,
+   yes/no typed `boolean`) and TypeSafe direct (`TYPESAFE_API_KEY`, typed `noul`), preferring
+   whichever key is set. Both responses normalise to `JevAnswer` (choice / yes / score plus
+   confidence and probabilities). Resolution order is fixture, then live, then fallback; a live
+   answer is recorded into `data/jev_fixtures/<scenario>.json` keyed on a hash of the state and
+   questions, so replays are deterministic and a schema change invalidates them loudly.
+3. `rules.py` is the deterministic fallback. It reads the same state and always reports confidence
+   0.0, which is what makes it structurally incapable of auto-approving.
+4. `policy.py` is the confidence gate: auto-approve only when every answer clears the threshold
+   (default 0.9), backup risk is at most 0.35, dollars are under the cap (default $500), the plan
+   covers the whole gap and no agent is called untrustworthy. Everything else returns the human
+   approver. Either way the commit still happens in `Coordinator.approve()` /
+   `ControlRoomEngine.approve_recovery()`.
+5. `incident.py` wires the same questions to the Control Room incident; `evaluate.py` scores
+   rules-only against Jev on every chaos scenario (root-cause accuracy against the injected
+   ground truth, approval counts, median latency); `record.py` re-records fixtures when a key is
+   present.

@@ -55,9 +55,41 @@ def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
     assert not app.exception, app.exception
 
     frames = [df.value for df in app.dataframe]
-    registry, log = frames[0], frames[1]
+    registry = next(f for f in frames if "card" in f.columns)
+    log = next(f for f in frames if "kind" in f.columns and "card" not in f.columns)
     assert {"agent", "kind", "health", "last heartbeat (s)", "card"} <= set(registry.columns)
     assert set(registry["card"]) <= {"verified", "stale", "rejected"}
     assert {"call_for_capacity", "award_proposed", "approval"} <= set(log["kind"])
     assert [s.label for s in app.selectbox] == ["Replay"]
     assert "Simulation only" in " ".join(m.value for m in app.markdown)
+
+
+def test_agent_mesh_shows_jev_answers_and_the_rules_comparison() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    app.session_state["view"] = "Agent Mesh"
+    app.run()
+    assert not app.exception, app.exception
+
+    frames = [df.value for df in app.dataframe]
+    answers = next(f for f in frames if "confidence" in f.columns)
+    assert {"question", "answer", "probabilities", "latency (ms)"} <= set(answers.columns)
+    assert "Root cause" in set(answers["question"])
+
+    evaluation = next(f for f in frames if "root-cause accuracy" in f.columns)
+    assert set(evaluation["decision layer"]) == {"rules-only", "jev"}
+
+    text = " ".join(m.value for m in app.markdown)
+    assert "Decision layer" in text
+    assert "human approval required" in text or "auto-approved by Jev" in text
+
+
+def test_incident_panel_shows_the_jev_read_out() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    assert not app.exception, app.exception
+    text = " ".join(m.value for m in app.markdown)
+    assert "Code acts, Jev decides" in text
+    assert any(label in text for label in ("Jev live", "Jev (recorded answer)", "Jev offline"))

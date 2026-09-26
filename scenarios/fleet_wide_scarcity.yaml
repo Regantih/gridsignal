@@ -28,3 +28,7 @@ injections:
   - kind: zone_outage
     zone: LZ_WEST
     at_s: 90
+
+# Four zone gateways drop; the lost kW is a gateway outage, not per-device faults.
+ground_truth:
+  root_cause: gateway_outage

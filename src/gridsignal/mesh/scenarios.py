@@ -49,6 +49,27 @@ class Scenario:
     llm_coordinator: bool = False
     failures: tuple[Failure, ...] = ()
     source: Path | None = field(default=None, compare=False)
+    declared_root_cause: str | None = None
+
+    @property
+    def ground_truth_root_cause(self) -> str:
+        """What actually caused the capacity loss, for scoring the decision layer.
+
+        A group outage outranks the agents inside it: in a scenario that drops a whole
+        zone *and* plants a lying agent, the gateway is why the kW went missing.
+        """
+        if self.declared_root_cause:
+            return self.declared_root_cause
+        kinds = {f.kind for f in self.failures}
+        if kinds & {Injection.ZONE_OUTAGE, Injection.GATEWAY_OUTAGE}:
+            return "gateway_outage"
+        if Injection.DEVICE_FAILURE in kinds:
+            return "device_fault"
+        if Injection.LYING_AGENT in kinds:
+            return "spoofed_agent"
+        if Injection.STALE_TELEMETRY in kinds:
+            return "telemetry_lag"
+        return "grid_event"
 
     @property
     def slug(self) -> str:
@@ -100,6 +121,11 @@ def load_scenario(path: str | Path) -> Scenario:
         llm_coordinator=bool(coordinator.get("llm", False)),
         failures=tuple(_failure(item) for item in failures),
         source=file,
+        declared_root_cause=(
+            None
+            if raw.get("ground_truth") is None
+            else str(dict(raw["ground_truth"])["root_cause"])  # type: ignore[arg-type]
+        ),
     )
 
 
