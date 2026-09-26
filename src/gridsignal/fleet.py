@@ -29,8 +29,9 @@ def settlement_zone(zone: str) -> str:
     return SETTLEMENT_ZONE.get(zone, zone)
 
 
-#: Simulated hardware mix. The larger unit follows what Base's COO has described in
-#: public interviews (40 kWh, 20 kW inverter); it is modelled here, not specified by Base.
+#: Simulated hardware mix. The larger unit follows what Base's COO described in a public
+#: interview (https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b, 3 Aug 2026:
+#: 40 kWh, 20 kW inverter); it is modelled here, not specified by Base.
 BASE_CORE_KWH = 40.0
 BASE_CORE_POWER_KW = 20.0
 #: Every Nth device in the simulated fleet is a Base Core-style unit.

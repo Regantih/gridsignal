@@ -39,7 +39,7 @@ Two dials in the sidebar make that number mean something at Base's scale:
 - **Fleet scale** — 48, 1,000 or 10,000 simulated devices. The failure is a gateway firmware
   ring that covers one device in 48, so a 10,000-device fleet loses 166 dispatchable devices
   to the same root cause. On the scarcity day that is **$4,812 at risk and $4,751 recovered**
-  from one operator approval, versus $1.82 on the 48-device normal day. Reproduce every figure
+  from one operator approval, versus $1.67 on the 48-device normal day. Reproduce every figure
   in this section with `python -m gridsignal.demo_numbers`.
 
 ## Why this matters to Base
@@ -59,9 +59,9 @@ the year. This repo is built around that minute.
   sequence lands in an append-only audit timeline — the shape a utility-facing operation has to
   have before it can be trusted with real hardware.
 - **It scales to the fleet Base is building, not the one in the demo.** Building a 10,000-device
-  fleet in memory, raising the incident and recomputing the whole allocation takes ~138 ms of
+  fleet in memory, raising the incident and recomputing the whole allocation takes ~137 ms of
   compute, and building a 10,000-agent registry, sweeping its heartbeats and clearing one
-  contract-net auction takes ~370 ms. These are in-process compute timings on simulated state:
+  contract-net auction takes ~264 ms. These are in-process compute timings on simulated state:
   no network, no device round trips, no field latency.
 - **The homeowner is a first-class view.** The same event rendered as backup hours and dollars
   earned, with no incident IDs — the support conversation, not the ops console.
@@ -369,7 +369,9 @@ days**. Tests: `tests/test_degradation.py`.
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
 Capacity and inverter power live on each agent card, and the Control Room reports revenue,
 export and backup hours by unit type. Those Base Core numbers are taken from a public interview
-with Base's COO and are **simulated, not official specifications**.
+with Base's COO ([Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b):
+"Base Core, 40 kWh of storage and 20 kW on the inverter") and are **simulated, not official
+specifications**.
 
 Each card also names who controls the battery: **Base** (retail-choice markets) or a **utility
 partner** (non-retail-choice markets, where the battery is owned by Base but dispatched by the
@@ -572,7 +574,7 @@ python -m gridsignal.jev.record --refresh  # re-record, only if a key is set
 | Decision layer | Root-cause accuracy | Human approvals | Median decision latency |
 | --- | --- | --- | --- |
 | rules-only | 5/5 (100%) | 6 | 0 ms |
-| jev | 3/5 (60%) | 6 | 326 ms |
+| jev | 3/5 (60%) | 6 | 360 ms |
 
 | Scenario | Injected root cause | rules-only | Jev |
 | --- | --- | --- | --- |
@@ -589,7 +591,7 @@ names the forgery; `silent_bidder` is two dead devices *and* stale telemetry, an
 staleness). Both are defensible readings of the state and both are wrong about the cause of the
 lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, and every award is
 approved by a person whether it clears or not. Latency is the recorded live round trip
-(median 326 ms); the rules answer in microseconds.
+(median 360 ms); the rules answer in microseconds.
 
 ### The operator judgment model (safety pack v2, committed before it was scored)
 
@@ -891,7 +893,7 @@ fleet would detect or respond in the field.
 | Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
 | Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
-| Jev decision round trip | recorded live median | 326 ms (rules (Jev offline): microseconds) |
+| Jev decision round trip | recorded live median | 360 ms (rules (Jev offline): microseconds) |
 | Full-fleet scarcity replay: 3 faults at the peak + recovery (`python -m gridsignal.replay`) | 10,000 devices | ~0.7 s |
 
 ## Deploying to Streamlit Community Cloud
@@ -1110,8 +1112,9 @@ two most recent complete trade days from the daily report are used instead. The 
 two splits can never share a date.
 
 All figures are **dollars per battery per day** on the default simulated unit — a Base Core-style
-**40 kWh / 20 kW** battery (sized from a public interview, not an official specification; see
-Assumptions). The legacy 13.5 kWh / 5 kW unit is kept as a comparison and prints from the same
+**40 kWh / 20 kW** battery (sized from a public interview with Base's COO,
+[Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b), not an
+official specification; see Assumptions). The legacy 13.5 kWh / 5 kW unit is kept as a comparison and prints from the same
 command.
 
 **Home-first** is what the product does: the household is carried by the grid while storage is
@@ -1198,7 +1201,7 @@ real Base Power device or fleet.
 
 | Assumption | Value | Where |
 |---|---|---|
-| Usable energy capacity | 40 kWh (Base Core-style, per a public interview, **not an official spec**); the legacy 13.5 kWh unit is kept as a comparison | `backtest.DEFAULT_KWH`, `backtest.LEGACY_KWH` |
+| Usable energy capacity | 40 kWh (Base Core-style, per a public interview with Base's COO, [Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b), **not an official spec**); the legacy 13.5 kWh unit is kept as a comparison | `backtest.DEFAULT_KWH`, `backtest.LEGACY_KWH` |
 | Inverter power, charge and discharge | 20 kW (so 5 kWh per 15-minute interval); legacy 5 kW | `backtest.DEFAULT_POWER_KW`, `backtest.LEGACY_POWER_KW` |
 | Household load during the day | carried by the grid while storage is held for the day-ahead peak; served from the battery only when no later hour pays more | `backtest.value_captured(hold_for_peak=True)` |
 | Round-trip efficiency | 90% | `backtest.ROUND_TRIP_EFFICIENCY` |
@@ -1207,7 +1210,7 @@ real Base Power device or fleet.
 | Market participation | price taker settling at the RTM SPP; no bidding, no degradation cost, no losses beyond round-trip efficiency. The energy backtest carries no ancillary revenue; ancillary capacity is scored separately in `ancillary.py` | `backtest.py` |
 | Control Room event | 5 kW of capacity per affected device over a 2-hour window | `control_room/engine.py` |
 | Household load shape | synthetic summer-weekday profile, 0.8–2.3 kW, scaled 0.7x–1.4x per home | `load.py` |
-| Base Core-style unit | 40 kWh, 20 kW inverter, every 4th simulated device — per public interview, **not official specs** | `fleet.py` |
+| Base Core-style unit | 40 kWh, 20 kW inverter, every 4th simulated device — per a public interview with Base's COO ([Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b)), **not official specs** | `fleet.py` |
 | Member reserve floor | 20% of usable capacity, 50% under the storm policy | `home.py` |
 | Portable generator | 1.8 kW for 8 hours of fuel, on roughly 1 member in 11 | `fleet.py` |
 | Mutual-aid share | 0.25–2.0 kWh per giver, same zone, both opted in, recipient flagged medical | `home.py` |

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from gridsignal import demo_numbers, replay
+from gridsignal.control_room import ControlRoomEngine
 from gridsignal.drills import available_drills
 from gridsignal.jev import evaluate
 from gridsignal.mesh.scenarios import available_scenarios
@@ -223,3 +224,45 @@ def test_the_model_ablation_in_the_docs_matches_the_ablation_itself() -> None:
         assert f"root cause differs in {different_cause}" in text or (
             f"root cause in {different_cause}" in text
         )
+
+
+def test_the_normal_day_at_risk_figure_in_the_readme_is_what_the_engine_prices() -> None:
+    """README contrasts the scarcity day with the 48-device normal day; price it."""
+    engine = ControlRoomEngine(fleet_size=48)
+    incident = engine.trigger_device_failure()
+    text = (DOCS.parent / "README.md").read_text()
+    assert f"versus ${incident.dollars_at_risk:,.2f} on the 48-device normal day" in text
+
+
+def test_the_jev_latency_in_the_docs_is_the_recorded_round_trip() -> None:
+    """The live median comes off the recorded answers, so no document may invent one."""
+    summary = evaluate.evaluate().summary("jev")
+    assert summary is not None
+    median = f"{summary.median_latency_ms:.0f} ms"
+    for name in ("README.md", "docs/JUDGING_MAP.md"):
+        text = (DOCS.parent / name).read_text()
+        quoted = re.findall(r"median(?: decision latency)?[^|\n]*?(\d+) ms", text)
+        assert quoted, f"{name} no longer states the Jev median latency"
+        for value in quoted:
+            assert f"{value} ms" == median, f"{name} quotes {value} ms, the run says {median}"
+
+
+def _perf_stage_ms(stage: str) -> float:
+    """One stage's after-p50 from the 10,000-battery table in docs/PERFORMANCE.md."""
+    text = (DOCS / "PERFORMANCE.md").read_text()
+    table = text.split("### 10,000 batteries")[1].split("### 100,000 batteries")[0]
+    row = next(line for line in table.splitlines() if line.startswith(f"| {stage} "))
+    return float(row.split("|")[3].strip().replace(",", ""))
+
+
+def test_the_readme_timings_add_up_to_the_performance_table() -> None:
+    """README rounds PERFORMANCE.md's stages; the two may not drift apart."""
+    control_room = sum(
+        _perf_stage_ms(s) for s in ("build fleet", "detect incident", "recover after approval")
+    )
+    mesh = sum(
+        _perf_stage_ms(s) for s in ("publish signed cards", "heartbeat sweep", "negotiate one call")
+    )
+    text = (DOCS.parent / "README.md").read_text()
+    assert f"takes ~{control_room:.0f} ms of" in text
+    assert f"auction takes ~{mesh:.0f} ms" in text

@@ -9,8 +9,10 @@ import pandas as pd
 from gridsignal.load import HOURLY_LOAD_KW
 from gridsignal.signals import Signal
 
-# The unit this product is modelled on: a Base Core-style 40 kWh / 20 kW home battery
-# (sized from public interviews, not vendor data), at 90% round-trip efficiency.
+# The unit this product is modelled on: a Base Core-style 40 kWh / 20 kW home battery, at
+# 90% round-trip efficiency. Sized from a public interview with Base's COO
+# (https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b, 3 Aug 2026: "40 kWh of
+# storage and 20 kW on the inverter"), not from vendor data or an official specification.
 DEFAULT_KWH = 40.0
 DEFAULT_POWER_KW = 20.0
 # The older, smaller unit most fleets still run, kept as the comparison case.
