@@ -25,6 +25,8 @@ from gridsignal.control_room.models import (
     GridEvent,
     Incident,
     IncidentStatus,
+    Reading,
+    Rejection,
     Role,
     Severity,
     Task,
@@ -61,6 +63,10 @@ MIN_DISPATCH_HOURS = 0.25
 #: Simulated export ceiling per operator-controlled home on one zone's feeder, the
 #: stand-in for deliverability. An assumption of this simulation, not a utility limit.
 DELIVERABILITY_KW_PER_DEVICE = 6.0
+#: Nameplate tolerance on an imported reading: meters round and packs age, so a little
+#: over nameplate is a reading and well over is a broken row.
+CAPACITY_TOLERANCE = 1.02
+POWER_TOLERANCE = 1.10
 
 OWNERS: dict[Role, str] = {
     Role.FLEET_OPERATOR: "M. Alvarez (Fleet Operator)",
@@ -353,6 +359,73 @@ class ControlRoomEngine:
         if not rest:
             return committed
         return round(committed + self._share(rest, target - committed, headroom), 2)
+
+    def ingest_telemetry(
+        self,
+        readings: list[Reading],
+        source: str = "telemetry",
+        as_of: datetime | None = None,
+    ) -> tuple[list[Reading], list[Rejection]]:
+        """Apply validated telemetry to the fleet, refusing what this fleet cannot hold.
+
+        Shape, types and freshness are :mod:`gridsignal.telemetry`'s job. What is
+        checked here is what only the fleet knows: whether the device exists, and
+        whether the reading fits its nameplate. Dispatch is reallocated afterwards, so
+        a device that reports itself offline stops carrying the commitment.
+        """
+        applied: list[Reading] = []
+        rejected: list[Rejection] = []
+        for reading in readings:
+            device = self._by_id.get(reading.device_id)
+            if device is None:
+                rejected.append(
+                    Rejection(reading.line_no, "unknown device in this fleet", reading.device_id)
+                )
+                continue
+            if reading.soc_kwh > device.capacity_kwh * CAPACITY_TOLERANCE:
+                rejected.append(
+                    Rejection(
+                        reading.line_no,
+                        f"out of range: soc_kwh {reading.soc_kwh:,.1f} above the "
+                        f"{device.capacity_kwh:,.1f} kWh nameplate",
+                        reading.device_id,
+                    )
+                )
+                continue
+            if abs(reading.power_kw) > device.power_kw * POWER_TOLERANCE:
+                rejected.append(
+                    Rejection(
+                        reading.line_no,
+                        f"out of range: power_kw {reading.power_kw:,.1f} above the "
+                        f"{device.power_kw:,.1f} kW inverter",
+                        reading.device_id,
+                    )
+                )
+                continue
+            device.state_of_charge = round(min(reading.soc_kwh / device.capacity_kwh, 1.0), 4)
+            device.status = reading.status
+            device.firmware = reading.firmware
+            device.gateway = reading.gateway
+            device.measured_power_kw = reading.power_kw
+            device.last_telemetry_s = (
+                int((as_of - reading.ts).total_seconds()) if as_of is not None else 0
+            )
+            applied.append(reading)
+
+        self._hold_partner_reserve()
+        committed = self._allocate_dispatch()
+        self._log(
+            actor="telemetry import",
+            kind="telemetry",
+            summary=f"Imported {len(applied):,} readings from {source}",
+            detail=(
+                f"{len(rejected):,} rows rejected by the fleet; "
+                f"{committed:,.0f} kW committed of {self.grid_event.target_kw:,.0f} kW "
+                f"after the import"
+                + (f", newest row {as_of.isoformat()}" if as_of is not None else "")
+            ),
+        )
+        return applied, rejected
 
     def set_priority_zone(self, zone: str | None) -> float:
         """Discharge one zone's batteries first, and reallocate the open commitment.

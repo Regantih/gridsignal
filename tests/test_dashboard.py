@@ -199,6 +199,35 @@ def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
     assert reasons and "member backup reserve" in set(reasons[0]["Why"])
 
 
+def test_loading_a_telemetry_file_moves_the_fleet_the_control_room_shows() -> None:
+    """Replay mode: the bundled sample is imported into the same state, not a mock."""
+    app = fresh()
+    before = app.session_state["engine"].snapshot().offline
+
+    next(b for b in app.button if b.label == "Import telemetry").click().run()
+    assert not app.exception, app.exception
+
+    result = app.session_state["telemetry_result"]
+    assert result.rejected == () and len(result.applied) == 48
+    assert app.session_state["engine"].snapshot().offline > before
+    assert "Imported telemetry" in markdown_text(app)
+
+
+def test_a_telemetry_file_with_bad_rows_shows_every_rejection_reason() -> None:
+    app = fresh()
+    app.session_state["telemetry_choice"] = "Synthetic bad rows (one per rejection reason)"
+    app.run()
+    next(b for b in app.button if b.label == "Import telemetry").click().run()
+    assert not app.exception, app.exception
+
+    table = next(df.value for df in app.dataframe if "rejected because" in df.value.columns)
+    reasons = " ".join(table["rejected because"])
+    for reason in ("stale:", "malformed:", "out of range:", "unknown device"):
+        assert reason in reasons
+    next(b for b in app.button if b.label == "Clear import").click().run()
+    assert app.session_state["telemetry_result"] is None
+
+
 # ------------------------------------------------------------------ operator UI
 
 

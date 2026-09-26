@@ -391,6 +391,35 @@ schedule, appear as a separate tenant in the Control Room, and are excluded from
 cohorts and recovery, including during the chaos drills
 (`tests/test_home.py::test_the_operator_never_dispatches_another_tenants_battery`).
 
+### Load telemetry file (replay mode)
+
+The fleet is simulated, but it is not the only way in. The sidebar's **Load telemetry file**
+imports a JSON-lines export into the same devices the Control Room is reading — state of
+charge, status, firmware and gateway land on the live fleet and dispatch is reallocated, so
+a battery that reports itself offline stops carrying the commitment on the screen. Two
+bundled files, both **clearly synthetic** (this repository's own fleet written out in the
+real format by `python scripts/make_telemetry_sample.py`, not a vendor export), or upload
+your own.
+
+```jsonc
+{"device_id": "BAT-001", "ts": "2023-09-06T16:59:43Z", "soc_kwh": 22.12, "power_kw": 0.08,
+ "status": "online", "firmware": "2.4.1", "gateway": "GW-01"}
+```
+
+One object per line; unknown keys are ignored so a richer export still loads. A row is
+rejected, with a reason shown on screen and printed by the CLI, when it is not valid JSON,
+is missing a field, has a timestamp without a UTC offset, carries a non-numeric or
+non-finite reading, names a status outside `online / degraded / offline / unavailable`, is
+**stale** (more than 900 s — one settlement interval — behind the newest row in the same
+file), names a device this fleet does not have, or reports past the device's nameplate.
+Where a device reports twice the newest row wins and the older one is counted as
+superseded. Format and rules: <code>data/telemetry/README.md</code>.
+
+```bash
+python -m gridsignal.telemetry                                      # bundled sample
+python -m gridsignal.telemetry data/telemetry/synthetic_bad_rows.jsonl   # one row per reason
+```
+
 ### Member App
 
 The same incident seen from one house, deliberately kept separate from the operator tooling:
@@ -1102,6 +1131,7 @@ Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal
 | All-zone settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report and [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** All eight load zones (`LZ_WEST`, `LZ_NORTH`, `LZ_HOUSTON`, `LZ_SOUTH`, `LZ_AEN`, `LZ_CPS`, `LZ_LCRA`, `LZ_RAYBN`) plus the hub average `HB_HUBAVG`, REAL_TIME_15_MIN, 96 intervals for each of the same 15 bundled trade dates. One file per date under `data/zones/zones_rtm_spp_<YYYYMMDD>.parquet` with a sidecar `.json` carrying market, locations, date, source and `fetched_at`; refresh with `python scripts/fetch_zones.py` |
 | Ancillary clearing prices | ERCOT MIS [NP4-188-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-188-CD) daily DAM clearing prices for capacity and the [NP4-181-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER) historical annual archive (report type 13091) via `gridstatus`, public and credential-free | **Real data.** ERCOT system-wide Reg Up, Reg Down, RRS, ECRS and Non-Spin, DAM hourly, 24 hours for every bundled trade date, in $/MW per hour of capacity held. Cached beside each real-time trace as `*_as.parquet` with a sidecar `*_as.json` carrying market, location, date, source URL, `fetched_at`, products and units; refresh with `python scripts/fetch_as_prices.py`. ECRS did not exist before 2023-06-10, so it is zero on earlier dates rather than imputed |
 | Ancillary procurement volume | ERCOT MIS [NP3-905-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP3-905-ER) AS plan via `gridstatus`, public and credential-free | **Real data, partial.** MW of each product ERCOT procured per hour, cached at `data/as_plan/as_plan_<date>.parquet` with the same sidecar fields; refresh with `python scripts/fetch_as_plan.py`. The MIS only keeps the plan for roughly the last month, so the older bundled dates have none and the price-taker check says so instead of assuming the offer is small |
+| Telemetry samples | `data/telemetry/*.jsonl`, written by `python scripts/make_telemetry_sample.py` | **Synthetic, clearly labelled.** The simulated fleet written out in the documented JSON-lines format; no battery, gateway or vendor export was read. Format and validation rules in `data/telemetry/README.md` |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still

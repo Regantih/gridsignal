@@ -92,6 +92,13 @@ class Device:
     generator_kw: float = 0.0
     #: Hours of fuel the member keeps for that generator.
     generator_fuel_h: float = 0.0
+    #: Firmware build the device last reported, empty until telemetry says otherwise.
+    firmware: str = ""
+    #: Gateway the device last reported through.
+    gateway: str = ""
+    #: Output the device last measured, positive discharging. Read from telemetry and
+    #: shown as measured; the plan the engine commits is ``assigned_kw``.
+    measured_power_kw: float | None = None
 
     @property
     def is_dispatchable(self) -> bool:
@@ -119,6 +126,37 @@ class Device:
     def export_kw(self) -> float:
         """kW leaving the house, which is what the grid event counts."""
         return self.assigned_kw if self.is_dispatchable else 0.0
+
+
+@dataclass(frozen=True)
+class Reading:
+    """One validated telemetry row, ready to apply to a device.
+
+    The wire format and the validation live in :mod:`gridsignal.telemetry`; this is
+    what survives it.
+    """
+
+    line_no: int
+    device_id: str
+    ts: datetime
+    soc_kwh: float
+    power_kw: float
+    status: DeviceStatus
+    firmware: str
+    gateway: str
+
+
+@dataclass(frozen=True)
+class Rejection:
+    """A telemetry row that was not applied, and the reason an operator can act on."""
+
+    line_no: int
+    reason: str
+    device_id: str = ""
+
+    def __str__(self) -> str:
+        who = f" [{self.device_id}]" if self.device_id else ""
+        return f"line {self.line_no}{who}: {self.reason}"
 
 
 @dataclass

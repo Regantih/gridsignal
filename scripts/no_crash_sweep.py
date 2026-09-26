@@ -78,6 +78,11 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("operator workflow", ("-m", "gridsignal.workflow", "--devices", "10000", "--stale-wave")),
     ("jev.evaluate", ("-m", "gridsignal.jev.evaluate")),
     ("jev.record (no key)", ("-m", "gridsignal.jev.record")),
+    ("telemetry sample", ("-m", "gridsignal.telemetry")),
+    (
+        "telemetry bad rows",
+        ("-m", "gridsignal.telemetry", "data/telemetry/synthetic_bad_rows.jsonl"),
+    ),
 )
 
 

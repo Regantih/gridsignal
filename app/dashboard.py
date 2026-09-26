@@ -31,6 +31,7 @@ from gridsignal import (
     pipeline,
     replay,
     rollout,
+    telemetry,
     why,
 )
 from gridsignal.backtest import BacktestSummary
@@ -1421,6 +1422,102 @@ def render_dispatch_priority(eng: ControlRoomEngine) -> None:
         "priced furthest above the hub average goes first. The target, the member "
         "reserve and the approval gate are unchanged — this only decides who carries the "
         "commitment first, in simulation."
+    )
+
+
+def render_telemetry_controls(eng: ControlRoomEngine) -> None:
+    """Replay mode: load a telemetry file into the fleet the Control Room is showing.
+
+    Same importer and same validation as ``python -m gridsignal.telemetry``; the
+    accepted rows land on the live devices, so every panel below re-reads them.
+    """
+    bundled = {
+        "Synthetic sample (48 valid rows)": telemetry.SAMPLE_FILE,
+        "Synthetic bad rows (one per rejection reason)": telemetry.BAD_ROWS_FILE,
+    }
+    with st.sidebar:
+        st.header("Load telemetry file")
+        caption(
+            "JSON lines: device_id, ts, soc_kwh, power_kw, status, firmware, gateway. "
+            "Stale and malformed rows are rejected with reasons."
+        )
+        choice = st.selectbox(
+            "Bundled file",
+            [*bundled, "Upload a file"],
+            key="telemetry_choice",
+        )
+        upload = (
+            st.file_uploader("Telemetry (.jsonl)", type=["jsonl", "json", "txt"])
+            if choice == "Upload a file"
+            else None
+        )
+        if st.button("Import telemetry", use_container_width=True):
+            if choice == "Upload a file" and upload is None:
+                st.warning("Choose a file first.")
+            else:
+                if upload is not None:
+                    result = telemetry.apply_text(
+                        eng, upload.getvalue().decode("utf-8", "replace"), source=upload.name
+                    )
+                else:
+                    result = telemetry.apply_file(eng, bundled[choice])
+                st.session_state.telemetry_result = result
+                st.rerun()
+        if st.session_state.get("telemetry_result") is not None and st.button(
+            "Clear import", use_container_width=True
+        ):
+            st.session_state.telemetry_result = None
+            eng.reset()
+            st.rerun()
+        st.divider()
+
+
+def render_telemetry_import() -> None:
+    """What the last import did: rows in, rows refused, and why."""
+    result = st.session_state.get("telemetry_result")
+    if result is None:
+        return
+    st.markdown("<div class='gs-kicker'>Imported telemetry</div>", True)
+    cols = st.columns(4)
+    metric(cols[0], "Rows read", f"{result.rows:,}", note=result.source)
+    metric(
+        cols[1],
+        "Applied",
+        f"{len(result.applied):,}",
+        note=f"{result.devices:,} devices updated",
+    )
+    metric(
+        cols[2],
+        "Rejected",
+        f"{len(result.rejected):,}",
+        note="; ".join(f"{n} {reason}" for reason, n in result.reasons.items()) or "none",
+    )
+    metric(
+        cols[3],
+        "Newest row",
+        result.as_of.strftime("%Y-%m-%d %H:%M") if result.as_of else "none",
+        note=f"{result.superseded:,} superseded by a newer row",
+    )
+    if result.rejected:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "line": r.line_no,
+                        "device": r.device_id or "—",
+                        "rejected because": r.reason,
+                    }
+                    for r in result.rejected[:25]
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+    caption(
+        "Simulated fleet, synthetic file: the bundled samples are this repository's own "
+        "fleet written out in the documented format, not a vendor export. Accepted rows "
+        "set state of charge, status, firmware and gateway on the same devices every "
+        "panel on this page reads, and dispatch is reallocated afterwards."
     )
 
 
@@ -2835,7 +2932,11 @@ def main() -> None:
         render_demo_controls(eng)
         return
     render_demo_controls(eng)
+    render_telemetry_controls(eng)
     render_overview(eng)
+    if st.session_state.get("telemetry_result") is not None:
+        st.divider()
+        render_telemetry_import()
     st.divider()
     render_home_first(eng)
     st.divider()
