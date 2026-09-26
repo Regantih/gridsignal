@@ -22,6 +22,8 @@ injections:
   - kind: island
     zone: LZ_AUSTIN
     at_s: 45
+    # The feeder is restored 10 minutes later and the homes resync with the mesh.
+    for_s: 600
 
 # The homes and their batteries are healthy; a distribution-side outage separated them
 # from the grid, which is the same shape of cause as a gateway losing a group.

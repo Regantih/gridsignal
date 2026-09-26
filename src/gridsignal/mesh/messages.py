@@ -31,6 +31,8 @@ class MessageKind(StrEnum):
     GRID_STRESS = "grid_stress"
     ISLANDED = "islanded"
     CONFLICT = "conflict"
+    SELF_DEPLOY = "self_deploy"
+    RECONCILE = "reconcile"
 
 
 @dataclass(frozen=True)

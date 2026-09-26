@@ -14,6 +14,14 @@ from gridsignal.mesh.cards import AgentCard, AgentKind, Health, battery_card
 from gridsignal.mesh.messages import MessageBus, MessageKind
 from gridsignal.mesh.registry import AgentRegistry
 
+#: Share of a battery's spare power it pre-agrees, in its card, to deploy locally on an
+#: under-frequency crossing without waiting for the coordinator. The remainder stays
+#: biddable, so a local deployment never eats the homeowner's backup reserve.
+FFR_SHARE = 0.25
+#: The simulated under-frequency threshold written into every battery card. Concept
+#: borrowed from ERCOT Fast Frequency Response; no real frequency feed is read.
+FFR_TRIGGER_HZ = 59.85
+
 HEALTH_OF: dict[DeviceStatus, Health] = {
     DeviceStatus.ONLINE: Health.HEALTHY,
     DeviceStatus.DEGRADED: Health.DEGRADED,
@@ -60,7 +68,14 @@ def card_for(device: Device, hours: float) -> AgentCard:
         agent_id=card.agent_id,
         kind=card.kind,
         zone=card.zone,
-        capabilities={**card.capabilities, "soc": round(soc, 4)},
+        capabilities={
+            **card.capabilities,
+            "soc": round(soc, 4),
+            # The pre-agreed local rule, signed into the card: how much this battery
+            # deploys by itself if frequency crosses the trigger.
+            "ffr_kw": round(FFR_SHARE * spare_kw(device, hours), 3),
+            "ffr_trigger_hz": FFR_TRIGGER_HZ,
+        },
         health=card.health,
         last_heartbeat_s=card.last_heartbeat_s,
     )

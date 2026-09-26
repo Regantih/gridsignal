@@ -59,6 +59,10 @@ NOMINAL_HZ = 60.0
 FFR_TRIGGER_HZ = 59.85
 FFR_DEADLINE_CYCLES = 15
 CYCLES_PER_SECOND = 60.0
+#: Simulated latency of a battery acting on the rule already signed into its own card:
+#: measure frequency, deploy, no round trip to the coordinator. Inside the 15-cycle
+#: window it is being measured against, and it is an assumption, not a measurement.
+LOCAL_DEPLOY_CYCLES = 12
 
 
 @dataclass(frozen=True)
@@ -93,8 +97,11 @@ class RunMetrics:
     min_frequency_hz: float = NOMINAL_HZ
     extra_demand_kw: float = 0.0
     islanded_agents: int = 0
+    resynced_agents: int = 0
     conflicting_cards: int = 0
     backup_violations: int = 0
+    #: kW deployed by batteries acting on their own cards, with no coordinator involved.
+    self_deployed_kw: float = 0.0
     #: Cycles from the simulated under-frequency dip to the first committed kW, or None
     #: when the drill has no frequency event.
     response_cycles: int | None = None
@@ -167,6 +174,7 @@ def _snapshot(
     dollars_at_risk: float,
     price_mwh: float,
     hours: float,
+    grid: GridConditions | None = None,
 ) -> IncidentSnapshot:
     """Everything Jev is told about the incident — simulated fleet data only."""
     offline = [d for d in devices if d.status is DeviceStatus.OFFLINE]
@@ -238,7 +246,21 @@ def _snapshot(
         plan_min_spare_kwh=round(min(spare), 3) if spare else BACKUP_RESERVE_KWH,
         backup_reserve_kwh=BACKUP_RESERVE_KWH,
         suspects=tuple(suspects),
+        frequency_hz=grid.min_hz if grid else NOMINAL_HZ,
+        grid_side_kw=grid.grid_side_kw if grid else 0.0,
+        islanded_agents=grid.islanded if grid else 0,
+        self_deployed_kw=grid.self_deployed_kw if grid else 0.0,
     )
+
+
+@dataclass
+class GridConditions:
+    """Simulated grid-side state a drill adds on top of a plain component failure."""
+
+    min_hz: float = NOMINAL_HZ
+    grid_side_kw: float = 0.0
+    islanded: int = 0
+    self_deployed_kw: float = 0.0
 
 
 def _log_decision(
@@ -325,6 +347,7 @@ def run_scenario(
     extra_demand_kw = 0.0
     coordinator_back_s = 0
     islanded: set[str] = set()
+    island_restore_s = 0
     conflicting: set[str] = set()
 
     for failure in sorted(scenario.failures, key=lambda f: f.at_s):
@@ -412,6 +435,8 @@ def run_scenario(
         if failure.kind is Injection.ISLAND:
             zone = failure.zone
             homes = [d for d in devices if zone is not None and d.zone == zone]
+            if failure.for_s:
+                island_restore_s = failure.at_s + failure.for_s
             for device in homes:
                 lost_kw += device.assigned_kw
                 device.assigned_kw = 0.0
@@ -503,6 +528,56 @@ def run_scenario(
     excluded: set[str] = set(silent) | islanded
     backup_violations = 0
     first_commit_s: int | None = None
+    response_cycles: int | None = None
+
+    # Under-frequency: every battery already carries the rule in its signed card, so it
+    # deploys its pre-agreed share locally instead of waiting for an auction. Nothing
+    # safety-critical is decided here — the share is carved out of spare power above the
+    # homeowner's reserve, and the coordinator still has to cover whatever is left.
+    self_deployed_kw = 0.0
+    if dip_at_s is not None:
+        deployers = [d for d in devices if d.is_dispatchable and d.device_id not in excluded]
+        pledged = round(sum(registry.card(d.device_id).capability("ffr_kw") for d in deployers), 2)
+        remaining = gap_kw
+        for device in deployers:
+            if remaining <= 0.01:
+                break
+            kw = min(registry.card(device.device_id).capability("ffr_kw"), remaining)
+            if kw <= 0.0:
+                continue
+            # The deployed kW becomes a commitment, so the card it republishes offers
+            # only what is left: the auction cannot sell the same kW a second time.
+            device.assigned_kw = round(device.assigned_kw + kw, 3)
+            registry.publish(registry.sign(card_for(device, hours)))
+            self_deployed_kw = round(self_deployed_kw + kw, 2)
+            remaining = round(remaining - kw, 3)
+        if self_deployed_kw > 0:
+            covered_kw = self_deployed_kw
+            gap_kw = round(lost_kw - covered_kw, 2)
+            response_cycles = LOCAL_DEPLOY_CYCLES
+            first_commit_s = dip_at_s
+            bus.send(
+                dip_at_s,
+                MessageKind.SELF_DEPLOY,
+                "batteries",
+                "grid-model",
+                (
+                    f"Simulated {min_hz:.2f} Hz crossed {FFR_TRIGGER_HZ:.2f} Hz: "
+                    f"{self_deployed_kw:,.0f} kW deployed from the pre-agreed rule on each "
+                    f"card in {LOCAL_DEPLOY_CYCLES} cycles, no coordinator involved"
+                ),
+                hz=round(min_hz, 3),
+                kw=self_deployed_kw,
+                cycles=LOCAL_DEPLOY_CYCLES,
+                pledged_kw=pledged,
+                simulated=True,
+            )
+    grid = GridConditions(
+        min_hz=min_hz,
+        grid_side_kw=extra_demand_kw,
+        islanded=len(islanded),
+        self_deployed_kw=self_deployed_kw,
+    )
     escalated = False
     time_to_cover_s = 0
     decisions: list[ApprovalDecision] = []
@@ -527,6 +602,23 @@ def run_scenario(
                 offline_s=waited,
             )
             coordinator_back_s = 0
+            if self_deployed_kw > 0:
+                # Reconciliation: the fleet reports what it already deployed and the
+                # coordinator asks only for the remainder, so local action and awarded
+                # capacity are never counted twice.
+                bus.send(
+                    registry.now_s,
+                    MessageKind.RECONCILE,
+                    "batteries",
+                    coordinator.agent_id,
+                    (
+                        f"{self_deployed_kw:,.0f} kW already deployed locally; "
+                        f"auctioning the remaining {gap_kw:,.0f} kW only"
+                    ),
+                    self_deployed_kw=self_deployed_kw,
+                    remaining_kw=gap_kw,
+                    lost_kw=lost_kw,
+                )
         call = coordinator.call_for_capacity(gap_kw, hours, exclude=tuple(sorted(excluded)))
         bids = coordinator.collect_bids(call, log_each=scenario.batteries <= BID_LOG_LIMIT)
         award_set = coordinator.propose(call, bids)
@@ -543,6 +635,7 @@ def run_scenario(
             dollars_at_risk,
             price_mwh,
             hours,
+            grid,
         )
         questions = incident_questions(snapshot)
         response = client.ask(snapshot.as_state(), questions)
@@ -610,6 +703,29 @@ def run_scenario(
             uncovered_kw=uncovered,
         )
 
+    # The distribution feed comes back: islanded homes rejoin and republish what they
+    # can offer again. Their backup was never awarded away, so there is nothing to undo.
+    resynced = 0
+    if islanded and island_restore_s:
+        registry.advance(max(island_restore_s - registry.now_s, 0))
+        heartbeat_all(registry, silent)
+        by_id = {d.device_id: d for d in devices}
+        for device_id in sorted(islanded):
+            registry.publish(registry.sign(card_for(by_id[device_id], hours)))
+        resynced = len(islanded)
+        bus.send(
+            registry.now_s,
+            MessageKind.RECONCILE,
+            "grid-model",
+            coordinator.agent_id,
+            (
+                f"{resynced} islanded homes resynced after the simulated distribution "
+                "outage cleared and republished their capability cards"
+            ),
+            resynced=resynced,
+            simulated=True,
+        )
+
     # Let the scenario run out its clock so agents that stopped answering are visibly
     # stale in the final registry, the way an operator would see them.
     registry.advance(max(scenario.duration_s - registry.now_s, 0))
@@ -647,12 +763,18 @@ def run_scenario(
         min_frequency_hz=round(min_hz, 3),
         extra_demand_kw=round(extra_demand_kw, 2),
         islanded_agents=len(islanded),
+        resynced_agents=resynced,
         conflicting_cards=len(conflicting),
         backup_violations=backup_violations,
+        self_deployed_kw=self_deployed_kw,
         response_cycles=(
-            None
-            if dip_at_s is None or first_commit_s is None
-            else int(round((first_commit_s - dip_at_s) * CYCLES_PER_SECOND))
+            response_cycles
+            if response_cycles is not None
+            else (
+                None
+                if dip_at_s is None or first_commit_s is None
+                else int(round((first_commit_s - dip_at_s) * CYCLES_PER_SECOND))
+            )
         ),
     )
     bus.send(

@@ -258,17 +258,21 @@ lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, so **every
 demo is still approved by a person — the auto-approval path is exercised by tests, not by the
 demo. Latency is the recorded live round trip (median 326 ms); the rules answer in microseconds.
 
-### Held-out chaos drills (nothing was tuned for these)
+### Held-out chaos drills (written after the rules were frozen)
 
 The five scenarios above are the ones the detection rules and the Jev questions were written
 against. These four drills were written afterwards, from published accounts of how real grids
 fail, and scored **once** with no change to a detection rule, the recovery logic or a Jev
-question. **Every frequency, outage, load-ramp and islanding value here is simulated** — this is
+question. Both results are below: the frozen baseline first, then the re-scored run after the
+logic was changed in response to it. **Every frequency, outage, load-ramp and islanding value
+here is simulated** — this is
 a simulator, not a reproduction of any real event and not a grid-control system.
 
 ```bash
 python -m gridsignal.drills   # rules-only vs Jev on scenarios/holdout/*.yaml
 ```
+
+#### Baseline: scored once, before anything was changed
 
 | Decision layer | Root-cause accuracy on held-out drills |
 | --- | --- |
@@ -282,6 +286,46 @@ python -m gridsignal.drills   # rules-only vs Jev on scenarios/holdout/*.yaml
 | `large_load_squeeze` | grid_event | device_fault ✗ | spoofed_agent ✗ | 965 of 1,207 kW (80%) | 120s | 0 | n/a |
 | `neighborhood_island` | gateway_outage | device_fault ✗ | grid_event ✗ | 768 of 1,010 kW (76%) | 75s | 0 | n/a |
 
+#### After tuning on held-out
+
+The baseline above is what the system scored before it was touched. Three changes were then made
+in response to it, and the drills re-scored. These numbers are **after tuning on held-out**, so
+read them as a repair of known weaknesses, not as evidence of generalisation:
+
+1. **A local rule on every card.** Each battery's signed card now carries `ffr_kw` (a quarter of
+   its spare power, always above the homeowner reserve) and `ffr_trigger_hz`. On a simulated
+   crossing of 59.85 Hz each battery deploys that pledge itself, with no coordinator in the
+   loop, at an assumed 12-cycle local latency. The deployed kW is booked as a commitment and the
+   card is republished, so the auction cannot sell it twice; when the coordinator returns it is
+   told what was already deployed and auctions only the remainder.
+2. **Grid-side conditions in the state.** The snapshot now carries simulated frequency, the kW
+   attributable to grid-side events versus component failures, islanded homes and self-deployed
+   kW — but only when a drill has them, so a plain component failure sends Jev exactly the state
+   it always did and the tuned-five results are unchanged.
+3. **Two rules that read them.** If grid-side events explain at least half of the missing kW,
+   the cause is the grid; if healthy homes are islanded together, the cause is distribution, not
+   the batteries.
+
+| Decision layer | Root-cause accuracy (after tuning on held-out) |
+| --- | --- |
+| rules-only | 4/4 |
+| Jev | 1/4 |
+
+| Drill | Injected root cause | rules-only | Jev | kW recovered | Time to recover | Backup reserve violations | Self-deployed locally | Response (cycles) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cascade_spain_style` | grid_event | grid_event ✓ | gateway_outage ✗ | 909 of 1,099 kW (83%) | 195s | 0 | 0 kW | n/a |
+| `frequency_dip_coordinator_down` | grid_event | grid_event ✓ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 238 kW | 12 (within 15) |
+| `large_load_squeeze` | grid_event | grid_event ✓ | spoofed_agent ✗ | 965 of 1,207 kW (80%) | 120s | 0 | 0 kW | n/a |
+| `neighborhood_island` | gateway_outage | gateway_outage ✓ | device_fault ✗ | 768 of 1,010 kW (76%) | 75s | 0 | 0 kW | n/a |
+
+What moved and what did not: the rules went 0/4 → 4/4, and the frequency drill now answers in
+**12 simulated cycles** with 238 kW deployed from the cards themselves before the coordinator is
+back, then covers the remaining 362 kW at 225 s once it is — the same 600 kW, counted once.
+Jev stayed at 1/4 on the re-recorded answers, and its per-drill answers moved around
+(`neighborhood_island` went from `grid_event` to `device_fault`), so the fair reading is that
+the deterministic rules, not the model, are what improved. Backup reserve violations stayed at
+**zero** in every drill, before and after, and nothing was auto-approved either way.
+
 What each drill injects, and what the numbers say:
 
 - **`cascade_spain_style`** — a simulated generation trip that drops frequency to 59.88 Hz, then
@@ -290,31 +334,37 @@ What each drill injects, and what the numbers say:
   28 April 2025 Iberian blackout describes — many interacting factors rather than one cause
   ([entsoe.eu](https://www.entsoe.eu/publications/blackout/28-april-2025-iberian-blackout/)).
   That report is context for the *shape* of the drill only; nothing here reproduces that event,
-  its causes or its data. Both layers call it a gateway outage, which is the loudest signal in
-  the snapshot and not the thing that started it.
+  its causes or its data. At baseline both layers called it a gateway outage — the loudest
+  signal in the snapshot, not the thing that started it; after tuning the rules weigh the
+  900 kW that went missing on the grid side against the 199 kW of gateway losses and name the
+  grid. Jev still says gateway outage.
 - **`frequency_dip_coordinator_down`** — a simulated under-frequency event crossing 59.85 Hz
   while the coordinator is unreachable for 180 s. The 59.85 Hz trigger and the 15-cycle response
   window are borrowed as *concepts* from ERCOT's Fast Frequency Response description
   ([ERCOT Real-Time Market Operations, Sep 2025](https://www.ercot.com/files/docs/2025/09/22/2026_09-Real-Time-Market-Operations.pdf));
   no ERCOT frequency data is used and nothing is dispatched. The baseline result is the honest
-  one: the fleet covers the full 600 kW gap but only **after the coordinator returns**, at
-  ~12,900 simulated cycles against a 15-cycle concept. There is no local self-deploy rule on the
-  cards yet, so this drill measures the gap rather than closing it.
+  one: the fleet covered the full 600 kW gap but only **after the coordinator returned**, at
+  ~12,900 simulated cycles against a 15-cycle concept, because the cards carried no local rule.
+  After tuning on held-out they do, and the first 238 kW lands in 12 simulated cycles.
 - **`neighborhood_island`** — a simulated distribution outage where 200 LZ_AUSTIN homes island on
   their own batteries. The islanded homes are never bid or awarded, so the mesh protects
   homeowner backup over export revenue: **zero reserve violations**, 76% of the gap covered by
-  the rest of the fleet and the remainder escalated.
+  the rest of the fleet and the remainder escalated. Ten simulated minutes later the feeder is
+  restored and those homes resync and republish their cards; nothing has to be unwound, because
+  their stored energy was never sold.
 - **`large_load_squeeze`** — a simulated 1,200 kW data-center-style ramp on top of a device
   fault, while three validly signed agents publish conflicting inflated capacity. Jev calls it a
-  spoofed agent; the HMAC check does not, because the cards really are signed. 80% covered,
+  spoofed agent; the HMAC check does not, because the cards really are signed, and after tuning
+  the rules call it a grid event because the ramp is 99% of the missing kW. 80% covered,
   escalated, no reserve spent.
 
-Across all four drills the fleet spent **zero** homeowner backup reserve and auto-approved
-**nothing** — every award went through the human gate. That is the part that held. Root-cause
-naming did not: 0/4 for the rules, 1/4 for Jev. Both layers reach for the injection they were
+Across all four drills, in both the baseline and the tuned run, the fleet spent **zero**
+homeowner backup reserve and auto-approved **nothing** — every award went through the human
+gate. That is the part that held from the start. Root-cause naming did not: 0/4 for the rules,
+1/4 for Jev at baseline. Both layers reach for the injection they were
 shown before rather than "the grid itself moved", which is exactly what a held-out set is for.
-These are baseline numbers, scored before any change; anything re-scored after changing logic is
-labelled *after tuning on held-out*.
+Those are the baseline numbers, scored before any change. The *after tuning on held-out* table
+above shows what changed once the logic was repaired, and is labelled as such throughout.
 
 **Inspiration and attribution.** The agent-card, registry and agent-town-scenario ideas are
 inspired by MIT Project NANDA — [nandatown.projectnanda.org](https://nandatown.projectnanda.org)

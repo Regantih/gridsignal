@@ -39,6 +39,7 @@ class DrillRow:
     covered_pct: float
     time_to_recover_s: int
     backup_violations: int
+    self_deployed_kw: float
     response_cycles: int | None
     min_frequency_hz: float
     islanded_agents: int
@@ -88,6 +89,7 @@ def _row(drill: str, mode: str, metrics: RunMetrics) -> DrillRow:
         covered_pct=metrics.covered_pct,
         time_to_recover_s=metrics.time_to_cover_s,
         backup_violations=metrics.backup_violations,
+        self_deployed_kw=metrics.self_deployed_kw,
         response_cycles=metrics.response_cycles,
         min_frequency_hz=metrics.min_frequency_hz,
         islanded_agents=metrics.islanded_agents,
@@ -136,8 +138,9 @@ def markdown(report: DrillReport) -> str:
         f"| Jev | {correct_jev}/{total} |",
         "",
         "| Drill | Injected root cause | rules-only | Jev | kW recovered | "
-        "Time to recover | Backup reserve violations | Response (cycles) |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "Time to recover | Backup reserve violations | Self-deployed locally | "
+        "Response (cycles) |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for drill in sorted({r.drill for r in report.rows}):
         by_mode = {r.mode: r for r in report.rows if r.drill == drill}
@@ -150,7 +153,8 @@ def markdown(report: DrillReport) -> str:
             f"| {drill} | {jev_row.truth} | {cells[0]} | {cells[1]} | "
             f"{jev_row.covered_kw:,.0f} of {jev_row.lost_kw:,.0f} kW "
             f"({jev_row.covered_pct:.0f}%) | {jev_row.time_to_recover_s}s | "
-            f"{jev_row.backup_violations} | {_cycles(jev_row)} |"
+            f"{jev_row.backup_violations} | "
+            f"{jev_row.self_deployed_kw:,.0f} kW | {_cycles(jev_row)} |"
         )
     return "\n".join(lines)
 

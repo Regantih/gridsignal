@@ -23,9 +23,25 @@ def _number(section: Mapping[str, object], key: str, default: float = 0.0) -> fl
     return float(value) if isinstance(value, (int, float)) else default
 
 
+#: Share of the lost kW that has to come from the grid side before the grid, rather than
+#: any component, is named as the cause.
+GRID_SHARE = 0.5
+
+
 def root_cause(state: Mapping[str, object]) -> str:
     """Rule order matters: a group outage explains more than the agents inside it."""
     fleet = _section(state, "fleet")
+    grid = _section(state, "grid_conditions")
+    lost = _number(_section(state, "grid_event"), "kw_lost")
+    grid_side = _number(grid, "kw_lost_to_grid_side_events")
+    if lost > 0 and grid_side / lost >= GRID_SHARE:
+        # Frequency moved or demand ramped, and that is most of the missing kW: the
+        # components that also failed are not what the fleet is short because of.
+        return "grid_event"
+    if _number(grid, "homes_islanded_on_their_own_battery"):
+        # Healthy homes cut off from the network together is a distribution failure,
+        # whatever each battery reports about itself.
+        return "gateway_outage"
     offline = int(_number(fleet, "offline_agents"))
     zones = fleet.get("offline_zones")
     zone_count = len(zones) if isinstance(zones, list) else 0

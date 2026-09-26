@@ -82,9 +82,24 @@ class IncidentSnapshot:
     plan_min_spare_kwh: float
     backup_reserve_kwh: float
     suspects: tuple[Suspect, ...] = ()
+    # Simulated grid-side conditions. Only sent when the drill actually has them, so a
+    # plain component failure sends exactly the state it always did.
+    frequency_hz: float = 60.0
+    grid_side_kw: float = 0.0
+    islanded_agents: int = 0
+    self_deployed_kw: float = 0.0
+
+    @property
+    def has_grid_conditions(self) -> bool:
+        return bool(
+            self.frequency_hz != 60.0
+            or self.grid_side_kw
+            or self.islanded_agents
+            or self.self_deployed_kw
+        )
 
     def as_state(self) -> dict[str, object]:
-        return {
+        state: dict[str, object] = {
             "simulation": True,
             "note": "Simulated home-battery fleet. No real devices, utilities or market systems.",
             "scenario": self.scenario,
@@ -117,6 +132,18 @@ class IncidentSnapshot:
             },
             "suspect_agents": [s.as_state() for s in self.suspects],
         }
+        if self.has_grid_conditions:
+            state["grid_conditions"] = {
+                "simulated": True,
+                "frequency_hz": round(self.frequency_hz, 3),
+                "kw_lost_to_grid_side_events": round(self.grid_side_kw, 2),
+                "kw_lost_to_component_failures": round(
+                    max(self.lost_kw - self.grid_side_kw, 0.0), 2
+                ),
+                "homes_islanded_on_their_own_battery": self.islanded_agents,
+                "kw_self_deployed_under_local_card_rule": round(self.self_deployed_kw, 2),
+            }
+        return state
 
 
 def root_cause_question() -> Question:

@@ -267,6 +267,21 @@ def test_rules_read_the_injection_from_the_state() -> None:
     )
 
 
+def test_rules_name_the_grid_when_most_of_the_missing_kw_is_grid_side() -> None:
+    """After tuning on held-out: grid conditions outrank the components that also failed."""
+    grid_led = snapshot(lost_kw=1000.0, grid_side_kw=900.0, frequency_hz=59.8)
+    component_led = snapshot(lost_kw=1000.0, grid_side_kw=100.0, frequency_hz=59.8)
+
+    assert rules.root_cause(grid_led.as_state()) == "grid_event"
+    assert rules.root_cause(component_led.as_state()) == "device_fault"
+    assert rules.root_cause(snapshot(islanded_agents=12).as_state()) == "gateway_outage"
+
+
+def test_grid_conditions_are_only_sent_when_the_drill_has_them() -> None:
+    assert "grid_conditions" not in snapshot().as_state()
+    assert "grid_conditions" in snapshot(frequency_hz=59.8).as_state()
+
+
 def test_rules_answers_never_clear_the_confidence_gate() -> None:
     snap = suspect_snapshot()
     answers = rules.answers(snap.as_state(), incident_questions(snap))

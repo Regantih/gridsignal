@@ -1197,7 +1197,7 @@ def render_jev_eval() -> None:
 
 def render_holdout_drills() -> None:
     """The same two decision layers on drills written after the rules were frozen."""
-    st.subheader("Held-out drills, nothing was tuned for these")
+    st.subheader("Held-out drills, after tuning on held-out")
     report = drill_report()
     rules_correct, total = report.accuracy(drills.RULES)
     jev_correct, _ = report.accuracy(drills.JEV)
@@ -1217,6 +1217,7 @@ def render_holdout_drills() -> None:
                 "kW recovered": f"{r.covered_kw:,.0f} of {r.lost_kw:,.0f} ({r.covered_pct:.0f}%)",
                 "time to recover": f"{r.time_to_recover_s}s",
                 "backup reserve violations": r.backup_violations,
+                "self-deployed locally (kW)": f"{r.self_deployed_kw:,.0f}",
                 "response (cycles)": (
                     "n/a" if r.response_cycles is None else f"{r.response_cycles:,}"
                 ),
@@ -1228,13 +1229,16 @@ def render_holdout_drills() -> None:
     st.dataframe(detail, hide_index=True, use_container_width=True)
     st.caption(
         "Four drills in `scenarios/holdout/` written after the detection rules and the "
-        "Jev questions were frozen, scored once with neither changed: a Spain-style "
+        "Jev questions were frozen, and scored once before anything changed: a Spain-style "
         "cascade, an under-frequency event with the coordinator unreachable, a "
         "neighbourhood islanding on its own batteries, and a large-load ramp with "
-        "conflicting bids. All frequency, outage and load values are simulated. The "
-        "cycle column is measured against the 15-cycle ERCOT Fast Frequency Response "
-        "concept; the baseline run misses it by a wide margin, which is the point of "
-        "scoring before tuning."
+        "conflicting bids. All frequency, outage and load values are simulated. These "
+        "numbers are **after tuning on held-out**: the frozen baseline scored "
+        "rules-only 0/4 and Jev 1/4, and the frequency drill answered in ~12,900 "
+        "cycles because it waited for the coordinator. Batteries now act on the rule "
+        "signed into their own card, so the cycle column is measured against the "
+        "15-cycle ERCOT Fast Frequency Response concept. Both baseline and tuned "
+        "tables are in the README."
     )
 
 

@@ -119,8 +119,15 @@ injection they were trained on instead of "the grid moved". What did hold is the
 property: zero homeowner backup-reserve violations, zero auto-approvals, and 76–100% of each
 gap covered with the remainder escalated. The frequency drill covers its whole 600 kW gap but
 only once the coordinator returns, ~12,900 simulated cycles against the 15-cycle Fast Frequency
-Response concept, because the cards carry no local self-deploy rule yet. Those numbers are the
-before picture; any re-score after changing logic is labelled *after tuning on held-out*.
+Response concept, because the cards carried no local self-deploy rule.
+
+**After tuning on held-out**, with the baseline above kept as published: every card now carries
+a pre-agreed `ffr_kw` pledge and a 59.85 Hz trigger, so batteries deploy 238 kW by themselves in
+12 simulated cycles and the coordinator, when it returns, is told what was already deployed and
+auctions only the remainder — the same 600 kW, counted once. Two rules now read the simulated
+grid conditions (grid-side share of the missing kW, and homes islanded together), which takes
+rules-only from 0/4 to 4/4. Jev stayed at 1/4. Backup-reserve violations remained zero
+throughout, and the tuned-five results did not move.
 
 ## Safety boundaries
 
@@ -178,7 +185,7 @@ runtime 4:55 (the Spain-style cascade at 2:45 is the 30-second beat). Start on *
 | **1:00** | Control Room → approval | Click **Approve Recovery Plan**. "A named person decides." Coverage snaps to 100%, BAT-042 is quarantined, dollars at risk become **dollars recovered**, and the audit timeline reads detection → recommendation → human approval → reassignment → recovery, append-only. |
 | **1:30** | Agent Mesh → `zone_outage` | "Same orchestration, run as a mesh instead of a controller." Registry table: every battery, gateway and zone holds an HMAC-signed capability card — verified, stale, or **rejected**, because `lying_agent` edits its card after signing. Message log: a call for capacity, bids priced on wear plus the homeowner's backup reserve, cheapest covering award. |
 | **2:10** | Agent Mesh → Jev + escalation | "Code acts, Jev decides, humans approve when Jev is unsure." Show Jev's root cause, confidence, probabilities and latency in the log. "Confidence never cleared 0.9 on any bundled scenario, so every award here is human-approved — and the rules fallback reports zero confidence, so it can never auto-approve." Switch to `fleet_wide_scarcity`: partial cover committed, remainder escalated to a person. |
-| **2:45** | Agent Mesh → held-out drills | "Then we wrote four drills *after* freezing the rules and the prompts, from how real grids actually fail, and scored them once." Open `holdout/cascade_spain_style`: a simulated generation trip drops frequency, then gateways fail, then a stale-telemetry wave — in waves, so the faults interact, the shape ENTSO-E describes for the April 2025 Iberian blackout. "Both layers blamed the gateways. Rules 0 of 4, Jev 1 of 4 — we are reporting that as it came out. What held is the part that matters: zero homeowner backup violations, zero auto-approvals, 76–100% of every gap covered, and the frequency drill covered its 600 kW only after the coordinator came back — ~12,900 cycles against a 15-cycle target. All of it simulated." |
+| **2:45** | Agent Mesh → held-out drills | "Then we wrote four drills *after* freezing the rules and the prompts, from how real grids actually fail, and scored them once." Open `holdout/cascade_spain_style`: a simulated generation trip drops frequency, then gateways fail, then a stale-telemetry wave — in waves, so the faults interact, the shape ENTSO-E describes for the April 2025 Iberian blackout. "Both layers blamed the gateways. Rules 0 of 4, Jev 1 of 4 — published as it came out. What held is the part that matters: zero homeowner backup violations, zero auto-approvals, 76–100% of every gap covered. Then we fixed it and said so: the cards now carry a local 59.85 Hz rule, so the fleet self-deploys 238 kW in 12 simulated cycles without the coordinator and reconciles without double-counting. Rules go 4 of 4, Jev stays at 1 of 4 — the rules improved, not the model. All of it simulated." |
 | **3:15** | Grid Signals → insight card | "Open Grid Data: what the public data hides. Across the ERCOT scarcity days bundled here, only **47%** of a battery's capturable value was visible in the day-ahead curve. The $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. All 19 intervals that printed 5x their day-ahead hour fell on scarcity days; the 12 ordinary days never diverged." |
 | **3:40** | Grid Signals → held-out days | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen." |
 | **4:00** | Member App | "The same event from the homeowner's side: hours of whole-home backup still held, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |

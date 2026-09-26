@@ -8,7 +8,12 @@ import pytest
 from gridsignal import drills
 from gridsignal.mesh.messages import MessageKind
 from gridsignal.mesh.scenarios import HOLDOUT_DIR, Injection, load_scenario
-from gridsignal.simulate import FFR_TRIGGER_HZ, NOMINAL_HZ, run_scenario
+from gridsignal.simulate import (
+    FFR_DEADLINE_CYCLES,
+    FFR_TRIGGER_HZ,
+    NOMINAL_HZ,
+    run_scenario,
+)
 
 DRILLS = (
     "cascade_spain_style",
@@ -100,6 +105,59 @@ def test_conflicting_cards_are_signed_yet_inconsistent() -> None:
     assert len(conflicts) == 3
     for message in conflicts:
         assert result.registry.status(message.sender).value == "verified"
+
+
+def test_batteries_self_deploy_from_their_own_cards_inside_the_15_cycle_window() -> None:
+    """After tuning on held-out: the local card rule acts without the coordinator."""
+    scenario = load_scenario(HOLDOUT_DIR / "frequency_dip_coordinator_down.yaml")
+
+    result = run_scenario(scenario)
+    metrics = result.metrics
+
+    assert metrics.self_deployed_kw > 0
+    assert metrics.response_cycles is not None and metrics.response_cycles <= FFR_DEADLINE_CYCLES
+    assert metrics.within_ffr_deadline
+    deploys = result.bus.of_kind(MessageKind.SELF_DEPLOY)
+    assert len(deploys) == 1
+    # The fleet acted while the coordinator was still unreachable.
+    calls = result.bus.of_kind(MessageKind.CALL_FOR_CAPACITY)
+    assert deploys[0].t_s < min(m.t_s for m in calls)
+
+
+def test_self_deployed_kw_is_reconciled_once_the_coordinator_returns() -> None:
+    scenario = load_scenario(HOLDOUT_DIR / "frequency_dip_coordinator_down.yaml")
+
+    result = run_scenario(scenario)
+    metrics = result.metrics
+
+    reconciles = result.bus.of_kind(MessageKind.RECONCILE)
+    assert len(reconciles) == 1
+    remaining = float(reconciles[0].payload["remaining_kw"])
+    assert remaining == pytest.approx(metrics.lost_kw - metrics.self_deployed_kw, abs=0.05)
+    # Locally deployed kW plus awarded kW never exceeds what was lost: no double count.
+    awarded = sum(a.kw for s in result.awards for a in s.awards)
+    assert metrics.self_deployed_kw + awarded <= metrics.lost_kw + 0.05
+    assert metrics.covered_kw <= metrics.lost_kw + 0.05
+
+
+def test_islanded_homes_resync_when_the_feeder_is_restored() -> None:
+    scenario = load_scenario(HOLDOUT_DIR / "neighborhood_island.yaml")
+
+    result = run_scenario(scenario)
+
+    assert result.metrics.resynced_agents == result.metrics.islanded_agents > 0
+    assert len(result.bus.of_kind(MessageKind.RECONCILE)) == 1
+
+
+def test_a_plain_component_failure_still_sends_jev_the_state_it_always_did() -> None:
+    """Grid conditions are only added to the state when a drill actually has them."""
+    from gridsignal.mesh.scenarios import SCENARIO_DIR
+
+    result = run_scenario(load_scenario(SCENARIO_DIR / "single_device.yaml"))
+
+    assert result.metrics.self_deployed_kw == 0.0
+    assert result.metrics.min_frequency_hz == NOMINAL_HZ
+    assert not result.bus.of_kind(MessageKind.SELF_DEPLOY)
 
 
 @pytest.mark.parametrize("name", DRILLS)

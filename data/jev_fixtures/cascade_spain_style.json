@@ -1,5 +1,82 @@
 {
   "entries": {
+    "a4850ca1341191a1b4000d32": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.49,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.76,
+            "1": 0.13,
+            "2": 0.11
+          },
+          "question_id": "backup_risk",
+          "score": 0.34,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "gateway_outage",
+          "confidence": 0.94,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.01,
+            "gateway_outage": 0.95,
+            "grid_event": 0.01,
+            "spoofed_agent": 0.02,
+            "telemetry_lag": 0.01
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-037": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "trust_BAT-037",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-047": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "trust_BAT-047",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-071": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "trust_BAT-071",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 457.2,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-037",
+        "trust_BAT-047",
+        "trust_BAT-071"
+      ]
+    },
     "b52d2d435e7acc7b7659faa1": {
       "answers": {
         "backup_risk": {
@@ -80,7 +157,7 @@
   },
   "model": "typesafe-ai/jev",
   "note": "Recorded Jev answers for simulated fleet state; replayed when no API key is set.",
-  "recorded_at": "2026-09-26T03:16:35+00:00",
+  "recorded_at": "2026-09-26T03:22:00+00:00",
   "scenario": "cascade_spain_style",
   "transport": "vercel-ai-gateway"
 }
