@@ -6,6 +6,13 @@ it is information the operator genuinely has, not lookahead. The real-time spike
 detector then only has to answer a narrower question — has today diverged enough from
 the day-ahead plan to be worth deviating from it?
 
+That second question must be answered *before* the interval settles. A real-time price
+is only published once its five minutes are over, so an interval's own print cannot
+inform the order that would have had to be placed to capture it. Every deviation here
+is therefore decided from the day-ahead curve plus the *previous* interval's print.
+The original same-interval rule is kept behind ``same_interval_price=True`` so the
+published number can still be reproduced, labelled as first scored.
+
 Nothing here dispatches a battery; the output is an advisory plan.
 """
 
@@ -84,8 +91,14 @@ def deviate_from_plan(
     deviation_multiple: float = DEVIATION_MULTIPLE,
     charge_ceiling: float = CHARGE_CEILING,
     export_floor: float = EXPORT_FLOOR,
+    same_interval_price: bool = False,
 ) -> pd.DataFrame:
     """Follow the day-ahead plan, overriding it only where real time has diverged.
+
+    The divergence is measured on the last settled interval, not the one being decided:
+    ``ratio`` is the previous print over the previous day-ahead hour, and the first
+    interval of the day simply follows the plan. Pass ``same_interval_price=True`` to
+    restore the original rule, which read the interval's own print before it settled.
 
     Three overrides, in order of precedence:
 
@@ -109,7 +122,14 @@ def deviate_from_plan(
     # A zero or negative day-ahead print would make the divergence ratio meaningless.
     expected = pd.Series(aligned["dam_mwh"].to_numpy(), index=frame.index).clip(lower=0.01)
     spp = frame["spp"].astype(float)
-    ratio = spp / expected
+    if same_interval_price:
+        observed, observed_dam = spp, expected
+    else:
+        # Known before the interval settles: the last published print against the
+        # day-ahead hour it belonged to. Nothing to compare at the first interval, so
+        # the plan stands.
+        observed, observed_dam = spp.shift(1), expected.shift(1)
+    ratio = (observed / observed_dam).fillna(1.0)
 
     scarcity = (ratio >= deviation_multiple) & (prob >= spike_threshold)
     hot_charge = (planned == Signal.CHARGE.value) & (ratio >= charge_ceiling)
@@ -124,11 +144,19 @@ def deviate_from_plan(
 
     frame["spike_prob"] = prob.round(4)
     frame["dam_mwh"] = expected.round(2)
+    frame["observed_mwh"] = observed.fillna(expected).round(2)
     frame["planned"] = planned
     frame["signal"] = action
     frame["reason"] = [
         _plan_reason(a, p, price, exp, dev)
-        for a, p, price, exp, dev in zip(action, planned, spp, expected, scarcity, strict=True)
+        for a, p, price, exp, dev in zip(
+            action,
+            planned,
+            observed.fillna(expected),
+            observed_dam.fillna(expected),
+            scarcity,
+            strict=True,
+        )
     ]
     return frame
 
@@ -137,23 +165,24 @@ def signals_for(
     prices: pd.DataFrame,
     spike_prob: pd.Series,
     dam_curve: pd.DataFrame | None,
+    same_interval_price: bool = False,
 ) -> pd.DataFrame:
     """DAM-anchored signals when a day-ahead curve exists, real-time-only when it does not."""
     if dam_curve is None or dam_curve.empty:
         return make_signals(prices, spike_prob)
-    return deviate_from_plan(prices, spike_prob, dam_curve)
+    return deviate_from_plan(prices, spike_prob, dam_curve, same_interval_price=same_interval_price)
 
 
 def _plan_reason(action: str, planned: str, price: float, expected: float, deviated: bool) -> str:
     if deviated:
         return (
-            f"real time ${price:,.2f}/MWh is {price / expected:,.1f}x the "
-            f"${expected:,.2f} day-ahead print: sell into the spike"
+            f"the last settled print, ${price:,.2f}/MWh, is {price / expected:,.1f}x its "
+            f"${expected:,.2f} day-ahead hour: sell into the spike"
         )
     if action != planned:
         return (
-            f"day-ahead planned {planned}, but real time printed ${price:,.2f}/MWh "
-            f"against ${expected:,.2f} day-ahead: wait"
+            f"day-ahead planned {planned}, but the last settled print was "
+            f"${price:,.2f}/MWh against ${expected:,.2f} day-ahead: wait"
         )
     if action == Signal.EXPORT.value:
         return f"day-ahead export window, ${price:,.2f}/MWh real time"

@@ -187,6 +187,12 @@ def holdout_grid_only() -> list[holdout.DayResult]:
     return holdout.evaluate(serve_home=False)
 
 
+@st.cache_data(show_spinner=False)
+def holdout_as_first_scored() -> list[holdout.DayResult]:
+    """The original scoring, which let an interval's own settled print decide it."""
+    return holdout.evaluate(same_interval_price=True)
+
+
 def engine() -> ControlRoomEngine:
     """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
     key = (
@@ -972,7 +978,36 @@ def render_holdout() -> None:
             "came out."
         )
     )
+    render_lookahead_correction(results)
     render_home_first_cost(results)
+
+
+def render_lookahead_correction(results: list[holdout.DayResult]) -> None:
+    """The old scoring read a price that had not settled yet; both results are shown."""
+    corrected = holdout.summarize(results)
+    as_first = holdout.summarize(holdout_as_first_scored())
+    cols = st.columns(2)
+    cols[0].metric(
+        "Corrected: day-ahead and last settled print only",
+        f"${corrected.mean_uplift_usd:,.2f}",
+        delta=f"mean uplift, wins {corrected.days_won}/{corrected.days}",
+        delta_color="off",
+    )
+    cols[1].metric(
+        "As first scored (same-interval price)",
+        f"${as_first.mean_uplift_usd:,.2f}",
+        delta=f"mean uplift, wins {as_first.days_won}/{as_first.days}",
+        delta_color="off",
+    )
+    st.caption(
+        usd(
+            "A real-time price is published only after its interval is over, so the "
+            "policy now decides each interval from the day-ahead curve and the last "
+            "settled print. The table above is the corrected run; the figure on the "
+            "right is the number as first scored, kept so the change is visible. "
+            "Reproduce both with python -m gridsignal.holdout."
+        )
+    )
 
 
 def render_home_first_cost(results: list[holdout.DayResult]) -> None:

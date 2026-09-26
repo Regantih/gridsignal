@@ -207,7 +207,7 @@ is dispatched.
 
 The headline shows two numbers side by side and never the first one alone: the scenario day at
 the selected fleet scale ($65,500/day across 10,000 batteries on the 2023-09-06 scarcity day) and
-the **held-out record** — mean +$0.62, median +$0.10 per battery per day, beating the naive
+the **held-out record** — mean +$0.44, median +$0.26 per battery per day, beating the naive
 schedule on 6 of 7 days it was never tuned on (see
 [Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
 representative day in the set; the held-out average is the honest claim.
@@ -778,16 +778,40 @@ touched to produce the second column.
 | Date | Peak $/MWh | Regime | Grid-only $ | Grid-only uplift | Home-first $ | Member savings $ | Home-first uplift |
 |---|---:|---|---:|---:|---:|---:|---:|
 | 2023-04-06 | 86.13 | ordinary | 0.21 | **+0.02** | 0.13 | 0.08 | **+0.19** |
-| 2024-05-08 | 4,981.40 | scarcity | 17.84 | **+1.71** | −0.20 | 0.63 | **+0.00** |
+| 2024-05-08 | 4,981.40 | scarcity | 13.86 | **−2.27** | −0.20 | 0.63 | **+0.00** |
 | 2024-12-20 | 73.13 | ordinary | 0.28 | **+0.01** | 0.02 | 0.26 | **+0.36** |
-| 2025-04-07 | 3,860.63 | scarcity | 1.20 | **+2.17** | 0.32 | 0.47 | **+1.86** |
-| 2025-05-03 | 76.33 | ordinary | 0.62 | **+0.61** | −0.06 | 0.32 | **+0.34** |
-| 2026-09-23 | 97.76 | ordinary | 0.19 | **−0.27** | −0.43 | 0.78 | **+0.11** |
-| 2026-09-24 | 108.74 | ordinary | 0.67 | **+0.10** | −0.14 | 0.84 | **+0.26** |
+| 2025-04-07 | 3,860.63 | scarcity | 1.23 | **+2.20** | 0.31 | 0.50 | **+1.85** |
+| 2025-05-03 | 76.33 | ordinary | 0.58 | **+0.57** | −0.09 | 0.32 | **+0.31** |
+| 2026-09-23 | 97.76 | ordinary | 0.33 | **−0.13** | −0.44 | 0.76 | **+0.10** |
+| 2026-09-24 | 108.74 | ordinary | 0.71 | **+0.14** | −0.14 | 0.84 | **+0.26** |
 
-**Grid-only: 6 of 7 days beat naive**, mean +$0.62, median +$0.10, worst −$0.27, best +$2.17.
-**Home-first: 6 of 7**, mean +$0.45, median +$0.26, worst $0.00, best +$1.86, with $0.48 a day of
+**Grid-only: 5 of 7 days beat naive**, mean +$0.08, median +$0.02, worst −$2.27, best +$2.20.
+**Home-first: 6 of 7**, mean +$0.44, median +$0.26, worst $0.00, best +$1.85, with $0.48 a day of
 member savings on top.
+
+#### Corrected for same-interval lookahead
+
+An ERCOT real-time price is published only once its interval is over, so the original deviation
+rule — which compared an interval's *own* settled print against the day-ahead curve — was reading
+a number the operator could not have had when the order was due. Every figure above is the
+corrected run: each interval is decided from the day-ahead curve plus the **last settled print**
+only (`same_interval_price=False`, the default in
+[`src/gridsignal/dam.py`](src/gridsignal/dam.py)). Both runs print side by side from one command,
+`python -m gridsignal.holdout`:
+
+| Scoring | Days won | Mean $ | Median $ | Worst $ |
+|---|---|---:|---:|---:|
+| Corrected (day-ahead + last settled print), home-first | 6/7 | +0.44 | +0.26 | 0.00 |
+| As first scored (same-interval price), home-first | 6/7 | +0.45 | +0.26 | 0.00 |
+| Corrected, grid-only | 5/7 | +0.08 | +0.02 | −2.27 |
+| As first scored (same-interval price), grid-only | 6/7 | +0.62 | +0.10 | −0.27 |
+
+Home-first barely moves, because the house absorbs the energy either way. The grid-only battery
+does not: it loses most of its edge and 2024-05-08 flips from +$1.71 to **−$2.27**, because a
+causal policy reacts to the $4,981/MWh spike one interval late while the naive schedule is
+already selling into it. That is the honest size of the effect, and it is why the corrected
+number is now the one quoted everywhere. Regression test:
+`tests/test_dam.py::test_an_intervals_own_print_cannot_change_its_own_decision`.
 
 **Home-first dispatch costs export revenue, and the honest place to see it is 2024-05-08.** The
 grid-only battery earns $17.84 on that scarcity day; the home-first battery earns −$0.20 of export
@@ -848,9 +872,10 @@ real Base Power device or fleet.
   not metered data, so the export split and member savings move with that assumption.
 - The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in
   the simulator: no partner utility, installer or member is represented, and nothing is dispatched.
-- **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive, but the
-  median day is +$0.10 and most of the mean comes from two scarcity days. Day-ahead anchoring
-  fixed the previous generalisation failure; it did not turn this into a revenue product.
+- **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive home-first,
+  but the median day is +$0.26 and the same policy run grid-only wins only 5 of 7 at +$0.08 a day
+  once same-interval lookahead is removed. Day-ahead anchoring fixed the previous generalisation
+  failure; it did not turn this into a revenue product.
 - The congestion read is 15 days of settlement prices: the zone-timed uplift is a re-timing
   study on one battery, and the placement sketch's saturation curve is an assumed linear
   relationship, not an estimated one. Neither is a forecast or a siting recommendation.

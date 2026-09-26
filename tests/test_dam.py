@@ -63,17 +63,17 @@ def test_intervals_with_no_day_ahead_hour_fall_back_to_hold() -> None:
     assert list(aligned["planned"][-4:]) == [Signal.HOLD.value] * 4
 
 
-def test_a_real_time_spike_overrides_a_planned_hold() -> None:
+def test_a_real_time_spike_overrides_the_plan_on_the_interval_after_it_settles() -> None:
     prices = rtm([10.0] * 16)
     prices.loc[9, "spp"] = 4000.0
     prob = pd.Series([0.0] * 16)
-    prob[9] = 1.0
+    prob[10] = 1.0
     plan = dam.deviate_from_plan(
         prices, prob, curve([10, 10, 10, 10]), charge_hours=1, export_hours=1
     )
-    assert plan.loc[9, "planned"] == Signal.HOLD.value
-    assert plan.loc[9, "signal"] == Signal.EXPORT.value
-    assert "sell into the spike" in plan.loc[9, "reason"]
+    assert plan.loc[10, "planned"] == Signal.HOLD.value
+    assert plan.loc[10, "signal"] == Signal.EXPORT.value
+    assert "sell into the spike" in plan.loc[10, "reason"]
 
 
 def test_a_planned_charge_is_abandoned_when_real_time_runs_hot() -> None:
@@ -87,8 +87,8 @@ def test_a_planned_charge_is_abandoned_when_real_time_runs_hot() -> None:
         export_hours=2,
         charge_ceiling=2.0,
     )
-    assert plan.loc[0, "signal"] == Signal.CHARGE.value
-    assert plan.loc[1, "signal"] == Signal.HOLD.value
+    assert plan.loc[1, "signal"] == Signal.CHARGE.value
+    assert plan.loc[2, "signal"] == Signal.HOLD.value
 
 
 def test_a_weak_planned_export_waits_but_the_last_one_still_sells() -> None:
@@ -102,12 +102,14 @@ def test_a_weak_planned_export_waits_but_the_last_one_still_sells() -> None:
         export_floor=0.5,
     )
     exported = plan.index[plan["signal"] == Signal.EXPORT.value]
-    assert list(exported) == [15], "only the final planned export should survive"
+    # Interval 8 is decided on interval 7's print, which was still strong; every later
+    # export sees the collapse and waits, except the last one of the day.
+    assert list(exported) == [8, 15]
 
 
 def test_deviation_needs_both_a_spike_forecast_and_a_price_gap() -> None:
     prices = rtm([10.0] * 16)
-    prices.loc[9, "spp"] = 4000.0
+    prices.loc[8, "spp"] = 4000.0
     quiet = dam.deviate_from_plan(
         prices, pd.Series([0.0] * 16), curve([10, 10, 10, 10]), charge_hours=1, export_hours=1
     )
@@ -123,6 +125,37 @@ def test_the_plan_never_reads_a_later_interval() -> None:
     cut = 60
     partial = dam.deviate_from_plan(frame.iloc[:cut], prob.iloc[:cut], trace.dam)
     assert list(full["signal"][:cut]) == list(partial["signal"][:cut])
+
+
+def test_an_intervals_own_print_cannot_change_its_own_decision() -> None:
+    """Rewrite one interval's settled price; the decision made before it must not move."""
+    trace = load_scenario("scarcity")
+    prob = pd.Series([0.6] * len(trace.frame))
+    base = dam.deviate_from_plan(trace.frame, prob, trace.dam)
+
+    changed = 0
+    for i in (20, 40, 60, 80):
+        tampered = trace.frame.copy()
+        tampered.loc[i, "spp"] = 9_000.0
+        plan = dam.deviate_from_plan(tampered, prob, trace.dam)
+        assert plan.loc[i, "signal"] == base.loc[i, "signal"], i
+        changed += int(plan.loc[i + 1, "signal"] != base.loc[i + 1, "signal"])
+    assert changed, "a $9,000 print should still move the *next* interval's decision"
+
+
+def test_the_same_interval_rule_is_still_reachable_for_the_published_number() -> None:
+    """The old, optimistic rule survives behind a flag so it can be reported as such."""
+    trace = load_scenario("scarcity")
+    prob = pd.Series([0.6] * len(trace.frame))
+    tampered = trace.frame.copy()
+    tampered.loc[40, "spp"] = 9_000.0
+
+    lookahead = dam.deviate_from_plan(tampered, prob, trace.dam, same_interval_price=True)
+    assert lookahead.loc[40, "signal"] == Signal.EXPORT.value
+
+    corrected = holdout.summarize(holdout.evaluate())
+    as_first_scored = holdout.summarize(holdout.evaluate(same_interval_price=True))
+    assert corrected.mean_uplift_usd <= as_first_scored.mean_uplift_usd
 
 
 def test_signals_for_falls_back_to_the_real_time_policy_without_a_curve() -> None:

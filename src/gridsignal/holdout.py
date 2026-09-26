@@ -76,17 +76,24 @@ class DayResult:
 
 
 def score_day(
-    trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True
+    trace: PriceTrace,
+    kwh: float = backtest.DEFAULT_KWH,
+    serve_home: bool = True,
+    same_interval_price: bool = False,
 ) -> DayResult:
     """Run detect -> forecast -> signals -> backtest on one day, thresholds untouched.
 
     ``serve_home`` is the product's dispatch: the house is paid first out of storage
     and only the surplus is sold, so it scores lower than a grid-only battery. Pass
     ``False`` to score the same frozen policy without home load, for comparison.
+
+    ``same_interval_price`` restores the original deviation rule, which read an
+    interval's own real-time print before it settled; the default decides each interval
+    from the day-ahead curve and the last settled print only.
     """
     detections = detect.detect_spikes(trace.frame)
     prob = forecast.forecast_spike_probability(forecast.build_features(detections))
-    plan = dam.signals_for(detections, prob, trace.dam)
+    plan = dam.signals_for(detections, prob, trace.dam, same_interval_price=same_interval_price)
     summary = backtest.summarize(
         backtest.value_captured(plan, trace.frame, kwh=kwh, serve_home=serve_home)
     )
@@ -102,13 +109,27 @@ def score_day(
     )
 
 
-def evaluate(kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True) -> list[DayResult]:
-    return [score_day(trace, kwh=kwh, serve_home=serve_home) for trace in load_holdout()]
+def evaluate(
+    kwh: float = backtest.DEFAULT_KWH,
+    serve_home: bool = True,
+    same_interval_price: bool = False,
+) -> list[DayResult]:
+    return [
+        score_day(trace, kwh=kwh, serve_home=serve_home, same_interval_price=same_interval_price)
+        for trace in load_holdout()
+    ]
 
 
-def evaluate_tuning(kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True) -> list[DayResult]:
+def evaluate_tuning(
+    kwh: float = backtest.DEFAULT_KWH,
+    serve_home: bool = True,
+    same_interval_price: bool = False,
+) -> list[DayResult]:
     """Same scoring on the tuning split, for the in-sample/out-of-sample comparison."""
-    return [score_day(trace, kwh=kwh, serve_home=serve_home) for trace in load_tuning()]
+    return [
+        score_day(trace, kwh=kwh, serve_home=serve_home, same_interval_price=same_interval_price)
+        for trace in load_tuning()
+    ]
 
 
 def as_frame(results: list[DayResult]) -> pd.DataFrame:
@@ -159,24 +180,32 @@ def summarize(results: list[DayResult]) -> HoldoutSummary:
     )
 
 
+def headline(summary: HoldoutSummary) -> str:
+    return (
+        f"{summary.days_won}/{summary.days} days beat the naive schedule; "
+        f"mean ${summary.mean_uplift_usd:,.2f}, median ${summary.median_uplift_usd:,.2f}, "
+        f"worst ${summary.worst_uplift_usd:,.2f} per battery per day"
+    )
+
+
 def main() -> None:
     results = evaluate()
     if not results:
         print(f"no held-out days bundled in {HOLDOUT_DIR}")
         return
 
-    print(f"{'date':<12}{'peak $/MWh':>12}{'signal $':>10}{'naive $':>10}{'uplift $':>10}")
-    for r in results:
+    lookahead = evaluate(same_interval_price=True)
+    print(
+        f"{'date':<12}{'peak $/MWh':>12}{'signal $':>10}{'naive $':>10}"
+        f"{'uplift $':>10}{'as first scored $':>19}"
+    )
+    for r, old in zip(results, lookahead, strict=True):
         print(
             f"{r.date:<12}{r.peak_mwh:>12,.2f}{r.signal_usd:>10,.2f}"
-            f"{r.naive_usd:>10,.2f}{r.uplift_usd:>10,.2f}"
+            f"{r.naive_usd:>10,.2f}{r.uplift_usd:>10,.2f}{old.uplift_usd:>19,.2f}"
         )
-    s = summarize(results)
-    print(
-        f"\n{s.days_won}/{s.days} days beat the naive schedule; "
-        f"mean ${s.mean_uplift_usd:,.2f}, median ${s.median_uplift_usd:,.2f}, "
-        f"worst ${s.worst_uplift_usd:,.2f} per battery per day"
-    )
+    print(f"\ncorrected (day-ahead and last settled print only): {headline(summarize(results))}")
+    print(f"as first scored (same-interval price):             {headline(summarize(lookahead))}")
 
 
 if __name__ == "__main__":
