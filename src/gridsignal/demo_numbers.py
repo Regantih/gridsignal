@@ -1,9 +1,12 @@
 """Every number spoken in the demo, recomputed from the code in one command.
 
 ``python -m gridsignal.demo_numbers`` prints the figures the script in ``docs/DEMO.md``
-quotes on screen, in the order the demo walks them. ``tests/test_docs.py`` reads both and
-fails when a number in the script no longer appears here, so the script cannot drift away
-from the app.
+quotes on screen, in the order the demo walks them, and then the headline figures the
+README and the judging docs quote. ``tests/test_docs.py`` reads both and fails when a
+number in the docs no longer appears here, so the prose cannot drift away from the app.
+
+:func:`canonical` names the claims the docs are allowed to make and the single value each
+of them may carry, so the same figure cannot be stale in one file and current in another.
 
 Everything below is simulated fleet state settled against bundled historical ERCOT prices.
 """
@@ -12,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from gridsignal import holdout, insight
+from gridsignal import holdout, insight, pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.fleet import FOCUS_DEVICE_ID
 from gridsignal.prices import load_scenario
@@ -103,8 +106,54 @@ def signals_beat() -> Beat:
     )
 
 
+def docs_beat(fleet_size: int = DEMO_FLEET) -> Beat:
+    """The figures the README, WRITEUP, SUBMISSION and JUDGING_MAP quote."""
+    scenario = pipeline.run(scenario="scarcity").summary
+    grid_only = holdout.summarize(holdout.evaluate(serve_home=False))
+    home_first = holdout.summarize(holdout.evaluate())
+    return Beat(
+        "Headline numbers quoted in README, WRITEUP, SUBMISSION and JUDGING_MAP",
+        (
+            f"scenario day: ${scenario.fleet_usd(fleet_size):,.0f}/day across {fleet_size:,} "
+            f"batteries on the bundled scarcity day, ${scenario.uplift_usd:,.2f} per battery",
+            f"held out, home-first (the product, and the canonical held-out claim): "
+            f"{home_first.days_won} of {home_first.days} days, mean "
+            f"${home_first.mean_uplift_usd:,.2f}, median ${home_first.median_uplift_usd:,.2f}",
+            f"held out, grid-only (comparison only, not the product): {grid_only.days_won} of "
+            f"{grid_only.days} days, mean ${grid_only.mean_uplift_usd:,.2f}",
+        ),
+    )
+
+
+def canonical() -> dict[str, str]:
+    """Claim name -> the one value every doc must quote for it.
+
+    ``tests/test_docs.py`` matches each claim's wording across the docs and fails when a
+    file quotes anything else, which is how a number retired by a code change stops
+    living on in prose.
+    """
+    eng = ControlRoomEngine(price_trace=load_scenario("scarcity"), fleet_size=DEMO_FLEET)
+    incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    eng.approve_recovery()
+    scenario = pipeline.run(scenario="scarcity").summary
+    home_first = holdout.summarize(holdout.evaluate())
+    grid_only = holdout.summarize(holdout.evaluate(serve_home=False))
+    view = insight.summarize(insight.analyze())
+    return {
+        "dollars_at_risk": f"{incident.dollars_at_risk:,.0f}",
+        "dollars_recovered": f"{incident.dollars_recovered:,.0f}",
+        "scenario_fleet_usd": f"{scenario.fleet_usd(DEMO_FLEET):,.0f}",
+        "holdout_days_won": str(home_first.days_won),
+        "holdout_mean_usd": f"{home_first.mean_uplift_usd:,.2f}",
+        "holdout_median_usd": f"{home_first.median_uplift_usd:,.2f}",
+        "grid_only_days_won": str(grid_only.days_won),
+        "grid_only_mean_usd": f"{grid_only.mean_uplift_usd:,.2f}",
+        "scarcity_visible_share": f"{view.scarcity_visible_share:.0%}",
+    }
+
+
 def beats() -> list[Beat]:
-    return [control_room_beat(), mesh_beat(), signals_beat()]
+    return [control_room_beat(), mesh_beat(), signals_beat(), docs_beat()]
 
 
 def report() -> str:

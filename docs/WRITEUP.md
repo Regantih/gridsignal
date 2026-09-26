@@ -20,7 +20,7 @@ mesh may never touch, and a neighbour mutual-aid card can never spend a giver's 
 orchestration ships firmware in gated canary rings, while Grid Signals scores a
 day-ahead-anchored policy on real ERCOT prices and maps congestion.
 
-**Impact.** One approval turns $8,971 at risk into $8,683 recovered across 10,000 simulated
-devices on a real ERCOT scarcity day, in about 138 ms. Only 47% of a battery's capturable value
+**Impact.** One approval turns $4,812 at risk into $4,761 recovered across 10,000 simulated
+devices on a real ERCOT scarcity day, in ~0.1 s of compute. Only 47% of a battery's capturable value
 on the bundled scarcity days was visible day-ahead, and serving the home first costs export
 revenue — reported as measured, not smoothed.

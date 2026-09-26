@@ -109,3 +109,42 @@ def test_roster_invents_no_names() -> None:
     roster = (DOCS / "ROSTER.md").read_text()
     assert "your name here" in roster
     assert not re.search(r"@\w+\.(com|org|io)", roster)
+
+
+#: Every claim the docs are allowed to quote a headline number for, matched wherever it is
+#: phrased. A figure retired by a code change therefore cannot survive in prose in one file
+#: while the others are updated.
+CLAIMS: tuple[tuple[str, str], ...] = (
+    (r"\$([\d,]+) at risk", "dollars_at_risk"),
+    (r"\$([\d,]+) recovered", "dollars_recovered"),
+    (r"\$([\d,]+)/day across 10,000 batteries", "scenario_fleet_usd"),
+    (r"[Hh]ome-first[^|\n]{0,60}?(\d) of 7", "holdout_days_won"),
+    (r"[Hh]ome-first[^|\n]{0,80}?mean \+?\$(\d+\.\d\d)", "holdout_mean_usd"),
+    (r"[Hh]ome-first[^|\n]{0,110}?median \+?\$(\d+\.\d\d)", "holdout_median_usd"),
+    (r"[Gg]rid-only[^|\n]{0,60}?(\d) of 7", "grid_only_days_won"),
+    (r"[Gg]rid-only[^|\n]{0,80}?mean \+?\$(\d+\.\d\d)", "grid_only_mean_usd"),
+    (
+        r"[Oo]nly (\d+)% of (?:a battery\'s capturable value"
+        r"|a scarcity day\'s capturable|the value a battery could have captured)",
+        "scarcity_visible_share",
+    ),
+)
+
+#: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the
+#: presenter speaks has to appear in the same command's output.
+CHECKED_DOCS = ("README.md", "docs/WRITEUP.md", "docs/SUBMISSION.md", "docs/JUDGING_MAP.md")
+
+
+@pytest.mark.parametrize("pattern,claim", CLAIMS)
+def test_headline_numbers_in_every_doc_match_the_one_command(pattern: str, claim: str) -> None:
+    """README, WRITEUP, SUBMISSION and JUDGING_MAP quote one value per claim."""
+    expected = demo_numbers.canonical()[claim].rstrip("%")
+    found = 0
+    for name in CHECKED_DOCS:
+        text = (DOCS.parent / name).read_text()
+        for quoted in re.findall(pattern, text):
+            found += 1
+            assert quoted == expected, (
+                f"{name} quotes {quoted!r} for {claim}, gridsignal.demo_numbers says {expected!r}"
+            )
+    assert found, f"no document states the {claim} claim any more"

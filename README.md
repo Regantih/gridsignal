@@ -37,9 +37,10 @@ Two dials in the sidebar make that number mean something at Base's scale:
 - **Price scenario** — a normal peak day (2026-09-22, peak $199.74/MWh) or a real ERCOT
   scarcity day (2023-09-06, peak $5,147.65/MWh, settlement at the offer cap plus reserve adders).
 - **Fleet scale** — 48, 1,000 or 10,000 simulated devices. The failure is a gateway firmware
-  ring that covers one device in 48, so a 10,000-device fleet loses 208 devices to the same
-  root cause. On the scarcity day that is **$8,971 at risk and $8,683 recovered** from one
-  operator approval, versus $1.82 on the 48-device normal day.
+  ring that covers one device in 48, so a 10,000-device fleet loses 166 dispatchable devices
+  to the same root cause. On the scarcity day that is **$4,812 at risk and $4,761 recovered**
+  from one operator approval, versus $1.82 on the 48-device normal day. Reproduce every figure
+  in this section with `python -m gridsignal.demo_numbers`.
 
 ## Why this matters to Base
 
@@ -49,8 +50,8 @@ the year. This repo is built around that minute.
 
 - **The commitment survives the failure.** A lost device is detected, priced, quarantined and its
   kW reassigned across healthy headroom, with the member's backup reserve protected. On the
-  bundled scarcity day one operator approval is the difference between $8,971 at risk and $8,683
-  recovered across 10,000 devices.
+  bundled scarcity day one operator approval is the difference between $4,812 at risk and $4,761
+  recovered across 10,000 devices, 8,000 of which the mesh is allowed to dispatch.
 - **A person still signs.** Nothing dispatches without a named human approval, and the whole
   sequence lands in an append-only audit timeline — the shape a utility-facing operation has to
   have before it can be trusted with real hardware.
@@ -209,7 +210,7 @@ curve never priced, refuse to buy a spike, wait out a dud export). Signals are a
 is dispatched.
 
 The headline shows two numbers side by side and never the first one alone: the scenario day at
-the selected fleet scale ($65,500/day across 10,000 batteries on the 2023-09-06 scarcity day) and
+the selected fleet scale ($125,300/day across 10,000 batteries on the 2023-09-06 scarcity day) and
 the **held-out record** — mean +$0.44, median +$0.26 per battery per day, beating the naive
 schedule on 6 of 7 days it was never tuned on (see
 [Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
