@@ -89,6 +89,15 @@ STATUS_LABEL = {
     DeviceStatus.OFFLINE: "Offline",
     DeviceStatus.UNAVAILABLE: "Quarantined",
 }
+#: Enum values are identifiers; a table a judge reads gets the words instead.
+UNIT_TYPE_LABEL = {
+    "legacy": "Legacy 13.5 kWh / 5 kW",
+    "base_core": "Base Core-style 40 kWh / 20 kW",
+}
+CONTROLLER_LABEL = {
+    "base": "Base (this control room)",
+    "utility": "Utility partner",
+}
 SEVERITY_COLOR = {
     Severity.LOW: "#0ea5e9",
     Severity.MEDIUM: "#f59e0b",
@@ -364,6 +373,11 @@ def energy(kwh: float, decimals: int = 0) -> str:
     return f"{kwh:,.{decimals}f} kWh"
 
 
+def energy_tile(kwh: float) -> str:
+    """Fleet energy short enough for a seven-tile row: MWh once kWh runs past six digits."""
+    return f"{kwh / 1000:,.1f} MWh" if abs(kwh) >= 100_000 else energy(kwh)
+
+
 def hours(value: float) -> str:
     return f"{value:,.1f} h"
 
@@ -476,15 +490,20 @@ def render_overview(eng: ControlRoomEngine) -> None:
     metric(
         cols[1],
         "Capacity available",
-        energy(snap.available_capacity_kwh),
+        energy_tile(snap.available_capacity_kwh),
         note=f"{snap.committed_kw:,.0f} kW committed",
+        tooltip=f"{energy(snap.available_capacity_kwh)} usable across the fleet.",
     )
     metric(cols[2], "Online", f"{snap.online:,}", note=f"{snap.degraded} degraded")
     metric(
         cols[3],
-        "Offline / quarantined",
-        f"{snap.offline:,} / {snap.unavailable:,}",
-        note=(f"{FOCUS_DEVICE_ID} gateway ring" if snap.offline or snap.unavailable else "none"),
+        "Offline",
+        f"{snap.offline:,}",
+        note=(
+            f"{snap.unavailable:,} quarantined, {FOCUS_DEVICE_ID} gateway ring"
+            if snap.offline or snap.unavailable
+            else f"{snap.unavailable:,} quarantined"
+        ),
     )
     metric(
         cols[4],
@@ -556,12 +575,12 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             pd.DataFrame(
                 [
                     {
-                        "Unit type": r.unit_type,
-                        "Homes": r.devices,
-                        "Home load kW": r.home_load_kw,
-                        "Export kW": r.export_kw,
-                        "Revenue $": r.revenue_usd,
-                        "Backup h": r.backup_hours,
+                        "Unit type": UNIT_TYPE_LABEL.get(r.unit_type, r.unit_type),
+                        "Homes": f"{r.devices:,}",
+                        "Home load kW": f"{r.home_load_kw:,.1f}",
+                        "Export kW": f"{r.export_kw:,.1f}",
+                        "Revenue $": f"{r.revenue_usd:,.2f}",
+                        "Backup h": f"{r.backup_hours:,.1f}",
                     }
                     for r in rows
                 ]
@@ -579,10 +598,10 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             pd.DataFrame(
                 [
                     {
-                        "Control authority": t.controller,
-                        "Batteries": t.devices,
-                        "Dispatchable": t.dispatchable,
-                        "Export kW": t.export_kw,
+                        "Control authority": CONTROLLER_LABEL.get(t.controller, t.controller),
+                        "Batteries": f"{t.devices:,}",
+                        "Dispatchable": f"{t.dispatchable:,}",
+                        "Export kW": f"{t.export_kw:,.1f}",
                     }
                     for t in tenants
                 ]
@@ -624,7 +643,7 @@ def render_backup_ledger(eng: ControlRoomEngine) -> None:
     )
     metric(
         cols[2],
-        "Intervals that took backup",
+        "Intervals taking backup",
         f"{guarded.violations}",
         note="with the floor enforced",
     )
@@ -639,9 +658,9 @@ def render_backup_ledger(eng: ControlRoomEngine) -> None:
             [
                 {
                     "Interval": row.interval,
-                    "Promised h": row.promised_hours,
-                    "Held h": row.held_hours,
-                    "Held h without the floor": without[row.interval].held_hours,
+                    "Promised h": f"{row.promised_hours:,.2f}",
+                    "Held h": f"{row.held_hours:,.2f}",
+                    "Held h without the floor": f"{without[row.interval].held_hours:,.2f}",
                     "Promise kept": "yes" if row.kept else "no",
                 }
                 for row in held
@@ -684,7 +703,7 @@ def render_whatif(eng: ControlRoomEngine) -> None:
     )
     metric(
         cols[1],
-        "Coverable by the rest of the fleet",
+        "Coverable by the fleet",
         power(answer.recoverable_kw),
         note=(
             f"{answer.devices_affected:,} devices affected, "
@@ -809,7 +828,7 @@ def render_fleet_replay() -> None:
     )
     metric(
         cols[3],
-        "Share of the dollars at risk",
+        "Share of dollars at risk",
         f"{result.recovered_share:.0%}",
         note=(
             f"priced over the {result.recovery_hours:.2f} h after the fix, "
@@ -1169,6 +1188,25 @@ ACTION_COLOR = {
     Action.ASK_A_HUMAN: "#dc2626",
 }
 
+#: Nothing moves without a named human, so the badge says what can happen next, not
+#: what the model would do on its own.
+PENDING_ACTION_LABEL = {
+    Action.ACT: "act once approved",
+    Action.ACT_AND_NOTIFY: "act and notify, once approved",
+    Action.ASK_A_HUMAN: "ask a human",
+}
+
+
+def pending_reason(reason: str) -> str:
+    """The verdict's own words, in the tense the pending approval makes true."""
+    for present, pending in (
+        ("Acting and telling the operator", "Once approved, acting and telling the operator"),
+        ("Acting", "Once approved, acting"),
+    ):
+        if reason.startswith(present):
+            return pending + reason[len(present) :]
+    return reason
+
 
 @st.cache_data(show_spinner=False)
 def blind_pack() -> tuple[int, int, int]:
@@ -1187,7 +1225,7 @@ def render_principles(verdict: Verdict, decision: ApprovalDecision | None = None
     """
     badges = " ".join(
         [
-            pill(verdict.action.value, ACTION_COLOR[verdict.action]),
+            pill(PENDING_ACTION_LABEL[verdict.action], ACTION_COLOR[verdict.action]),
             pill(JEV_LABEL[verdict.source], JEV_COLOR[verdict.source]),
             pill(f"score {verdict.score:.2f} vs bar {verdict.bar:.2f}", "#475569"),
             pill("human approval required", "#dc2626"),
@@ -1201,7 +1239,8 @@ def render_principles(verdict: Verdict, decision: ApprovalDecision | None = None
     )
     st.markdown(
         f"<div class='gs-card'><div class='gs-kicker'>Verdict</div>{badges}"
-        f"<div class='gs-body' style='margin-top:.5rem'><b>Why:</b> {verdict.reason}</div>"
+        f"<div class='gs-body' style='margin-top:.5rem'><b>Why:</b> "
+        f"{pending_reason(verdict.reason)}</div>"
         f"{gate}"
         f"<div class='gs-body' style='margin-top:.35rem'>Three hard vetoes, then three "
         f"weighted principles; the certainty bar rises with the money at stake."
@@ -1620,8 +1659,12 @@ def render_telemetry_import() -> None:
     metric(
         cols[3],
         "Newest row",
-        result.as_of.strftime("%Y-%m-%d %H:%M") if result.as_of else "none",
-        note=f"{result.superseded:,} superseded by a newer row",
+        result.newest.strftime("%H:%M") if result.newest else "none",
+        note=(
+            f"event clock {result.as_of.strftime('%H:%M')}, {result.superseded:,} superseded"
+            if result.as_of
+            else f"{result.superseded:,} superseded"
+        ),
     )
     if result.rejected:
         st.dataframe(
@@ -1757,7 +1800,7 @@ def render_holdout() -> None:
     metric(cols[0], "Days scored", f"{summary.days}")
     metric(
         cols[1],
-        "Days beating the clock baseline",
+        "Days beating the clock",
         ratio(summary.days_won, summary.days),
     )
     metric(
@@ -1875,15 +1918,15 @@ def render_lookahead_correction(results: list[holdout.DayResult]) -> None:
     cols = st.columns(2)
     metric(
         cols[0],
-        "Corrected: day-ahead and last settled print only",
+        "Corrected scoring",
         money(corrected.mean_uplift_usd),
-        note=wins(corrected.days_won, corrected.days),
+        note=f"{wins(corrected.days_won, corrected.days)}, day-ahead and last settled print",
     )
     metric(
         cols[1],
-        "As first scored (same-interval price)",
+        "As first scored",
         money(as_first.mean_uplift_usd),
-        note=wins(as_first.days_won, as_first.days),
+        note=f"{wins(as_first.days_won, as_first.days)}, same-interval price",
     )
     caption(
         "A real-time price is published only after its interval is over, so the "
@@ -1914,7 +1957,7 @@ def render_home_first_cost(results: list[holdout.DayResult]) -> None:
     )
     metric(
         cols[2],
-        "Member savings, home-first",
+        "Member savings",
         money(savings),
         note="energy the house did not buy",
     )
@@ -2097,13 +2140,13 @@ def render_insight() -> None:
     cols = st.columns(4)
     metric(
         cols[0],
-        "Day-ahead share, scarcity days",
+        "Day-ahead share",
         f"{s.scarcity_visible_share:.0%}",
-        note=f"{s.ordinary_visible_share:.0%} on ordinary days",
+        note=f"on scarcity days; {s.ordinary_visible_share:.0%} on ordinary days",
     )
     metric(
         cols[1],
-        "Only visible in real time",
+        "Real-time only value",
         money(s.scarcity_blind_usd),
         note="per battery per scarcity day",
         tooltip="Value a battery could only earn by reacting on the day, not the day before.",
@@ -2117,7 +2160,7 @@ def render_insight() -> None:
     )
     metric(
         cols[3],
-        f"Intervals {insight.dam.DEVIATION_MULTIPLE:.0f}x above day-ahead",
+        f"{insight.dam.DEVIATION_MULTIPLE:.0f}x above day-ahead",
         ratio(s.divergent_intervals, s.intervals),
         note=f"{s.ordinary_divergent_intervals} on ordinary days",
     )
@@ -2212,8 +2255,8 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
     metric(
         cols[1],
         "Value at these prices",
-        f"${sketch.attrs['total_usd_per_day']:,.0f}/day",
-        note=congestion.HINDSIGHT,
+        f"${sketch.attrs['total_usd_per_day']:,.0f}",
+        note=f"per day, {congestion.HINDSIGHT}",
     )
     metric(
         cols[2],
@@ -2474,7 +2517,7 @@ def render_ancillary(fleet_size: int) -> None:
     )
     metric(
         cols[4],
-        "Backup reserve violations",
+        "Reserve violations",
         f"{summary.reserve_violations}",
         note=f"{summary.days} held-out days",
     )
@@ -2890,8 +2933,8 @@ def render_rollout() -> None:
             "ring": ring.ring,
             "gate": gate.gate,
             "result": "pass" if gate.passed else "FAIL",
-            "observed": gate.observed,
-            "threshold": gate.threshold,
+            "observed": f"{gate.observed:,.3f}",
+            "threshold": f"{gate.threshold:,.3f}",
             "detail": gate.detail,
         }
         for ring in result.rings
@@ -2924,7 +2967,7 @@ def render_install_wave() -> None:
     metric(b, "Cleared probation", f"{m.promoted:,}", f"{m.failed_health:,} failed health check")
     metric(
         c,
-        "Time to first eligible award",
+        "Time to first award",
         "none"
         if m.time_to_first_eligible_award_s is None
         else seconds(m.time_to_first_eligible_award_s),
@@ -2932,7 +2975,7 @@ def render_install_wave() -> None:
     )
     metric(
         d,
-        "Awards to unverified units",
+        "Unverified awards",
         m.awards_to_unverified + m.awards_to_probation,
         f"{m.existing_kw_lost:.0f} kW of existing commitment lost",
     )

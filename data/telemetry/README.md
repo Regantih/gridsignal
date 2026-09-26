@@ -36,8 +36,10 @@ are ignored, blank lines and `#` comment lines are skipped.
 3. `soc_kwh` and `power_kw` are finite numbers, `soc_kwh` is not negative;
 4. `status` is one of the four above;
 5. `firmware` and `gateway` are non-empty strings;
-6. not stale: no more than 900 s behind the newest row in the same file (one ERCOT
-   settlement interval; `--max-age-s` changes it);
+6. inside the freshness window around the control room's **event clock** — no more than
+   900 s behind it (one ERCOT settlement interval; `--max-age-s` changes it) and no more
+   than 300 s ahead of it, so a row dated 2099 is refused rather than adopted as the
+   reference every other row is aged against;
 7. the device exists in this fleet, `soc_kwh` is within 2% of its nameplate and
    `|power_kw|` within 10% of its inverter rating.
 

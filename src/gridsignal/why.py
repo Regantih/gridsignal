@@ -133,7 +133,7 @@ def problem_section(fleet_size: int = DEMO_FLEET) -> Section:
         "operator is reading thousands of alarms.",
         (
             Claim(
-                "One firmware ring going dark during a price spike",
+                "Three faults at the peak",
                 f"${run.dollars_at_risk:,.0f} at risk",
                 f"{run.kw_lost:,.0f} kW of committed capacity lost across "
                 f"{run.fault_minutes:,.0f} simulated minutes at "
@@ -278,8 +278,8 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
             ),
             Claim(
                 "The model is a second opinion, not the decider",
-                f"rules (Jev offline) {rules.correct} of {rules.total}, "
-                f"Jev {jev.correct} of {jev.total}",
+                f"{judgment_report.RULES} {rules.correct} of {rules.total}, "
+                f"{judgment_report.jev_label(judgment)} {jev.correct} of {jev.total}",
                 f"Blind score on a safety pack and answer key committed before the "
                 f"first run; the deterministic layer won every one of the "
                 f"{len(judgment.disagreements)} disagreements, so the rules and the "

@@ -84,10 +84,16 @@ def test_the_break_even_fee_is_the_retail_earnings_it_has_to_replace(
     result: business.Comparison,
 ) -> None:
     assert result.break_even_month_usd == pytest.approx(
-        result.retail.base_mean_usd * business.DAYS_PER_MONTH, abs=0.01
+        result.retail.base_median_usd * business.DAYS_PER_MONTH, abs=0.01
     )
     assert result.break_even_battery_month_usd == pytest.approx(
+        result.retail.market_median_usd * business.DAYS_PER_MONTH, abs=0.01
+    )
+    assert result.break_even_battery_month_mean_usd == pytest.approx(
         result.retail.market_mean_usd * business.DAYS_PER_MONTH, abs=0.01
+    )
+    assert result.break_even_battery_month_mean_usd > result.break_even_battery_month_usd, (
+        "one scarcity day carries the mean, which is why the median is published first"
     )
     assert result.break_even_kw_month_usd == pytest.approx(
         result.break_even_battery_month_usd / result.registered_kw, abs=0.01
@@ -144,6 +150,17 @@ def test_every_assumption_names_a_source_and_says_whether_it_is_published() -> N
     assert any("4CP" in item.value or "4CP" in item.source for item in business.ASSUMPTIONS)
 
 
+def test_the_modelled_numbers_do_not_cite_documents_that_do_not_contain_them() -> None:
+    """A link beside a number is read as its source, so it has to be one."""
+    rate = next(item for item in business.ASSUMPTIONS if item.name == "retail rate")
+    assert rate.url != business.COO_INTERVIEW_URL, "the interview quotes no retail rate"
+    assert "modelled assumption" in rate.source
+
+    floor = next(item for item in business.ASSUMPTIONS if item.name == "backup")
+    assert floor.url != ancillary.ADER_PILOT_URL, "the ADER pilot sets no member reserve"
+    assert "modelled assumption" in floor.source
+
+
 def test_the_battery_size_is_never_claimed_as_an_official_specification() -> None:
     sized = next(item for item in business.ASSUMPTIONS if item.name == "battery")
     assert not sized.published
@@ -168,6 +185,9 @@ def test_the_cli_prints_the_computed_numbers_and_labels_the_simulation(
     assert "simulated" in out
     assert f"${result.break_even_month_usd:,.2f} per battery per month" in out
     assert f"${result.break_even_battery_month_usd:,.2f} per battery per month" in out
+    assert out.index(f"${result.break_even_battery_month_usd:,.2f}") < out.index(
+        f"${result.break_even_battery_month_mean_usd:,.2f}"
+    ), "the median fee is the headline and the mean is the second reading"
     assert f"${result.certainty_cost_usd:,.2f} per battery per day" in out
     assert f"{result.unclamped_breaches} of {result.retail.days} days" in out
     for item in business.ASSUMPTIONS:

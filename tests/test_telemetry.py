@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 from types import ModuleType
 
 import pytest
@@ -13,7 +13,8 @@ from gridsignal import paths, telemetry
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import DeviceStatus
 
-AS_OF = datetime(2023, 9, 6, 17, 0, tzinfo=UTC)
+#: The clock the fleet judges telemetry against: its own grid event, not the file's.
+AS_OF = ControlRoomEngine(fleet_size=1).event_clock.replace(tzinfo=UTC)
 
 
 def load_script(name: str) -> ModuleType:
@@ -78,9 +79,9 @@ def test_an_offline_row_drops_the_device_out_of_the_commitment(
     [
         ("{not json", "not valid JSON"),
         ("[1, 2, 3]", "not a JSON object"),
-        (json.dumps({"device_id": "BAT-001", "ts": "2023-09-06T17:00:00Z"}), "missing"),
+        (json.dumps({"device_id": "BAT-001", "ts": "2026-09-22T20:45:00Z"}), "missing"),
         (row(ts="yesterday"), "bad ts"),
-        (row(ts="2023-09-06T17:00:00"), "no UTC offset"),
+        (row(ts="2026-09-22T20:45:00"), "no UTC offset"),
         (row(status="sleeping"), "is not one of"),
         (row(power_kw="4.2"), "power_kw is not a number"),
         (row(soc_kwh=float("nan")).replace("NaN", "null"), "soc_kwh is not a number"),
@@ -115,7 +116,7 @@ def test_a_nan_reading_is_refused(engine: ControlRoomEngine) -> None:
 def test_a_row_older_than_the_window_is_stale_and_says_how_old(
     engine: ControlRoomEngine,
 ) -> None:
-    """Freshness is measured against the newest row in the same file, as a batch is."""
+    """Freshness is measured against the event clock the fleet is dispatching into."""
     old = (AS_OF - timedelta(hours=2)).isoformat().replace("+00:00", "Z")
     text = "\n".join([row(), row(device_id="BAT-002", ts=old)])
 
@@ -123,8 +124,48 @@ def test_a_row_older_than_the_window_is_stale_and_says_how_old(
 
     assert [r.device_id for r in result.applied] == ["BAT-001"]
     assert len(result.rejected) == 1
-    assert "stale: 7,200 s older than the newest row (limit 900 s)" in result.rejected[0].reason
+    assert "stale: 7,200 s behind the event clock (limit 900 s)" in result.rejected[0].reason
     assert engine.device("BAT-002").firmware == ""
+
+
+def test_one_row_from_2099_is_refused_and_does_not_age_out_the_honest_rows(
+    engine: ControlRoomEngine,
+) -> None:
+    """A file that sets its own reference lets one hostile row reject the whole export."""
+    hostile = AS_OF.replace(year=2099).isoformat().replace("+00:00", "Z")
+    text = "\n".join(
+        [row(), row(device_id="BAT-002"), row(device_id="BAT-003", ts=hostile)],
+    )
+
+    result = telemetry.apply_text(engine, text)
+
+    assert [r.device_id for r in result.applied] == ["BAT-001", "BAT-002"]
+    assert len(result.rejected) == 1
+    assert "ahead of the event clock" in result.rejected[0].reason
+    assert result.rejected[0].device_id == "BAT-003"
+    assert result.as_of == AS_OF  # the clock is the fleet's, whatever the file says
+
+
+def test_a_little_clock_skew_ahead_of_the_event_is_still_accepted(
+    engine: ControlRoomEngine,
+) -> None:
+    """Gateways run fast; a minute ahead is skew, not a forged timestamp."""
+    skewed = (AS_OF + timedelta(seconds=60)).isoformat().replace("+00:00", "Z")
+
+    result = telemetry.apply_text(engine, row(ts=skewed))
+
+    assert len(result.applied) == 1
+    assert not result.rejected
+
+
+def test_staleness_on_the_device_is_measured_from_the_event_clock(
+    engine: ControlRoomEngine,
+) -> None:
+    behind = (AS_OF - timedelta(seconds=120)).isoformat().replace("+00:00", "Z")
+
+    telemetry.apply_text(engine, row(ts=behind))
+
+    assert engine.device("BAT-001").last_telemetry_s == 120
 
 
 def test_the_stale_window_is_configurable(engine: ControlRoomEngine) -> None:
@@ -197,10 +238,11 @@ def test_the_bundled_bad_rows_demonstrate_every_class_of_rejection(
     assert set(result.reasons) == {
         "malformed",
         "stale",
+        "ahead of the event clock",
         "out of range",
         "unknown device in this fleet",
     }
-    assert sum(result.reasons.values()) == len(result.rejected) == 9
+    assert sum(result.reasons.values()) == len(result.rejected) == 10
 
 
 def test_the_sample_files_are_exactly_what_the_generator_writes() -> None:
@@ -221,7 +263,7 @@ def test_the_cli_reports_rows_applied_rejected_and_the_fleet_after(capsys) -> No
     assert telemetry.main([str(telemetry.BAD_ROWS_FILE), "--devices", "48"]) == 0
 
     out = capsys.readouterr().out
-    assert "9 rejected" in out
+    assert "10 rejected" in out
     assert "stale:" in out
     assert "fleet after import" in out
     assert "no device or utility system was contacted" in out

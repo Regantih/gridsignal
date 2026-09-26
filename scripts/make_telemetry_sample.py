@@ -11,13 +11,15 @@ from __future__ import annotations
 
 import json
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, timedelta
 
 from gridsignal import telemetry
+from gridsignal.control_room import ControlRoomEngine
 from gridsignal.fleet import GATEWAY_RING_SIZE, build_fleet
 
-#: A fixed wall-clock moment so the file never changes between runs.
-AS_OF = datetime(2023, 9, 6, 17, 0, tzinfo=UTC)
+#: The control room's own event clock, so the sample reads as an export taken during
+#: the event the fleet is dispatching into rather than as an archive from years ago.
+AS_OF = ControlRoomEngine(fleet_size=1).event_clock.replace(tzinfo=UTC)
 FIRMWARE = ("2.4.1", "2.4.0", "2.3.7")
 
 
@@ -61,6 +63,9 @@ def bad_rows() -> list[str]:
     bad_number = dict(rows()[5], power_kw="4.2")
     over_nameplate = dict(rows()[6], soc_kwh=999.0)
     unknown = dict(rows()[7], device_id="BAT-999")
+    # A row from 2099: it must be refused, not adopted as the clock everything else
+    # is judged against.
+    future = dict(rows()[8], ts=AS_OF.replace(year=2099).isoformat().replace("+00:00", "Z"))
     return [
         json.dumps(good),
         json.dumps(stale),
@@ -70,6 +75,7 @@ def bad_rows() -> list[str]:
         json.dumps(bad_number),
         json.dumps(over_nameplate),
         json.dumps(unknown),
+        json.dumps(future),
         "{not json at all",
         "[1, 2, 3]",
     ]

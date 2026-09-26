@@ -46,6 +46,21 @@ def rendered_views() -> dict[str, AppTest]:
 
 
 @pytest.fixture(scope="module")
+def advanced_views() -> dict[str, AppTest]:
+    """The same views with every extra panel on, for checks that must cover them all."""
+    views = {}
+    for view in VIEWS:
+        app = AppTest.from_file(APP, default_timeout=600)
+        app.run()
+        app.session_state["view"] = view
+        app.session_state["advanced"] = True
+        app.run()
+        assert not app.exception, (view, app.exception)
+        views[view] = app
+    return views
+
+
+@pytest.fixture(scope="module")
 def grid_signals(rendered_views: dict[str, AppTest]) -> AppTest:
     return rendered_views["Grid Signals"]
 
@@ -182,6 +197,20 @@ def test_incident_panel_shows_one_verdict_that_cannot_contradict_the_button() ->
     assert "A human approves either way — Jev has no approve path" in text
     assert any(label in text for label in ("Jev live", "Jev (recorded answer)", "Jev offline"))
     assert any("Approve" in b.label for b in app.button)
+
+
+def test_the_pending_verdict_never_claims_the_fleet_is_already_acting() -> None:
+    """'act' beside 'human approval required' reads as a machine that already moved."""
+    app = fresh()
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    assert not app.exception, app.exception
+
+    card = next(m.value for m in app.markdown if "gs-kicker'>Verdict" in m.value)
+    assert "human approval required" in card
+    assert ">act<" not in card
+    assert "Why:</b> Acting" not in card
+    assert "once approved" in card
 
 
 def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
@@ -399,6 +428,50 @@ def test_the_formatters_agree_on_signs_separators_and_units() -> None:
     assert dashboard.ratio(6, 7) == "6 of 7"
 
 
+#: A tile in a seven-column row at 1440 px is about 190 px wide, which holds roughly
+#: this much before Streamlit clips it with an ellipsis. The video is shot at 1440.
+LABEL_BUDGET = 24
+VALUE_BUDGET = 13
+
+
+def test_no_tile_label_or_value_is_long_enough_to_truncate_at_1440px(
+    rendered_views: dict[str, AppTest],
+    advanced_views: dict[str, AppTest],
+) -> None:
+    for views in (rendered_views, advanced_views):
+        for view, app in views.items():
+            for m in app.metric:
+                assert len(m.label) <= LABEL_BUDGET, f"{view}: {m.label!r} clips"
+                assert len(str(m.value)) <= VALUE_BUDGET, f"{view} / {m.label}: {m.value!r} clips"
+
+
+def test_fleet_energy_changes_unit_before_the_digits_overflow_the_tile() -> None:
+    """244,954 kWh clipped at 1440 px; the same number in MWh does not."""
+    assert dashboard.energy_tile(1182.4) == "1,182 kWh"
+    assert dashboard.energy_tile(244_954.0) == "245.0 MWh"
+    assert len(dashboard.energy_tile(1_000_000.0)) <= VALUE_BUDGET
+
+
+def test_tables_show_formatted_numbers_and_words_not_identifiers(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    """A judge reading 'base_core' or '176039.41' is reading our variables, not a report."""
+    home = next(
+        df.value
+        for df in rendered_views["Control Room"].dataframe
+        if "Unit type" in df.value.columns
+    )
+    assert set(home["Unit type"]) <= set(dashboard.UNIT_TYPE_LABEL.values())
+    assert all(re.fullmatch(r"-?[\d,]+\.\d", v) for v in home["Export kW"])
+
+    tenants = next(
+        df.value
+        for df in rendered_views["Control Room"].dataframe
+        if "Control authority" in df.value.columns
+    )
+    assert set(tenants["Control authority"]) <= set(dashboard.CONTROLLER_LABEL.values())
+
+
 def test_inline_jargon_is_underlined_with_its_meaning_on_hover() -> None:
     markup = dashboard.term("headroom")
     assert "gs-term" in markup
@@ -517,14 +590,16 @@ def test_the_backup_ledger_card_shows_the_promise_and_the_counterfactual(
     text = markdown_text(app) + " ".join(c.value for c in app.caption)
     assert "Backup promise ledger" in text
     labels = {m.label: m.value for m in app.metric}
-    assert labels["Intervals that took backup"] == "0"
+    assert labels["Intervals taking backup"] == "0"
     assert int(labels["Same walk, floor removed"].replace(",", "")) > 0
     frames = [df for df in app.dataframe if "Held h without the floor" in list(df.value.columns)]
     assert len(frames) == 1
     held = frames[0].value
     assert len(held) == backup_ledger.EVENT_STEPS
     assert set(held["Promise kept"]) == {"yes"}
-    assert held["Held h"].min() >= held["Held h without the floor"].min()
+    assert min(float(v) for v in held["Held h"]) >= min(
+        float(v) for v in held["Held h without the floor"]
+    )
 
 
 def test_the_what_if_console_prices_a_scenario_without_dispatching_it(
@@ -536,7 +611,7 @@ def test_the_what_if_console_prices_a_scenario_without_dispatching_it(
     assert "What-if console" in text
     assert "Nothing is dispatched" in text
     labels = {m.label: m.value for m in app.metric}
-    assert labels["Coverable by the rest of the fleet"].endswith("kW")
+    assert labels["Coverable by the fleet"].endswith("kW")
     assert labels["Still exposed"].startswith("$")
 
 

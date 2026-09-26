@@ -23,6 +23,8 @@ from gridsignal.simulate import FFR_DEADLINE_CYCLES, RunMetrics
 
 RULES = "rules-only"
 JEV = "jev"
+#: With no key and no recorded answers the second column is the rules answering twice.
+JEV_FALLBACK = "rules (Jev offline)"
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,12 @@ class DrillReport:
     @property
     def backup_violations(self) -> int:
         return sum(r.backup_violations for r in self.rows)
+
+    @property
+    def jev_label(self) -> str:
+        """What the Jev column is honestly called on this run."""
+        rows = self.of_mode(JEV)
+        return JEV_FALLBACK if rows and all(r.source == "fallback" for r in rows) else "Jev"
 
 
 def available_drills(directory: Path = HOLDOUT_DIR) -> list[Path]:
@@ -129,13 +137,14 @@ def markdown(report: DrillReport) -> str:
     """The held-out table that sits next to the tuned-five table."""
     correct_rules, total = report.accuracy(RULES)
     correct_jev, _ = report.accuracy(JEV)
+    label = report.jev_label
     lines = [
         "| Decision layer | Root-cause accuracy on held-out drills |",
         "| --- | --- |",
         f"| rules-only | {correct_rules}/{total} |",
-        f"| Jev | {correct_jev}/{total} |",
+        f"| {label} | {correct_jev}/{total} |",
         "",
-        "| Drill | Injected root cause | rules-only | Jev | kW recovered | "
+        f"| Drill | Injected root cause | rules-only | {label} | kW recovered | "
         "Time to recover | Backup reserve violations | Self-deployed locally | "
         "Response (cycles) |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",

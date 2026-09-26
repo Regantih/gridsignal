@@ -287,6 +287,11 @@ class Report:
         return any(d.responses[JEV].source is not Source.FALLBACK for d in self.drills)
 
 
+def jev_label(report: Report) -> str:
+    """What the model's column is called on this run: offline, it is the rules again."""
+    return JEV if report.jev_live else RULES
+
+
 def build(directory: Path = FIXTURE_DIR, drills: list[Path] | None = None) -> Report:
     labels = load_labels()
     answers = score_drills(directory=directory, drills=drills)

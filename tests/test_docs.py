@@ -7,6 +7,8 @@ asserted here rather than trusted.
 from __future__ import annotations
 
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -142,6 +144,46 @@ def test_every_number_spoken_in_the_demo_is_reproducible_from_one_command() -> N
         n for n in NUMBER.findall(_spoken((DOCS / "DEMO.md").read_text())) if n not in printed
     ]
     assert not missing, f"not printed by gridsignal.demo_numbers: {missing}"
+
+
+def test_the_script_describes_the_screen_the_presenter_will_be_looking_at() -> None:
+    """A line that names a button the app does not have costs the take, not a retry."""
+    rows = {
+        row.split("|")[1].strip().strip("*"): row
+        for row in _script_rows((DOCS / "DEMO.md").read_text())
+    }
+    assert "of 36,000 kW committed" in rows["0:00"] or "36,000 kW committed" in rows["0:00"]
+    assert "battery is still paused" in rows["2:50"]  # member.py says paused, not resolved
+    assert "Run scenario" not in rows["3:15"]  # picking the scenario runs it
+    for stamp in ("2:10", "4:05"):
+        spoken = rows[stamp].split('"')[1]
+        assert len(spoken.split()) <= 60, f"{stamp} speaks {len(spoken.split())} words"
+
+
+def test_the_dry_run_counts_the_sweep_and_the_suite_it_actually_has() -> None:
+    """A rescore that quotes last week's counts is a rescore nobody reran."""
+    sys.path.insert(0, str(DOCS.parent / "scripts"))
+    import no_crash_sweep
+
+    text = (DOCS / "JUDGE_DRY_RUN.md").read_text()
+    cli = re.search(r"drives (\d+) CLI entry points", text)
+    tests = re.search(r"(\d[\d,]*) tests pass with no key", text)
+    assert cli and tests, "the dry run no longer states what it ran"
+    assert int(cli.group(1)) == len(no_crash_sweep.CLI_COMMANDS)
+
+    collected = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "--collect-only", "-p", "no:randomly"],
+        cwd=DOCS.parent,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    counted = re.search(r"(\d+) tests collected", collected.stdout)
+    assert counted, collected.stdout[-2000:]
+    claimed = int(tests.group(1).replace(",", ""))
+    assert claimed == int(counted.group(1)), (
+        f"the dry run says {claimed} tests, pytest collects {counted.group(1)}"
+    )
 
 
 def test_roster_invents_no_names() -> None:

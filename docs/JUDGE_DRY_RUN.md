@@ -9,32 +9,39 @@ drifts from it.
 Everything in the repository is a **simulation** priced from real cached ERCOT settlement
 data. Nothing here describes Base's real fleet, real hardware or real operating figures.
 
-**Self-score: 86 / 100** (79 at the first dry run; the four lines that moved are marked).
+**Self-score: 85 / 100** (79 at the first dry run, 86 before the bug-fix pass). The pass moved
+one line down and nothing up: giving the naive clock schedule the same evening-peak hold the
+policy gets turns the held-out mean negative, so Insight comes down to 8. The screen fixes
+(exact allocation, truthful pending verdict, labels that fit) repair contradictions rather
+than add strength, so Completeness stays where it was.
 
-| Rubric line | Points | Self-score | Was |
+| Rubric line | Points | Self-score | First dry run |
 | --- | ---: | ---: | ---: |
 | Technical Execution — Completeness | 15 | 14 | 13 |
 | Technical Execution — Depth | 15 | 14 | 13 |
 | Fit to Track — Problem | 15 | 11 | 11 |
 | Fit to Track — Why | 15 | 12 | 12 |
-| Value — Insight | 10 | 9 | 8 |
+| Value — Insight | 10 | 8 | 8 |
 | Value — Usability | 10 | 9 | 7 |
 | Innovation — Creativity | 10 | 8 | 8 |
 | Innovation — Performance | 10 | 9 | 7 |
-| **Total** | **100** | **86** | **79** |
+| **Total** | **100** | **85** | **79** |
 
 ## Technical Execution — Completeness — 14 / 15
 
 **For.** The core workflow runs end to end and is exercised by machines, not by hand:
-`scripts/no_crash_sweep.py` drives 28 CLI entry points — including the telemetry importer and
-the transport benchmark — and 47 dashboard interactions: all five views, both price days, three
+`scripts/no_crash_sweep.py` drives 29 CLI entry points — including the telemetry importer and
+the transport benchmark — and 52 dashboard interactions: all five views, both price days, three
 fleet scales, the failure/approve/override/reset loop, every scenario in the picker, both map
 modes, the Advanced toggle. It runs with API keys stripped and an unroutable proxy, in CI,
-inside four minutes. 606 tests pass with no key and no network. The README quick start was then
+inside four minutes. 644 tests pass with no key and no network. The README quick start was then
 run from an empty directory on a 2 vCPU box before submission (clone to a serving app in under
 a minute), which is how the one remaining deviation
 was found and fixed: the relative benchmark guard read low when the suite was sharded across
-two cores.
+two cores. The first frame is now exact rather than nearly right: the allocator distributes the
+rounding remainder by largest remainder, so 10,000 devices commit 36,000.0 of 36,000 kW on the
+scarcity day and the opening banner is green instead of reporting 1 kW at risk beside tiles
+reading 100%.
 
 **Against.** The app holds fleet state in a Streamlit session: two browsers are two fleets, and
 a reload is a new one. There is no persistence, no auth and no multi-operator story, so
@@ -86,7 +93,7 @@ price-taker assumption fails, and seven held-out days is a small sample.
 **Against.** The strongest "why" — that this is worth an operator's day — is argued from a
 simulation of Base rather than from anything Base has said it needs.
 
-## Value — Insight — 9 / 10
+## Value — Insight — 8 / 10
 
 **For.** The insights are specific, checkable and mostly unflattering: only 47% of a scarcity
 day's capturable value is visible in the day-ahead curve, $18.83 per battery exists only in
@@ -113,8 +120,8 @@ instead of 332 pages, every override demands a reason and lands in an append-onl
 Member App says the same event in plain English without leaking operator concepts.
 
 Real data can go in: a documented JSON-lines telemetry format
-(`data/telemetry/README.md`), a validating importer that rejects malformed, stale, unknown and
-over-nameplate rows with a line number and a reason, and a **Load telemetry file** replay mode
+(`data/telemetry/README.md`), a validating importer that rejects malformed, stale, future-dated,
+unknown and over-nameplate rows with a line number and a reason, and a **Load telemetry file** mode
 that feeds the same fleet state the Control Room reads.
 
 **Against.** It is still not deployed: Community Cloud needs a sign-in I do not have, so

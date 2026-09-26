@@ -36,6 +36,11 @@ COO_INTERVIEW_URL = "https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1
 #: Why a utility wants to call a battery in the summer evening: transmission cost is
 #: allocated to load at the four summer monthly system peaks.
 ERCOT_4CP_URL = "https://www.ercot.com/mktinfo/4cp"
+#: Average Texas residential retail price, the public series the modelled flat rate is
+#: sized against. It is not a Base tariff and Base publishes none.
+EIA_RESIDENTIAL_URL = "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a"
+#: The member's backup floor is this repo's rule, so it cites this repo's code.
+RESERVE_SOURCE_URL = "https://github.com/Regantih/gridsignal/blob/main/src/gridsignal/home.py"
 
 #: Flat residential rate the member is billed at in the retail model. Modelled: a
 #: plausible Texas fixed-rate plan, not a Base tariff.
@@ -97,8 +102,9 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption(
         "retail rate",
         f"{RETAIL_RATE_USD_KWH * 100:,.0f}¢/kWh flat, what the member is billed",
-        "a plausible Texas residential fixed rate; no Base tariff is public",
-        COO_INTERVIEW_URL,
+        "modelled assumption: no Base tariff is public, so the rate is set near the EIA "
+        "average Texas residential price rather than taken from any Base document",
+        EIA_RESIDENTIAL_URL,
         published=False,
     ),
     Assumption(
@@ -114,8 +120,9 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption(
         "backup",
         f"{ancillary.RESERVE_SHARE:.0%} of the pack is the member's, in both models",
-        "the promise this product makes to the homeowner, enforced in settlement",
-        ancillary.ADER_PILOT_URL,
+        "modelled assumption: the floor is this repo's promise to the homeowner, "
+        "enforced in settlement; the ADER pilot sets no such reserve",
+        RESERVE_SOURCE_URL,
         published=False,
     ),
     Assumption(
@@ -221,10 +228,14 @@ class Comparison:
     partner: ModelSummary
     per_day: tuple[tuple[DayModel, DayModel], ...]
     #: Access fee per battery per month that matches everything Base earns in the
-    #: retail model, the margin on the member's own supply included.
+    #: retail model on the median day, the margin on the member's own supply included.
     break_even_month_usd: float
     #: The same, counting only what the battery itself earns in the market.
     break_even_battery_month_usd: float
+    #: The two fees again on the mean day, which one scarcity day carries. Reported
+    #: second: a mean over seven days with one $24 day in it is not a typical month.
+    break_even_month_mean_usd: float
+    break_even_battery_month_mean_usd: float
     #: The battery-only fee against the kW the ADER pilot lets this battery register.
     break_even_kw_month_usd: float
     registered_kw: float
@@ -369,14 +380,16 @@ def compare(
     retail = _summarize(tuple(day for day, _ in scored))
     partner = _summarize(tuple(day for _, day in scored))
     registered_kw = ancillary.ADER_PILOT.per_battery_kw("ecrs", devices)
-    fee_month = retail.base_mean_usd * DAYS_PER_MONTH
-    battery_fee_month = retail.market_mean_usd * DAYS_PER_MONTH
+    fee_month = retail.base_median_usd * DAYS_PER_MONTH
+    battery_fee_month = retail.market_median_usd * DAYS_PER_MONTH
     return Comparison(
         retail=retail,
         partner=partner,
         per_day=scored,
         break_even_month_usd=round(fee_month, 2),
         break_even_battery_month_usd=round(battery_fee_month, 2),
+        break_even_month_mean_usd=round(retail.base_mean_usd * DAYS_PER_MONTH, 2),
+        break_even_battery_month_mean_usd=round(retail.market_mean_usd * DAYS_PER_MONTH, 2),
         break_even_kw_month_usd=(
             round(battery_fee_month / registered_kw, 2) if registered_kw else 0.0
         ),
@@ -443,15 +456,16 @@ def main() -> None:
     print()
 
     print(
-        f"Break-even access fee, two readings. For the battery alone — what its energy "
-        f"and\ngrid services earn — the utility would have to pay "
+        f"Break-even access fee, median day first. For the battery alone — what its "
+        f"energy and\ngrid services earn — the utility would have to pay "
         f"${result.break_even_battery_month_usd:,.2f} per battery per month "
         f"(${result.break_even_kw_month_usd:,.2f} per kW-month on the "
-        f"{result.registered_kw:,.1f} kW the pilot lets it register; that is the mean, "
-        f"which one\nscarcity day carries — the median day's market value is "
-        f"${result.retail.market_median_usd:,.2f}). To replace the whole "
-        f"retail\nrelationship, margin on the member's own supply included, "
-        f"${result.break_even_month_usd:,.2f} per battery per month. The gap is the point: "
+        f"{result.registered_kw:,.1f} kW the pilot lets it register). On the mean day "
+        f"it is\n${result.break_even_battery_month_mean_usd:,.2f}, and that mean is one "
+        f"scarcity day carrying seven. To replace the whole retail\nrelationship, margin "
+        f"on the member's own supply included, ${result.break_even_month_usd:,.2f} per "
+        f"battery per month on the median day "
+        f"(${result.break_even_month_mean_usd:,.2f} on the mean). The gap is the point: "
         f"in the retail model\nmost of what Base earns is the member's electricity bill, "
         f"not the battery's market revenue."
     )

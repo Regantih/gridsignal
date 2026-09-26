@@ -356,6 +356,19 @@ def sweep_app(port: int) -> list[Result]:
     return results
 
 
+def documented_checks(half: str) -> int:
+    """What docs/JUDGE_DRY_RUN.md claims this half of the sweep covers."""
+    text = (ROOT / "docs" / "JUDGE_DRY_RUN.md").read_text()
+    pattern = {
+        "cli": r"drives (\d+) CLI entry points",
+        "app": r"(\d+) dashboard interactions",
+    }[half]
+    found = re.search(pattern, text)
+    if not found:
+        raise SystemExit(f"docs/JUDGE_DRY_RUN.md no longer states the {half} sweep size")
+    return int(found.group(1))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cli", action="store_true", help="only the command line")
@@ -365,16 +378,25 @@ def main() -> int:
     both = not (args.cli or args.app)
 
     results: list[Result] = []
+    drifted: list[str] = []
     if args.cli or both:
         print("command line, no keys, no network:")
-        results += sweep_cli()
+        half = sweep_cli()
+        results += half
+        if len(half) != documented_checks("cli"):
+            drifted.append(f"CLI checks: {len(half)}, docs say {documented_checks('cli')}")
     if args.app or both:
         print("dashboard, no keys, no network:")
         port = free_port()
         server = start_dashboard(port)
         try:
             wait_for(port)
-            results += sweep_app(port)
+            half = sweep_app(port)
+            results += half
+            if len(half) != documented_checks("app"):
+                drifted.append(
+                    f"dashboard checks: {len(half)}, docs say {documented_checks('app')}"
+                )
         finally:
             server.terminate()
             server.wait(timeout=30)
@@ -385,7 +407,9 @@ def main() -> int:
     print(f"\n{len(results) - len(failed)} of {len(results)} checks passed")
     for r in failed:
         print(f"\n--- {r.name}\n{r.detail}")
-    return 1 if failed else 0
+    for line in drifted:
+        print(f"\n--- the dry run's sweep count is stale: {line}")
+    return 1 if failed or drifted else 0
 
 
 if __name__ == "__main__":

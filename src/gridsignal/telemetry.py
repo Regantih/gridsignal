@@ -20,8 +20,10 @@ field            type      meaning
 ===============  ========  ==================================================
 
 Every row that cannot be trusted is rejected with a reason and counted; the import
-never half-applies. Rows are stale when they are older than ``max_age_s`` relative to
-the newest row in the file, which is what a batch export from yesterday looks like.
+never half-applies. Freshness is judged against the fleet's own event clock, never
+against the file: a row is stale when it is more than ``max_age_s`` behind that clock,
+and refused outright when it is more than ``MAX_AHEAD_S`` in front of it. A file that
+set its own reference would let one row dated 2099 make every honest row look stale.
 
     python -m gridsignal.telemetry data/telemetry/synthetic_sample.jsonl
 """
@@ -33,7 +35,7 @@ import json
 import math
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 from gridsignal import paths
@@ -54,9 +56,12 @@ REQUIRED_FIELDS: tuple[str, ...] = (
     "firmware",
     "gateway",
 )
-#: A row older than this, measured against the newest row in the same file, is not
-#: current enough to dispatch on. Fifteen minutes is one ERCOT settlement interval.
+#: A row older than this, measured against the event clock, is not current enough to
+#: dispatch on. Fifteen minutes is one ERCOT settlement interval.
 DEFAULT_MAX_AGE_S = 900
+#: A little clock skew between a gateway and the control room is ordinary; a row from
+#: next week is not telemetry. Anything further ahead than this is refused.
+MAX_AHEAD_S = 300
 
 
 class TelemetryError(ValueError):
@@ -72,6 +77,7 @@ class ImportResult:
     superseded: int
     as_of: datetime | None
     source: str
+    newest: datetime | None = None
 
     @property
     def rows(self) -> int:
@@ -95,6 +101,11 @@ class ImportResult:
 class _Parsed:
     readings: list[Reading] = field(default_factory=list)
     rejected: list[Rejection] = field(default_factory=list)
+
+
+def _as_utc(moment: datetime) -> datetime:
+    """The cached ERCOT traces carry no offset, so a naive clock is read as UTC."""
+    return moment if moment.tzinfo is not None else moment.replace(tzinfo=UTC)
 
 
 def _parse_timestamp(raw: str) -> datetime:
@@ -192,6 +203,7 @@ def apply_file(
     engine: ControlRoomEngine,
     path: Path | str,
     max_age_s: int = DEFAULT_MAX_AGE_S,
+    as_of: datetime | None = None,
 ) -> ImportResult:
     """Read a JSONL file and apply it to ``engine``'s fleet."""
     file = Path(path)
@@ -199,7 +211,7 @@ def apply_file(
         text = file.read_text(encoding="utf-8")
     except OSError as exc:
         raise TelemetryError(f"cannot read {file}: {exc}") from exc
-    return apply_text(engine, text, source=file.name, max_age_s=max_age_s)
+    return apply_text(engine, text, source=file.name, max_age_s=max_age_s, as_of=as_of)
 
 
 def apply_text(
@@ -207,36 +219,52 @@ def apply_text(
     text: str,
     source: str = "telemetry",
     max_age_s: int = DEFAULT_MAX_AGE_S,
+    as_of: datetime | None = None,
 ) -> ImportResult:
-    """Validate ``text`` as JSONL telemetry and apply what survives to ``engine``."""
+    """Validate ``text`` as JSONL telemetry and apply what survives to ``engine``.
+
+    ``as_of`` is the clock the rows are judged against, and defaults to the fleet's
+    event clock, so nothing in the file can move the reference it is measured from.
+    """
+    clock = _as_utc(as_of if as_of is not None else engine.event_clock)
     parsed = read_lines(text.splitlines())
     rejected = list(parsed.rejected)
     fresh, superseded = _latest_per_device(parsed.readings)
 
-    as_of = max((r.ts for r in fresh), default=None)
     kept: list[Reading] = []
     for reading in fresh:
-        if as_of is not None and reading.ts < as_of - timedelta(seconds=max_age_s):
-            age = int((as_of - reading.ts).total_seconds())
+        ahead = int((reading.ts - clock).total_seconds())
+        if ahead > MAX_AHEAD_S:
             rejected.append(
                 Rejection(
                     reading.line_no,
-                    f"stale: {age:,} s older than the newest row (limit {max_age_s:,} s)",
+                    f"ahead of the event clock: {ahead:,} s in the future "
+                    f"(limit {MAX_AHEAD_S:,} s)",
+                    reading.device_id,
+                )
+            )
+            continue
+        if -ahead > max_age_s:
+            rejected.append(
+                Rejection(
+                    reading.line_no,
+                    f"stale: {-ahead:,} s behind the event clock (limit {max_age_s:,} s)",
                     reading.device_id,
                 )
             )
             continue
         kept.append(reading)
 
-    applied, more = engine.ingest_telemetry(kept, source=source, as_of=as_of)
+    applied, more = engine.ingest_telemetry(kept, source=source, as_of=clock)
     rejected.extend(more)
     rejected.sort(key=lambda r: r.line_no)
     return ImportResult(
         applied=tuple(applied),
         rejected=tuple(rejected),
         superseded=superseded,
-        as_of=as_of,
+        as_of=clock,
         source=source,
+        newest=max((r.ts for r in applied), default=None),
     )
 
 
@@ -248,7 +276,9 @@ def report(result: ImportResult) -> Iterator[str]:
         f"{result.superseded:,} superseded by a newer row"
     )
     if result.as_of is not None:
-        yield f"  newest row: {result.as_of.isoformat()}"
+        yield f"  event clock: {result.as_of.isoformat()}"
+    if result.newest is not None:
+        yield f"  newest applied row: {result.newest.isoformat()}"
     for reason, count in result.reasons.items():
         yield f"  rejected, {reason}: {count:,}"
     for rejection in result.rejected[:20]:
@@ -272,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
         "--max-age-s",
         type=int,
         default=DEFAULT_MAX_AGE_S,
-        help="how far behind the newest row a row may be before it is stale",
+        help="how far behind the event clock a row may be before it is stale",
     )
     args = parser.parse_args(argv)
 

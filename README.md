@@ -400,12 +400,14 @@ python -m gridsignal.business   # both models, the assumptions, and the break-ev
 
 Base's access fee is not public, so the model does not invent one: it reports the **break-even
 fee**, what the utility would have to pay for the partner model to match what retail earns on the
-same days. For the battery alone — its energy and its grid services — that is
-**$125.86 per battery-month**, or **$13.98 per kW-month** on the 9.0 kW the pilot lets it
-register. To replace the whole retail relationship, the margin on the member's own supply
-included, **$146.53 per battery-month**. The gap is the finding: in the retail model most of what
-Base earns is the member's electricity bill, not the battery's market revenue, so "the utility
-pays us for the fleet" and "we sell the member power" are not the same business at the same price.
+same days, read on the median day first. For the battery alone — its energy and its grid
+services — that is **$33.44 per battery-month**, or **$3.72 per kW-month** on the 9.0 kW the
+pilot lets it register; the mean day is $125.86, and that mean is one scarcity day carrying
+seven. To replace the whole retail relationship, the margin on the member's own supply
+included, **$129.20 per battery-month** (mean $146.53). The gap is the finding: in the retail
+model most of what Base earns is the member's electricity bill, not the battery's market
+revenue, so "the utility pays us for the fleet" and "we sell the member power" are not the same
+business at the same price.
 
 Dispatching on a clock rather than on price leaves
 **$0.65 per battery per day of wholesale value** behind (median), and on 2 of the 7 days the
@@ -564,8 +566,10 @@ One object per line; unknown keys are ignored so a richer export still loads. A 
 rejected, with a reason shown on screen and printed by the CLI, when it is not valid JSON,
 is missing a field, has a timestamp without a UTC offset, carries a non-numeric or
 non-finite reading, names a status outside `online / degraded / offline / unavailable`, is
-**stale** (more than 900 s — one settlement interval — behind the newest row in the same
-file), names a device this fleet does not have, or reports past the device's nameplate.
+**stale** (more than 900 s — one settlement interval — behind the control room's event
+clock) or **ahead of it** (more than 300 s, so one row dated 2099 is refused instead of
+becoming the reference everything else is aged against), names a device this fleet does
+not have, or reports past the device's nameplate.
 Where a device reports twice the newest row wins and the older one is counted as
 superseded. Format and rules: <code>data/telemetry/README.md</code>.
 

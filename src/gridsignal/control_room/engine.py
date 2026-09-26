@@ -202,6 +202,16 @@ class ControlRoomEngine:
 
     # ------------------------------------------------------------------ helpers
 
+    @property
+    def event_clock(self) -> datetime:
+        """The fleet's own idea of now: the grid event it is dispatching into.
+
+        Telemetry freshness is measured against this. A file cannot be allowed to set
+        the clock it is then judged against, or one row dated 2099 makes every honest
+        row in the export look stale.
+        """
+        return self._clock
+
     def _tick(self, seconds: int) -> datetime:
         self._clock += timedelta(seconds=seconds)
         return self._clock
