@@ -28,6 +28,7 @@ from gridsignal import (
     pipeline,
     replay,
     rollout,
+    why,
 )
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine, workflow
@@ -195,7 +196,7 @@ GLOSSARY: dict[str, str] = {
 MAP_MARKERS = 400
 GRID_TILES = 48
 
-VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh")
+VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why")
 CARD_COLOR = {
     CardStatus.VERIFIED: "#16a34a",
     CardStatus.STALE: "#f59e0b",
@@ -592,6 +593,48 @@ def render_surplus(eng: ControlRoomEngine) -> None:
         "wear floor. Feeder export caps and member reserve are simulated assumptions; "
         "reproduce with `python -m gridsignal.surplus`."
     )
+
+
+@st.cache_data(show_spinner="Recomputing every number on the Why page…")
+def why_page() -> why.WhyPage:
+    """The Why screen, recomputed from the code that produces each number."""
+    return why.build()
+
+
+def render_why() -> None:
+    """Problem, approach, evidence, limits — nothing on this screen is typed in."""
+    page = why_page()
+    st.markdown(
+        "<div class='gs-lead'>Why GridSignal exists, what it does, and where it stops.</div>",
+        unsafe_allow_html=True,
+    )
+    caption(
+        "Every figure below was recomputed from the code when this page loaded. "
+        "Reproduce the whole screen with `python -m gridsignal.why`."
+    )
+    for section in page.sections:
+        st.divider()
+        st.subheader(section.title)
+        st.markdown(f"<div class='gs-body'>{section.lead}</div>", unsafe_allow_html=True)
+        st.write("")
+        for claim in section.claims:
+            with st.container(border=True):
+                left, right = st.columns([2, 3], gap="large")
+                with left:
+                    st.markdown(
+                        f"<div class='gs-kicker'>{claim.label}</div>"
+                        f"<div class='gs-lead'>{claim.value}</div>",
+                        unsafe_allow_html=True,
+                    )
+                with right:
+                    st.markdown(
+                        f"<div class='gs-body'>{claim.detail}</div>", unsafe_allow_html=True
+                    )
+                    st.code(claim.command, language="bash")
+    st.divider()
+    st.subheader("The limits")
+    for limit in page.limits:
+        st.markdown(f"<div class='gs-body'>• {limit}</div>", unsafe_allow_html=True)
 
 
 def render_fleet_replay() -> None:
@@ -2666,6 +2709,9 @@ def _mark(report: drills.DrillReport, drill: str, mode: str) -> str:
 def main() -> None:
     render_header()
     render_scenario_controls()
+    if st.session_state.get("view", VIEWS[0]) == "Why":
+        render_why()
+        return
     if st.session_state.get("view", VIEWS[0]) == "Agent Mesh":
         render_agent_mesh()
         return

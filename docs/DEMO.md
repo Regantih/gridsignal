@@ -40,6 +40,19 @@ Start on **Control Room**, sidebar set to **Scarcity day / 10,000 devices**, dem
 | **3:35** | Grid Signals → held-out days | "So we scored the policy on 7 days it never saw, once. It beats the naive schedule on 6 of 7: mean $0.44, median $0.26, worst day $0.00 — it sits out rather than lose money. The first scoring let each interval see its own settled price, which no operator has; corrected to the last settled print, mean uplift is $0.44 against $0.45, and both are on screen." |
 | **4:15** | Close | Click **Reset Demo**. "Deterministic, offline, no API key: one command reproduces every number you just heard. A device failed, the fleet's commitment survived, every member kept their backup — and a person owned the decision." |
 
+## If a judge asks "why does this exist?"
+
+Switch the sidebar **View** to **Why**. One screen states the problem, the approach, the
+evidence and the limits, with every figure recomputed from the code as the page loads and the
+command that reproduces each one printed next to it. The same page in the terminal:
+
+```bash
+python -m gridsignal.why
+```
+
+It is deliberately outside the timed script: it is the page to leave on screen during
+questions, not a beat to read aloud.
+
 ## What is cut from the five-minute version
 
 The Member App, home-first dispatch, the storm reserve policy, the held-out chaos drills

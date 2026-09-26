@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from gridsignal import degradation, holdout
+from gridsignal import degradation, holdout, why
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import dashboard  # noqa: E402
@@ -53,12 +53,35 @@ def test_grid_signals_shows_the_wear_gate_per_battery_type(grid_signals: AppTest
 
 
 def test_every_view_renders() -> None:
-    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh"):
+    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why"):
         app = AppTest.from_file(APP, default_timeout=180)
         app.run()
         app.session_state["view"] = view
         app.run()
         assert not app.exception, (view, app.exception)
+
+
+def test_the_why_page_shows_the_numbers_the_code_computes_and_says_where_it_stops() -> None:
+    app = AppTest.from_file(APP, default_timeout=600)
+    app.run()
+    app.session_state["view"] = "Why"
+    app.run()
+    assert not app.exception, app.exception
+
+    text = markdown_text(app)
+    headings = " ".join(h.value for h in app.subheader)
+    page = why.build()
+    for section in page.sections:
+        assert section.title in headings
+        for claim in section.claims:
+            assert claim.value in text, claim.label
+    for limit in page.limits:
+        assert limit in text
+    # Every line on the screen names the command that reproduces it.
+    commands = " ".join(block.value for block in app.code)
+    for section in page.sections:
+        for claim in section.claims:
+            assert claim.command in commands
 
 
 def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
@@ -258,8 +281,8 @@ VALUE_FORMATS = (
 @pytest.fixture(scope="module")
 def rendered_views() -> dict[str, AppTest]:
     views = {}
-    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh"):
-        app = AppTest.from_file(APP, default_timeout=300)
+    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why"):
+        app = AppTest.from_file(APP, default_timeout=600)
         app.run()
         app.session_state["view"] = view
         app.run()

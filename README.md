@@ -44,6 +44,9 @@ Two dials in the sidebar make that number mean something at Base's scale:
 
 ## Why this matters to Base
 
+The short version is in the app: **View → Why** (or `python -m gridsignal.why`) states the
+problem, the approach, the evidence and the limits with every number recomputed live.
+
 Base Power sells homeowners a battery and sells the grid the fleet those batteries add up to. Both
 promises break in the same place: a device that stops answering during the two hours that pay for
 the year. This repo is built around that minute.
@@ -112,7 +115,7 @@ ruff format --check .
 
 ## Using the dashboard
 
-The sidebar **View** switch picks between the four pages:
+The sidebar **View** switch picks between the five pages:
 
 ### Control Room
 
@@ -454,6 +457,19 @@ commitment covered, messages sent, and dollars at risk versus recovered. Everyth
 on the seeded fleet: no LLM, no API key, no network. An optional LLM coordinator
 (`src/gridsignal/mesh/llm.py`) can rank bids behind an explicit flag; it is **off by default** and
 falls back to the deterministic ranking when no provider is wired up.
+
+### Why
+
+One screen that states the case for the product: the problem a distributed fleet has that a
+single battery does not, the approach, the evidence and the limits. Every figure on it is
+recomputed from the code when the page loads — the replay, the alarm grouping, the held-out
+scoring, the ancillary split, the wear gate, the blind safety pack and a live timing of the
+mesh — and each line prints the command that reproduces it. Nothing on the page is typed in,
+and `tests/test_why.py` fails if a number is. The same page in the terminal:
+
+```bash
+python -m gridsignal.why
+```
 
 ### Firmware rollout and install wave (Agent Mesh → Rollout panel)
 

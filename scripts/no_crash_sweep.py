@@ -293,6 +293,8 @@ def sweep_app(port: int) -> list[Result]:
             check(page, f"Agent Mesh: rollout {build}")
         open_every_expander(page, "Agent Mesh")
 
+        view(page, "Why", "The problem")
+
         view(page, "Control Room", "Fleet map")
         browser.close()
     return results
