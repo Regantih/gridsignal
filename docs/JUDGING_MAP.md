@@ -26,6 +26,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | No lookahead anywhere in the policy | `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_dam.py` |
 | Agent mesh: HMAC-signed capability cards, registry with verified/stale/rejected, contract-net bidding, idempotent awards, partial cover plus escalation | `src/gridsignal/mesh/`, `tests/test_mesh.py`, screen: **Agent Mesh** |
 | Jev is one input, not the system: signature → rules → Jev → human | `src/gridsignal/jev/policy.py`, `tests/test_jev.py` |
+| Held-out chaos drills written after the rules and prompts were frozen, scored once with neither changed: rules 0/4, Jev 1/4, zero backup-reserve violations | `scenarios/holdout/*.yaml`, `src/gridsignal/drills.py`, `python -m gridsignal.drills`, `tests/test_drills.py`, screen: **Agent Mesh → Held-out drills** |
 
 ## Fit to Track — 30
 
@@ -34,6 +35,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | Evidence | Where |
 |---|---|
 | Orchestration: the fleet stays coordinated when pieces fail — five chaos scenarios (single device, zone gateway, forged card, silent bidder, fleet-wide scarcity) replay deterministically | `scenarios/*.yaml`, `python -m gridsignal.simulate --all`, `tests/test_simulate.py` |
+| It holds up on failures nobody designed for: a simulated cascade in waves, an under-frequency event with the coordinator unreachable, a neighbourhood islanding, a large-load squeeze with conflicting bids | `scenarios/holdout/*.yaml`, `tests/test_drills.py`, `docs/DEMO.md` 2:45 |
 | Failures are priced, not just logged: dollars at risk before approval, dollars recovered after | `control_room/engine.py`, `prices.energy_value_usd`, screen: **Control Room → incident panel** |
 | Open Grid Data: a specific, checkable claim about what the public data hides | `src/gridsignal/insight.py`, `python -m gridsignal.insight`, screen: **Grid Signals → headline card** |
 
@@ -42,7 +44,8 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | Evidence | Where |
 |---|---|
 | Why this problem is the one that matters to Base | README → *Why this matters to Base* |
-| Why the two tracks are one product: the value that only real time reveals lands in the same minute a device failure costs the most | README → *Open Grid Data*, `docs/DEMO.md` 0:00 and 2:45 |
+| Why the two tracks are one product: the value that only real time reveals lands in the same minute a device failure costs the most | README → *Open Grid Data*, `docs/DEMO.md` 0:00 and 3:15 |
+| Why the held-out result is published as measured, losses and all, before any tuning | README → *Held-out chaos drills*, `docs/DEMO.md` 2:45 |
 | Why a human gate rather than autonomy, and where Jev stops | README → *Jev, the decision layer*; `jev/policy.py` thresholds; `docs/DEMO.md` 1:30 |
 | Safety boundary stated in the product, not only the README | simulation banner in `app/dashboard.py`, `docs/DEMO.md` |
 

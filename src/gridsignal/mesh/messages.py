@@ -27,6 +27,10 @@ class MessageKind(StrEnum):
     AWARD_IGNORED = "award_ignored"
     ESCALATION = "escalation"
     METRICS = "metrics"
+    # Simulated grid-side conditions and agent disagreements, used by the held-out drills.
+    GRID_STRESS = "grid_stress"
+    ISLANDED = "islanded"
+    CONFLICT = "conflict"
 
 
 @dataclass(frozen=True)

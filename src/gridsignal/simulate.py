@@ -30,7 +30,7 @@ from gridsignal.jev.questions import (
     incident_questions,
 )
 from gridsignal.mesh.build import card_for, gateway_id, heartbeat_all, register_fleet
-from gridsignal.mesh.cards import CardStatus, derived_signing_key
+from gridsignal.mesh.cards import AgentCard, CardStatus, derived_signing_key
 from gridsignal.mesh.llm import LLMCoordinator
 from gridsignal.mesh.messages import MessageBus, MessageKind, read_jsonl
 from gridsignal.mesh.negotiation import BACKUP_RESERVE_KWH, AwardSet, Bid, Coordinator
@@ -52,6 +52,13 @@ BID_LOG_LIMIT = 200
 # How many agents get a second opinion from Jev per round. The HMAC check already
 # catches forged cards; these questions are about validly signed agents behaving oddly.
 SUSPECTS_PER_ROUND = 3
+# Nominal grid frequency of the simulated interconnection, and the ERCOT Fast Frequency
+# Response trigger it models: auto-deployment at 59.85 Hz within 15 cycles. Every Hz in
+# this repo is simulated; nothing here reads a real frequency feed.
+NOMINAL_HZ = 60.0
+FFR_TRIGGER_HZ = 59.85
+FFR_DEADLINE_CYCLES = 15
+CYCLES_PER_SECOND = 60.0
 
 
 @dataclass(frozen=True)
@@ -82,6 +89,19 @@ class RunMetrics:
     auto_approvals: int
     decision_latency_ms: float
     distrusted_agents: int
+    # Grid-stress drill measurements. All simulated.
+    min_frequency_hz: float = NOMINAL_HZ
+    extra_demand_kw: float = 0.0
+    islanded_agents: int = 0
+    conflicting_cards: int = 0
+    backup_violations: int = 0
+    #: Cycles from the simulated under-frequency dip to the first committed kW, or None
+    #: when the drill has no frequency event.
+    response_cycles: int | None = None
+
+    @property
+    def within_ffr_deadline(self) -> bool:
+        return self.response_cycles is not None and self.response_cycles <= FFR_DEADLINE_CYCLES
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -299,6 +319,13 @@ def run_scenario(
     silent_after_award: set[str] = set()
     lost_kw = 0.0
     first_failure_s = 0
+    # Simulated grid-side state the drills add on top of a plain device failure.
+    min_hz = NOMINAL_HZ
+    dip_at_s: int | None = None
+    extra_demand_kw = 0.0
+    coordinator_back_s = 0
+    islanded: set[str] = set()
+    conflicting: set[str] = set()
 
     for failure in sorted(scenario.failures, key=lambda f: f.at_s):
         registry.advance(max(failure.at_s - registry.now_s, 0))
@@ -306,6 +333,119 @@ def run_scenario(
         if not first_failure_s:
             first_failure_s = registry.now_s
 
+        if failure.kind in (Injection.GENERATION_TRIP, Injection.FREQUENCY_DIP):
+            hz = failure.hz or FFR_TRIGGER_HZ
+            min_hz = min(min_hz, hz)
+            if dip_at_s is None and hz <= FFR_TRIGGER_HZ:
+                dip_at_s = registry.now_s
+            extra_demand_kw += failure.kw
+            lost = f", {failure.kw:.0f} kW of simulated supply lost" if failure.kw else ""
+            bus.send(
+                registry.now_s,
+                MessageKind.GRID_STRESS,
+                "grid-model",
+                coordinator.agent_id,
+                f"Simulated frequency {hz:.2f} Hz{lost} ({failure.kind.value})",
+                injection=failure.kind.value,
+                hz=hz,
+                kw=failure.kw,
+                simulated=True,
+            )
+            continue
+        if failure.kind is Injection.LOAD_RAMP:
+            extra_demand_kw += failure.kw
+            bus.send(
+                registry.now_s,
+                MessageKind.GRID_STRESS,
+                "grid-model",
+                coordinator.agent_id,
+                (f"Simulated large-load ramp: +{failure.kw:.0f} kW of demand, reserves tightening"),
+                injection=failure.kind.value,
+                kw=failure.kw,
+                simulated=True,
+            )
+            continue
+        if failure.kind is Injection.COORDINATOR_DOWN:
+            coordinator_back_s = max(coordinator_back_s, registry.now_s + failure.for_s)
+            bus.send(
+                registry.now_s,
+                MessageKind.HEARTBEAT_LOST,
+                coordinator.agent_id,
+                "fleet-operator",
+                (
+                    f"Coordinator unreachable for {failure.for_s}s — no auction can be "
+                    "run while it is down"
+                ),
+                injection=failure.kind.value,
+                for_s=failure.for_s,
+            )
+            continue
+        if failure.kind is Injection.CONFLICTING_BIDS:
+            for device_id in failure.devices:
+                card = registry.card(device_id)
+                registry.publish(
+                    registry.sign(
+                        AgentCard(
+                            agent_id=card.agent_id,
+                            kind=card.kind,
+                            zone=card.zone,
+                            capabilities={**card.capabilities, "kw_available": failure.claim_kw},
+                            health=card.health,
+                            last_heartbeat_s=card.last_heartbeat_s,
+                        )
+                    )
+                )
+                conflicting.add(device_id)
+                bus.send(
+                    registry.now_s,
+                    MessageKind.CONFLICT,
+                    device_id,
+                    coordinator.agent_id,
+                    (
+                        f"{device_id} re-published a validly signed card claiming "
+                        f"{failure.claim_kw:.1f} kW, contradicting its telemetry"
+                    ),
+                    claim_kw=failure.claim_kw,
+                    telemetry_kw=round(card.capability("kw_available"), 3),
+                )
+            continue
+        if failure.kind is Injection.ISLAND:
+            zone = failure.zone
+            homes = [d for d in devices if zone is not None and d.zone == zone]
+            for device in homes:
+                lost_kw += device.assigned_kw
+                device.assigned_kw = 0.0
+                islanded.add(device.device_id)
+                # An islanded home keeps every stored kWh for itself, so its card offers
+                # nothing to the grid and the auction cannot award its backup away.
+                card = card_for(device, hours)
+                registry.publish(
+                    registry.sign(
+                        AgentCard(
+                            agent_id=card.agent_id,
+                            kind=card.kind,
+                            zone=card.zone,
+                            capabilities={**card.capabilities, "kw_available": 0.0},
+                            health=card.health,
+                            last_heartbeat_s=registry.now_s,
+                        )
+                    )
+                )
+            bus.send(
+                registry.now_s,
+                MessageKind.ISLANDED,
+                "grid-model",
+                coordinator.agent_id,
+                (
+                    f"{len(homes)} homes in {zone} islanded on their own batteries — "
+                    "local backup first, no export while islanded"
+                ),
+                injection=failure.kind.value,
+                zone=zone,
+                homes=len(homes),
+                simulated=True,
+            )
+            continue
         if failure.kind is Injection.SILENT_AFTER_AWARD:
             silent_after_award.update(failure.devices)
             continue
@@ -353,14 +493,16 @@ def run_scenario(
             injection=failure.kind.value,
         )
 
-    lost_kw = round(lost_kw, 2)
+    lost_kw = round(lost_kw + extra_demand_kw, 2)
     dollars_at_risk = energy_value_usd(lost_kw, hours, price_mwh)
 
     rounds = 0
     awards: list[AwardSet] = []
     covered_kw = 0.0
     gap_kw = lost_kw
-    excluded: set[str] = set(silent)
+    excluded: set[str] = set(silent) | islanded
+    backup_violations = 0
+    first_commit_s: int | None = None
     escalated = False
     time_to_cover_s = 0
     decisions: list[ApprovalDecision] = []
@@ -370,6 +512,21 @@ def run_scenario(
         rounds += 1
         registry.advance(15)
         heartbeat_all(registry, silent)
+        if coordinator_back_s > registry.now_s:
+            # Nobody runs the auction while the coordinator is unreachable; the fleet
+            # waits it out, and the clock keeps running against the event.
+            waited = coordinator_back_s - registry.now_s
+            registry.advance(waited)
+            heartbeat_all(registry, silent)
+            bus.send(
+                registry.now_s,
+                MessageKind.ESCALATION,
+                coordinator.agent_id,
+                "fleet-operator",
+                f"Coordinator back after {waited}s offline — starting the auction now",
+                offline_s=waited,
+            )
+            coordinator_back_s = 0
         call = coordinator.call_for_capacity(gap_kw, hours, exclude=tuple(sorted(excluded)))
         bids = coordinator.collect_bids(call, log_each=scenario.batteries <= BID_LOG_LIMIT)
         award_set = coordinator.propose(call, bids)
@@ -404,6 +561,14 @@ def run_scenario(
             registry.advance(scenario.approval_delay_s)
             heartbeat_all(registry, silent)
         coordinator.approve(call.call_id, decision.approver)
+        if first_commit_s is None and award_set.covered_kw > 0:
+            first_commit_s = registry.now_s
+        backup_violations += sum(
+            1
+            for award in award_set.awards
+            if registry.card(award.agent_id).capability("kwh_available") - award.kw * hours
+            < BACKUP_RESERVE_KWH
+        )
         awards.append(award_set)
         covered_kw += award_set.covered_kw
         escalated = escalated or award_set.escalated
@@ -479,6 +644,16 @@ def run_scenario(
         auto_approvals=sum(1 for d in decisions if d.auto_approved),
         decision_latency_ms=client.median_latency_ms,
         distrusted_agents=len({a for d in decisions for a in d.distrusted}),
+        min_frequency_hz=round(min_hz, 3),
+        extra_demand_kw=round(extra_demand_kw, 2),
+        islanded_agents=len(islanded),
+        conflicting_cards=len(conflicting),
+        backup_violations=backup_violations,
+        response_cycles=(
+            None
+            if dip_at_s is None or first_commit_s is None
+            else int(round((first_commit_s - dip_at_s) * CYCLES_PER_SECOND))
+        ),
     )
     bus.send(
         registry.now_s,

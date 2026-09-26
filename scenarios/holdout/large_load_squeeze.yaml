@@ -1,0 +1,39 @@
+name: Large-load ramp squeezes reserves
+description: >
+  A simulated large load ramps up, data-centre style, tightening reserves during the
+  scarcity event while a device failure removes committed capacity. Three agents then
+  re-publish validly signed cards claiming far more kW than their telemetry supports,
+  so the coordinator sees conflicting bids from agents whose signatures are perfectly
+  good. The load, the reserve shortfall and the conflicting claims are all simulated.
+held_out: true
+seed: 42
+agents:
+  batteries: 1000
+event:
+  scenario: scarcity
+stale_after_s: 120
+duration_s: 900
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 60
+coordinator:
+  llm: false
+injections:
+  - kind: load_ramp
+    at_s: 30
+    kw: 1200
+  - kind: device_failure
+    devices: [BAT-042]
+    at_s: 60
+  - kind: conflicting_bids
+    devices: [BAT-014, BAT-029, BAT-073]
+    at_s: 75
+    claim_kw: 22.0
+
+# Demand, not a component, is what took the reserve away: one battery failing is far
+# smaller than the simulated load ramp driving the shortfall.
+ground_truth:
+  root_cause: grid_event
+  note: >
+    Simulated +1,200 kW load ramp dominates a single device fault, with three validly
+    signed but inconsistent capability cards bidding into the recovery auction.

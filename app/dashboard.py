@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import holdout, insight, member, pipeline
+from gridsignal import drills, holdout, insight, member, pipeline
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
@@ -126,6 +126,12 @@ def signals_run(scenario: str) -> pipeline.PipelineResult:
 def jev_eval() -> jev_evaluate.EvalReport:
     """Rules-only vs Jev across every chaos scenario; replayed from fixtures."""
     return jev_evaluate.evaluate()
+
+
+@st.cache_data(show_spinner=False)
+def drill_report() -> drills.DrillReport:
+    """Rules-only vs Jev on the held-out drills; replayed from fixtures."""
+    return drills.run()
 
 
 @st.cache_data(show_spinner=False)
@@ -1141,7 +1147,11 @@ def render_agent_mesh() -> None:
         st.subheader("Message log")
         render_mesh_log(result)
 
-    render_jev_eval()
+    left_table, right_table = st.columns(2, gap="large")
+    with left_table:
+        render_jev_eval()
+    with right_table:
+        render_holdout_drills()
 
 
 def render_jev_eval() -> None:
@@ -1183,6 +1193,54 @@ def render_jev_eval() -> None:
         "their accuracy as a ceiling, not as evidence they generalise. Replayed from "
         "recorded Jev answers, so these numbers need no API key."
     )
+
+
+def render_holdout_drills() -> None:
+    """The same two decision layers on drills written after the rules were frozen."""
+    st.subheader("Held-out drills, nothing was tuned for these")
+    report = drill_report()
+    rules_correct, total = report.accuracy(drills.RULES)
+    jev_correct, _ = report.accuracy(drills.JEV)
+    summary = pd.DataFrame(
+        [
+            {"decision layer": drills.RULES, "root-cause accuracy": f"{rules_correct}/{total}"},
+            {"decision layer": drills.JEV, "root-cause accuracy": f"{jev_correct}/{total}"},
+        ]
+    )
+    detail = pd.DataFrame(
+        [
+            {
+                "drill": r.drill,
+                "injected truth": r.truth,
+                "rules-only": _mark(report, r.drill, drills.RULES),
+                "Jev": _mark(report, r.drill, drills.JEV),
+                "kW recovered": f"{r.covered_kw:,.0f} of {r.lost_kw:,.0f} ({r.covered_pct:.0f}%)",
+                "time to recover": f"{r.time_to_recover_s}s",
+                "backup reserve violations": r.backup_violations,
+                "response (cycles)": (
+                    "n/a" if r.response_cycles is None else f"{r.response_cycles:,}"
+                ),
+            }
+            for r in report.of_mode(drills.JEV)
+        ]
+    )
+    st.dataframe(summary, hide_index=True, use_container_width=True)
+    st.dataframe(detail, hide_index=True, use_container_width=True)
+    st.caption(
+        "Four drills in `scenarios/holdout/` written after the detection rules and the "
+        "Jev questions were frozen, scored once with neither changed: a Spain-style "
+        "cascade, an under-frequency event with the coordinator unreachable, a "
+        "neighbourhood islanding on its own batteries, and a large-load ramp with "
+        "conflicting bids. All frequency, outage and load values are simulated. The "
+        "cycle column is measured against the 15-cycle ERCOT Fast Frequency Response "
+        "concept; the baseline run misses it by a wide margin, which is the point of "
+        "scoring before tuning."
+    )
+
+
+def _mark(report: drills.DrillReport, drill: str, mode: str) -> str:
+    row = next(r for r in report.rows if r.drill == drill and r.mode == mode)
+    return f"{row.root_cause} {'✓' if row.correct else '✗'}"
 
 
 def main() -> None:

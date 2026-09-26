@@ -14,6 +14,9 @@ from pathlib import Path
 import yaml
 
 SCENARIO_DIR = Path(__file__).resolve().parents[3] / "scenarios"
+# Drills written after the rules and the Jev questions were frozen, kept apart so the
+# tuned set and the held-out set are never scored together by accident.
+HOLDOUT_DIR = SCENARIO_DIR / "holdout"
 TRACE_DIR = Path(__file__).resolve().parents[3] / "data" / "traces"
 
 
@@ -24,6 +27,13 @@ class Injection(StrEnum):
     STALE_TELEMETRY = "stale_telemetry"
     LYING_AGENT = "lying_agent"
     SILENT_AFTER_AWARD = "silent_after_award"
+    # Simulated grid-side stress, all of it modelled: no real frequency or outage data.
+    GENERATION_TRIP = "generation_trip"
+    FREQUENCY_DIP = "frequency_dip"
+    COORDINATOR_DOWN = "coordinator_down"
+    ISLAND = "island"
+    LOAD_RAMP = "load_ramp"
+    CONFLICTING_BIDS = "conflicting_bids"
 
 
 @dataclass(frozen=True)
@@ -33,6 +43,12 @@ class Failure:
     devices: tuple[str, ...] = ()
     zone: str | None = None
     claim_kw: float = 0.0
+    #: Simulated system frequency after the injection, in Hz.
+    hz: float = 0.0
+    #: Simulated kW of supply lost or extra load arriving.
+    kw: float = 0.0
+    #: How long the condition lasts, for injections that have a duration.
+    for_s: int = 0
 
 
 @dataclass(frozen=True)
@@ -50,6 +66,8 @@ class Scenario:
     failures: tuple[Failure, ...] = ()
     source: Path | None = field(default=None, compare=False)
     declared_root_cause: str | None = None
+    ground_truth_note: str = ""
+    held_out: bool = False
 
     @property
     def ground_truth_root_cause(self) -> str:
@@ -91,6 +109,9 @@ def _failure(raw: dict[str, object]) -> Failure:
         devices=tuple(str(d) for d in devices),
         zone=None if zone is None else str(zone),
         claim_kw=float(raw.get("claim_kw", 0.0)),  # type: ignore[arg-type]
+        hz=float(raw.get("hz", 0.0)),  # type: ignore[arg-type]
+        kw=float(raw.get("kw", 0.0)),  # type: ignore[arg-type]
+        for_s=int(raw.get("for_s", 0)),  # type: ignore[arg-type]
     )
 
 
@@ -108,6 +129,9 @@ def load_scenario(path: str | Path) -> Scenario:
     approval = raw.get("approval") or {}
     coordinator = raw.get("coordinator") or {}
     failures = raw.get("injections") or []
+    truth = raw.get("ground_truth") or {}
+    if not isinstance(truth, dict):
+        raise ValueError(f"{file}: ground_truth must be a mapping")
     return Scenario(
         name=str(raw.get("name", file.stem)),
         description=str(raw.get("description", "")),
@@ -121,11 +145,9 @@ def load_scenario(path: str | Path) -> Scenario:
         llm_coordinator=bool(coordinator.get("llm", False)),
         failures=tuple(_failure(item) for item in failures),
         source=file,
-        declared_root_cause=(
-            None
-            if raw.get("ground_truth") is None
-            else str(dict(raw["ground_truth"])["root_cause"])  # type: ignore[arg-type]
-        ),
+        declared_root_cause=None if not truth else str(truth["root_cause"]),
+        ground_truth_note=str(truth.get("note", "")),
+        held_out=bool(raw.get("held_out", False)),
     )
 
 

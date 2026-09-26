@@ -1,0 +1,37 @@
+name: Under-frequency with the coordinator unreachable
+description: >
+  A simulated under-frequency event crosses 59.85 Hz while the coordinator is
+  unreachable, so there is nobody to run an auction. This models the ERCOT Fast
+  Frequency Response concept only — auto-deployment at 59.85 Hz with a response inside
+  15 cycles (0.25 s) — against a simulated fleet; no real frequency feed, market system
+  or device is involved, and the drill measures how the mesh degrades when the
+  coordinating agent is the thing that fails.
+held_out: true
+seed: 42
+agents:
+  batteries: 1000
+event:
+  scenario: scarcity
+stale_after_s: 120
+duration_s: 900
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 45
+coordinator:
+  llm: false
+injections:
+  - kind: coordinator_down
+    at_s: 30
+    for_s: 180
+  - kind: frequency_dip
+    at_s: 40
+    hz: 59.82
+    kw: 600
+
+# No component failed: the fleet is being asked for more because the system frequency
+# fell. The unreachable coordinator is a control-plane failure, not the cause.
+ground_truth:
+  root_cause: grid_event
+  note: >
+    Simulated frequency excursion to 59.82 Hz with a 180 s coordinator outage. Response
+    time is reported in simulated 60 Hz cycles against the 15-cycle FFR concept.

@@ -258,6 +258,64 @@ lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, so **every
 demo is still approved by a person — the auto-approval path is exercised by tests, not by the
 demo. Latency is the recorded live round trip (median 326 ms); the rules answer in microseconds.
 
+### Held-out chaos drills (nothing was tuned for these)
+
+The five scenarios above are the ones the detection rules and the Jev questions were written
+against. These four drills were written afterwards, from published accounts of how real grids
+fail, and scored **once** with no change to a detection rule, the recovery logic or a Jev
+question. **Every frequency, outage, load-ramp and islanding value here is simulated** — this is
+a simulator, not a reproduction of any real event and not a grid-control system.
+
+```bash
+python -m gridsignal.drills   # rules-only vs Jev on scenarios/holdout/*.yaml
+```
+
+| Decision layer | Root-cause accuracy on held-out drills |
+| --- | --- |
+| rules-only | 0/4 |
+| Jev | 1/4 |
+
+| Drill | Injected root cause | rules-only | Jev | kW recovered | Time to recover | Backup reserve violations | Response (cycles) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `cascade_spain_style` | grid_event | gateway_outage ✗ | gateway_outage ✗ | 909 of 1,099 kW (83%) | 195s | 0 | n/a |
+| `frequency_dip_coordinator_down` | grid_event | device_fault ✗ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 12,900 (over 15) |
+| `large_load_squeeze` | grid_event | device_fault ✗ | spoofed_agent ✗ | 965 of 1,207 kW (80%) | 120s | 0 | n/a |
+| `neighborhood_island` | gateway_outage | device_fault ✗ | grid_event ✗ | 768 of 1,010 kW (76%) | 75s | 0 | n/a |
+
+What each drill injects, and what the numbers say:
+
+- **`cascade_spain_style`** — a simulated generation trip that drops frequency to 59.88 Hz, then
+  two gateway losses and a six-device stale-telemetry wave, arriving in waves 30–150 s apart so
+  the faults interact. Compound, cascading failure is the shape the ENTSO-E report on the
+  28 April 2025 Iberian blackout describes — many interacting factors rather than one cause
+  ([entsoe.eu](https://www.entsoe.eu/publications/blackout/28-april-2025-iberian-blackout/)).
+  That report is context for the *shape* of the drill only; nothing here reproduces that event,
+  its causes or its data. Both layers call it a gateway outage, which is the loudest signal in
+  the snapshot and not the thing that started it.
+- **`frequency_dip_coordinator_down`** — a simulated under-frequency event crossing 59.85 Hz
+  while the coordinator is unreachable for 180 s. The 59.85 Hz trigger and the 15-cycle response
+  window are borrowed as *concepts* from ERCOT's Fast Frequency Response description
+  ([ERCOT Real-Time Market Operations, Sep 2025](https://www.ercot.com/files/docs/2025/09/22/2026_09-Real-Time-Market-Operations.pdf));
+  no ERCOT frequency data is used and nothing is dispatched. The baseline result is the honest
+  one: the fleet covers the full 600 kW gap but only **after the coordinator returns**, at
+  ~12,900 simulated cycles against a 15-cycle concept. There is no local self-deploy rule on the
+  cards yet, so this drill measures the gap rather than closing it.
+- **`neighborhood_island`** — a simulated distribution outage where 200 LZ_AUSTIN homes island on
+  their own batteries. The islanded homes are never bid or awarded, so the mesh protects
+  homeowner backup over export revenue: **zero reserve violations**, 76% of the gap covered by
+  the rest of the fleet and the remainder escalated.
+- **`large_load_squeeze`** — a simulated 1,200 kW data-center-style ramp on top of a device
+  fault, while three validly signed agents publish conflicting inflated capacity. Jev calls it a
+  spoofed agent; the HMAC check does not, because the cards really are signed. 80% covered,
+  escalated, no reserve spent.
+
+Across all four drills the fleet spent **zero** homeowner backup reserve and auto-approved
+**nothing** — every award went through the human gate. That is the part that held. Root-cause
+naming did not: 0/4 for the rules, 1/4 for Jev. Both layers reach for the injection they were
+shown before rather than "the grid itself moved", which is exactly what a held-out set is for.
+These are baseline numbers, scored before any change; anything re-scored after changing logic is
+labelled *after tuning on held-out*.
+
 **Inspiration and attribution.** The agent-card, registry and agent-town-scenario ideas are
 inspired by MIT Project NANDA — [nandatown.projectnanda.org](https://nandatown.projectnanda.org)
 and [github.com/projnanda](https://github.com/projnanda). No NANDA code is vendored, copied or
