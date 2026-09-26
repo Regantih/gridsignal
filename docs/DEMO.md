@@ -41,6 +41,20 @@ One operator approval is worth roughly nine thousand dollars on a scarcity eveni
 per fleet. Detection plus reallocation across 10,000 devices runs in well under a second
 (`tests/test_scale.py` prints the measured build / detect / reallocate split on every test run).
 
+## The same event, seen by the homeowner
+
+The **Member App** view is the other half of the story: while the operator reads kW, incident
+severity and an approval gate, the member at 2646 Sabine St sees hours of backup still held for
+their house, what their battery earned in the event, and a notice in plain English — "We've lost
+contact with your battery … your battery is still running and still protecting your home" —
+that turns into "Resolved … a technician visit is scheduled" after the operator approves. Homes
+that absorbed the reallocated load see their slice of the recovered dollars under *Helped
+protect*.
+
+The separation is deliberate: no incident IDs, no kW targets and no approval controls are exposed
+to the member. Backup hours assume a 1.2 kW essential household load and earnings assume a 60%
+member revenue share; both are labelled assumptions, not a Base Power tariff.
+
 ## Safety boundaries
 
 - **No real-world effect.** No device commands, no utility or market integration, no credentials

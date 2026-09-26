@@ -338,6 +338,7 @@ class ControlRoomEngine:
         )
 
         committed_before = self.snapshot().committed_kw
+        incident.assigned_kw_before_recovery = {d.device_id: d.assigned_kw for d in self.devices}
         committed = self._allocate_dispatch()
         incident.restored_kw = round(self.snapshot().committed_kw - committed_before, 2)
         hours = self.remaining_hours()

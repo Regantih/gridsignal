@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import holdout, pipeline
+from gridsignal import holdout, member, pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
     Device,
@@ -77,7 +77,7 @@ CSS = """
 MAP_MARKERS = 400
 GRID_TILES = 48
 
-VIEWS = ("Control Room", "Grid Signals")
+VIEWS = ("Control Room", "Member App", "Grid Signals")
 SIGNAL_COLOR = {
     Signal.CHARGE.value: "#38bdf8",
     Signal.HOLD.value: "#6b7280",
@@ -617,6 +617,96 @@ def render_holdout() -> None:
     )
 
 
+def render_member(eng: ControlRoomEngine) -> None:
+    """The same incident from the homeowner's side: backup, dollars, plain-English notice."""
+    devices = [FOCUS_DEVICE_ID] + [
+        d.device_id for d in eng.devices[:GRID_TILES] if d.device_id != FOCUS_DEVICE_ID
+    ]
+    with st.sidebar:
+        st.header("Member")
+        st.selectbox("Home", devices, key="member_device")
+        st.caption("Same simulation as the Control Room, seen from one house.")
+        st.divider()
+
+    device_id = st.session_state.get("member_device", FOCUS_DEVICE_ID)
+    view = member.member_summary(eng, device_id)
+    banner = "#dc2626" if view.is_affected else "#16a34a"
+
+    st.subheader(f"Base Power — {view.site}")
+    st.markdown(
+        f"<div class='gs-card' style='border-left:4px solid {banner}'>"
+        f"<div class='gs-kicker'>Notice about your system</div>"
+        f"<div class='gs-title'>{view.headline}</div>"
+        f"<div class='gs-body'>{view.body}</div>"
+        f"<div class='gs-body' style='margin-top:.5rem;color:#e6edf6'>"
+        f"<b>{view.next_step}</b></div></div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(3)
+    cols[0].metric(
+        "Whole-home backup left",
+        f"{view.backup_hours:.1f} h",
+        delta=f"{view.backup_kwh:,.1f} kWh reserved for you",
+        delta_color="off",
+    )
+    cols[1].metric(
+        "Earned this event",
+        f"${view.earned_usd:,.2f}",
+        delta=f"your share of ${view.grid_value_usd:,.2f} of grid value",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Helped protect",
+        f"${view.protected_usd:,.2f}",
+        delta="covering a neighbour's outage",
+        delta_color="off",
+    )
+
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown("<div class='gs-kicker'>Where your stored energy is going</div>", True)
+        split = pd.DataFrame(
+            {
+                "use": ["Reserved for your home", "Offered to the grid event"],
+                "kwh": [view.backup_kwh, view.committed_kwh],
+            }
+        )
+        fig = px.bar(split, x="kwh", y="use", orientation="h", height=180, text="kwh")
+        fig.update_traces(marker_color=["#38bdf8", "#f59e0b"], texttemplate="%{text:.1f} kWh")
+        fig.update_layout(
+            margin={"l": 0, "r": 0, "t": 6, "b": 0},
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title=None,
+            yaxis_title=None,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+        st.caption(
+            usd(
+                f"{view.stored_kwh:,.1f} kWh stored right now. Backup hours assume a "
+                f"{member.ESSENTIAL_LOAD_KW:.1f} kW essential household load and your "
+                f"earnings assume a {member.MEMBER_REVENUE_SHARE:.0%} member revenue share "
+                "— both are assumptions in this simulation, not a Base Power tariff."
+            )
+        )
+    with right:
+        st.markdown("<div class='gs-kicker'>Your neighbourhood</div>", True)
+        peers = member.neighbours(eng, device_id)
+        st.markdown(
+            "<div class='gs-card'><div class='gs-body'>"
+            + (f"Batteries at {', '.join(peers)} are on the same load zone. " if peers else "")
+            + "When one home drops out, the others pick up its share — that is why your "
+            "bill and your backup do not move when a single gateway fails."
+            "</div></div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            "You never see incident IDs, kW targets or operator tooling here. "
+            "Recovery decisions stay with a human operator in the Control Room."
+        )
+
+
 def render_grid_signals(scenario: str, fleet_size: int) -> None:
     """Spike detection, spike forecast, dispatch signals and what they were worth."""
     result = signals_run(scenario)
@@ -705,6 +795,10 @@ def main() -> None:
         )
         return
     eng = engine()
+    if st.session_state.get("view") == "Member App":
+        render_member(eng)
+        render_demo_controls(eng)
+        return
     render_demo_controls(eng)
     render_overview(eng)
     st.divider()

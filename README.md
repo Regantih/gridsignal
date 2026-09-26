@@ -75,7 +75,7 @@ ruff format --check .
 
 ## Using the dashboard
 
-The sidebar **View** switch picks between the two pages:
+The sidebar **View** switch picks between the three pages:
 
 ### Control Room
 
@@ -84,6 +84,20 @@ The sidebar **View** switch picks between the two pages:
 - **Reset Demo** (sidebar) — replay the story without reloading the browser.
 - **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
   and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
+
+### Member App
+
+The same incident seen from one house, deliberately kept separate from the operator tooling:
+hours of whole-home backup still held in reserve, the dollars the battery earned in the event and
+the dollars it helped protect when a neighbour dropped out, plus a plain-English notice about the
+device issue and its resolution. Pick any home in the sidebar; BAT-042 is the one that fails.
+Trigger the failure from the Control Room (or the sidebar controls on this page) and the member
+copy moves from "Your battery is healthy" to "We've lost contact with your battery" to
+"Resolved" — with no incident IDs, kW targets or approval controls exposed to the homeowner.
+
+Member-facing numbers use two explicit assumptions: a **1.2 kW essential household load** for
+backup hours and a **60% member revenue share** of the grid value their battery creates. Neither
+is a Base Power tariff.
 
 ### Grid Signals
 
@@ -148,6 +162,7 @@ flowchart LR
 | `src/gridsignal/signals.py` | Declining reservation price turning prices plus spike probability into charge/hold/export |
 | `src/gridsignal/backtest.py` | Battery settlement ledger (SoC, cashflow) for the signals and for a naive fixed schedule |
 | `src/gridsignal/pipeline.py` | `run(scenario)` wiring detect → forecast → signals → backtest, plus a CLI |
+| `src/gridsignal/member.py` | Member-facing summary for one home: backup hours, earned/protected dollars, plain-English notice |
 | `src/gridsignal/holdout.py` | Replays the frozen policy over the bundled held-out days and scores it against the naive schedule |
 | `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
 | `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
@@ -217,6 +232,9 @@ a retune against this table — retuning on it would destroy the only out-of-sam
 Reproduce with `python -m gridsignal.holdout`.
 
 ### Assumptions (not measured fleet data)
+
+Member view: essential household load **1.2 kW** (backup hours = reserved kWh ÷ 1.2 kW), member
+revenue share **60%** of the grid-event value their battery creates.
 
 Every dollar figure in this repository rests on these stated assumptions about a single home
 battery. They are round numbers chosen to be representative; they are **not** measurements of any

@@ -125,6 +125,9 @@ class Incident:
     dollars_recovered: float = 0.0
     # Every device knocked out by this failure (one gateway firmware ring).
     cohort: list[str] = field(default_factory=list)
+    # Dispatch each device held just before the approved reallocation, so a home can be
+    # told how much of the recovery its own battery absorbed.
+    assigned_kw_before_recovery: dict[str, float] = field(default_factory=dict)
     approval_required: bool = True
     approved_by: str | None = None
     approved_at: datetime | None = None
