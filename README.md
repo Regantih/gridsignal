@@ -220,6 +220,7 @@ Same numbers from the CLI:
 ```bash
 python -m gridsignal.pipeline --scenario scarcity --devices 10000
 python -m gridsignal.holdout          # the held-out scorecard
+python -m gridsignal.demo_numbers     # every number spoken in docs/DEMO.md
 ```
 
 The view opens on the **Open Grid Data insight card** (below), then the backtest headline, the
@@ -227,8 +228,8 @@ signal chart, the held-out scorecard and the **congestion panel** — a zone-by-
 the West-to-load-center spread, zone-timed against zone-blind value per battery, and the "where
 to install next" placement sketch ([Congestion](#open-grid-data-congestion-and-where-the-next-battery-is-worth-most)).
 
-Full walkthrough, safety boundaries and the timed 5-minute demo script:
-[`docs/DEMO.md`](docs/DEMO.md).
+Full walkthrough, safety boundaries and the timed 4:40 demo script (three beats, every spoken
+number reproduced by `python -m gridsignal.demo_numbers`): [`docs/DEMO.md`](docs/DEMO.md).
 
 ### Agent Mesh
 
@@ -924,7 +925,7 @@ real Base Power device or fleet.
 | [`docs/WRITEUP.md`](docs/WRITEUP.md) | The 150–300 word write-up: problem, who it helps, solution, impact |
 | [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | Submission checklist, the same write-up, deploy and capture instructions |
 | [`docs/JUDGING_MAP.md`](docs/JUDGING_MAP.md) | Every judging sub-criterion mapped to the file, test or screen that proves it |
-| [`docs/DEMO.md`](docs/DEMO.md) | The timed 5-minute demo script |
+| [`docs/DEMO.md`](docs/DEMO.md) | The timed 4:40 demo script, three beats |
 | [`docs/ROSTER.md`](docs/ROSTER.md) | Team roster template |
 | [`docs/architecture.md`](docs/architecture.md) | Data-pipeline architecture notes |
 

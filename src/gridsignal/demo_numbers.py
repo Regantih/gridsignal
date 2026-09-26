@@ -1,0 +1,122 @@
+"""Every number spoken in the demo, recomputed from the code in one command.
+
+``python -m gridsignal.demo_numbers`` prints the figures the script in ``docs/DEMO.md``
+quotes on screen, in the order the demo walks them. ``tests/test_docs.py`` reads both and
+fails when a number in the script no longer appears here, so the script cannot drift away
+from the app.
+
+Everything below is simulated fleet state settled against bundled historical ERCOT prices.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, replace
+
+from gridsignal import holdout, insight
+from gridsignal.control_room import ControlRoomEngine
+from gridsignal.fleet import FOCUS_DEVICE_ID
+from gridsignal.prices import load_scenario
+from gridsignal.rollout import APPROVAL_ABOVE_SHARE, RING_SHARES, load_rollout, run_rollout
+from gridsignal.simulate import run_file
+
+DEMO_FLEET = 10_000
+LYING_AGENT = "scenarios/lying_agent.yaml"
+BAD_BUILD = "scenarios/rollout_bad_build.yaml"
+
+
+@dataclass(frozen=True)
+class Beat:
+    """One demo beat and the lines of numbers it puts on screen."""
+
+    title: str
+    lines: tuple[str, ...]
+
+
+def control_room_beat(fleet_size: int = DEMO_FLEET) -> Beat:
+    """Scarcity day, Base-scale fleet: what one approval is worth."""
+    eng = ControlRoomEngine(price_trace=load_scenario("scarcity"), fleet_size=fleet_size)
+    target_kw = eng.grid_event.target_kw
+    incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    at_risk_pct = eng.snapshot().coverage_pct
+    eng.approve_recovery()
+    snap = eng.snapshot()
+    return Beat(
+        "Beat 1 — Control Room, scarcity day, 10,000 simulated devices",
+        (
+            f"fleet: {fleet_size:,} devices, {len(eng.mine):,} of them ours to dispatch, "
+            f"{target_kw:,.0f} kW committed",
+            f"outage: {len(incident.cohort)} devices out, {incident.lost_kw:,.0f} kW lost, "
+            f"coverage {at_risk_pct:.0f}% before approval",
+            f"dollars: ${incident.dollars_at_risk:,.0f} at risk, "
+            f"${incident.dollars_recovered:,.0f} recovered after one approval, "
+            f"coverage back to {snap.coverage_pct:.0f}%",
+        ),
+    )
+
+
+def mesh_beat() -> Beat:
+    """The dishonest agent and the build that lies about its own health."""
+    run = run_file(LYING_AGENT)
+    m = run.metrics
+    at_scale = replace(load_rollout(BAD_BUILD), devices=DEMO_FLEET)
+    rollout = run_rollout(at_scale, trace=None)
+    r = rollout.metrics
+    rings = " -> ".join(name if share == 0.0 else f"{share:.0%}" for name, share in RING_SHARES)
+    return Beat(
+        "Beat 2 — Agent Mesh: the lying agent and the bad build",
+        (
+            f"rollout rings: {rings} of the fleet, human approval required above "
+            f"{APPROVAL_ABOVE_SHARE:.0%}",
+            f"lying_agent: {m.agents} agents, {m.rejected_cards} card rejected on signature, "
+            f"{m.covered_kw:.0f} of {m.lost_kw:.0f} kW recovered ({m.covered_pct:.0f}%), "
+            f"{m.human_approvals} human approvals, {m.auto_approvals} auto-approvals",
+            f"rollout bad build: {r.devices:,} devices, halted at {r.halted_ring} on "
+            f"{r.failed_gate} after {r.time_to_detect_s}s simulated, "
+            f"{r.homes_touched:,} homes touched, {r.homes_affected} affected, "
+            f"{r.rolled_back:,} rolled back, {r.reserve_violations} reserve violations",
+        ),
+    )
+
+
+def signals_beat() -> Beat:
+    """What the public data hides, and how the policy scores on days it never saw."""
+    view = insight.summarize(insight.analyze())
+    corrected = holdout.summarize(holdout.evaluate())
+    first_scored = holdout.summarize(holdout.evaluate(same_interval_price=True))
+    return Beat(
+        "Beat 3 — Grid Signals: the insight and the held-out days",
+        (
+            f"insight: on the {view.scarcity_days} bundled scarcity days the day-ahead curve "
+            f"exposed only {view.scarcity_visible_share:.0%} of the capturable value; "
+            f"${view.scarcity_blind_usd:,.2f} per battery showed up only in real time, worth "
+            f"about {view.ordinary_days_equivalent} ordinary trading days; "
+            f"{view.divergent_intervals} of {view.intervals:,} intervals printed 5x their "
+            f"day-ahead hour",
+            f"held out ({corrected.days} days, scored once): {corrected.days_won} of "
+            f"{corrected.days} beat the naive schedule, mean "
+            f"${corrected.mean_uplift_usd:,.2f}, median ${corrected.median_uplift_usd:,.2f}, "
+            f"worst ${corrected.worst_uplift_usd:,.2f} per battery per day",
+            f"as first scored (same-interval price): {first_scored.days_won} of "
+            f"{first_scored.days} days, mean ${first_scored.mean_uplift_usd:,.2f} — the "
+            "corrected run above decides each interval on the last settled print instead",
+        ),
+    )
+
+
+def beats() -> list[Beat]:
+    return [control_room_beat(), mesh_beat(), signals_beat()]
+
+
+def report() -> str:
+    blocks = []
+    for beat in beats():
+        blocks.append("\n".join([beat.title] + [f"  {line}" for line in beat.lines]))
+    return "\n\n".join(blocks)
+
+
+def main() -> None:
+    print(report())
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI
+    main()

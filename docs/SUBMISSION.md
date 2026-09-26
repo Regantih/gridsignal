@@ -9,7 +9,7 @@
 Submit via https://airtable.com/appWQWPtBqDUhCPPj/shrU4GuBeUnMzyrd5. One per team.
 
 - [x] Project title — GridSignal Control Room
-- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:55)
+- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:40)
 - [ ] Repo set to PUBLIC — repository setting, do this before submitting
 - [x] README: quick start, stack + architecture diagram, reproduce steps, data provenance, limitations — [`../README.md`](../README.md)
 - [x] Deployed URL or short screen capture — deploy steps below, or `python scripts/capture_demo.py`
@@ -69,7 +69,7 @@ Jev's answer → human approval → recovery, then Agent Mesh, Grid Signals and 
 
 ## Demo video
 
-Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:55 and the core loop is
+Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:40 and the core loop is
 live, not slides. Keep the "simulation only, a human approves every action" banner on screen
 during the Control Room segment.
 
