@@ -26,6 +26,8 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | No lookahead anywhere in the policy | `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_dam.py` |
 | Agent mesh: HMAC-signed capability cards, registry with verified/stale/rejected, contract-net bidding, idempotent awards, partial cover plus escalation | `src/gridsignal/mesh/`, `tests/test_mesh.py`, screen: **Agent Mesh** |
 | Jev is one input, not the system: signature → rules → Jev → human | `src/gridsignal/jev/policy.py`, `tests/test_jev.py` |
+| Staged firmware rollout as an orchestrated job: lab → 1% → 10% → 50% → 100% rings, three health gates per ring, automatic halt and rollback, no advance during a grid event or an islanded home, human approval past 10% | `src/gridsignal/rollout.py`, `scenarios/rollout_*.yaml`, `tests/test_rollout.py`, screen: **Agent Mesh → Rollout** |
+| Install wave: signed installer commissioning, probation state, zero awards to unverified or probationary units, existing commitments untouched | `src/gridsignal/install.py`, `scenarios/install_wave.yaml`, `tests/test_install.py`, screen: **Agent Mesh → Install wave** |
 | Held-out chaos drills written after the rules and prompts were frozen: baseline rules 0/4, Jev 1/4; after tuning on held-out rules 4/4, Jev 1/4; zero backup-reserve violations throughout | `scenarios/holdout/*.yaml`, `src/gridsignal/drills.py`, `python -m gridsignal.drills`, `tests/test_drills.py`, screen: **Agent Mesh → Held-out drills** |
 
 ## Fit to Track — 30
@@ -36,6 +38,8 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 |---|---|
 | Orchestration: the fleet stays coordinated when pieces fail — five chaos scenarios (single device, zone gateway, forged card, silent bidder, fleet-wide scarcity) replay deterministically | `scenarios/*.yaml`, `python -m gridsignal.simulate --all`, `tests/test_simulate.py` |
 | It holds up on failures nobody designed for: a simulated cascade in waves, an under-frequency event where batteries self-deploy from their own cards in 12 simulated cycles and reconcile without double-counting, a neighbourhood islanding that resyncs on restore, a large-load squeeze with conflicting bids | `scenarios/holdout/*.yaml`, `tests/test_drills.py`, `docs/DEMO.md` 2:45 |
+| The failure mode a heartbeat cannot see: a build that keeps sending telemetry while silently refusing charge/discharge on hot devices is caught by the canary's response gate — 100 homes touched, 3 affected, 100 rolled back out of 10,000, 420 simulated seconds to detect | `tests/test_rollout.py::test_a_silent_bad_build_is_caught_by_the_canary_response_gate`, `python -m gridsignal.rollout scenarios/rollout_bad_build.yaml`, `docs/DEMO.md` 3:05 |
+| Growth does not destabilise the mesh: several hundred units join during a live event with zero kW awarded to an unverified or probationary unit and zero kW lost from an existing commitment | `tests/test_install.py`, screen: **Agent Mesh → Install wave** |
 | Failures are priced, not just logged: dollars at risk before approval, dollars recovered after | `control_room/engine.py`, `prices.energy_value_usd`, screen: **Control Room → incident panel** |
 | Open Grid Data: a specific, checkable claim about what the public data hides | `src/gridsignal/insight.py`, `python -m gridsignal.insight`, screen: **Grid Signals → headline card** |
 | Congestion measured, not asserted: all eight load zones plus the hub average for 15 bundled days, zone-to-hub and West-to-load-center basis per 15-minute interval | `src/gridsignal/congestion.py`, `data/zones/*.parquet` with provenance sidecars, `tests/test_congestion.py`, screen: **Grid Signals → congestion panel** |
@@ -91,6 +95,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 |---|---|
 | 10,000 devices: build ~104 ms, detect ~1 ms, approve + reallocate ~33 ms | `tests/test_scale.py` (`pytest -q -s tests/test_scale.py`) |
 | 10,000 agents: register ~242 ms, heartbeat sweep ~106 ms, negotiation over 5,913 bids ~22 ms | `tests/test_simulate.py` (`pytest -q -s tests/test_simulate.py`) |
+| 10,000-device staged rollout with per-ring gates in ~2 ms; 400 units commissioned into a 10,000-device mesh and re-auctioned in ~600 ms | `tests/test_rollout.py::test_ten_thousand_device_rollout_detects_the_bad_build_fast`, `tests/test_install.py::test_ten_thousand_device_install_wave_benchmark` |
 | Fleet map thins healthy markers above 400 devices so a 10,000-device view stays interactive | `MAP_MARKERS` in `app/dashboard.py` |
 | Analytics, held-out scoring, insight and chaos replays are cached per input in the dashboard | `@st.cache_data` on `signals_run`, `holdout_run`, `insight_run`, `chaos_run`, `jev_eval` |
 | Jev never blocks the demo: recorded answers replay in microseconds, live median 326 ms | `jev/client.py`, `python -m gridsignal.jev.evaluate` |

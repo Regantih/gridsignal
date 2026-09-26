@@ -152,4 +152,10 @@ def load_scenario(path: str | Path) -> Scenario:
 
 
 def available_scenarios(directory: Path = SCENARIO_DIR) -> list[Path]:
-    return sorted(directory.glob("*.yaml"))
+    """Chaos scenarios only: the rollout and install-wave jobs live here too."""
+    return sorted(p for p in directory.glob("*.yaml") if is_chaos_scenario(p))
+
+
+def is_chaos_scenario(path: Path) -> bool:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return isinstance(raw, dict) and "injections" in raw

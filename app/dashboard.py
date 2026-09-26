@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import congestion, drills, holdout, insight, member, pipeline
+from gridsignal import congestion, drills, holdout, insight, install, member, pipeline, rollout
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
@@ -132,6 +132,20 @@ def jev_eval() -> jev_evaluate.EvalReport:
 def drill_report() -> drills.DrillReport:
     """Rules-only vs Jev on the held-out drills; replayed from fixtures."""
     return drills.run()
+
+
+@st.cache_data(show_spinner=False)
+def rollout_run(path: str) -> rollout.RolloutResult:
+    """Replay one staged firmware rollout from its YAML scenario."""
+    scenario = rollout.load_rollout(path)
+    return rollout.run_rollout(scenario, trace=rollout.trace_path(scenario))
+
+
+@st.cache_data(show_spinner=False)
+def install_run(path: str) -> install.InstallResult:
+    """Replay the install wave joining the mesh during a live event."""
+    scenario = install.load_install(path)
+    return install.run_install_wave(scenario, trace=install.trace_path(scenario))
 
 
 @st.cache_data(show_spinner=False)
@@ -1387,11 +1401,116 @@ def render_agent_mesh() -> None:
         st.subheader("Message log")
         render_mesh_log(result)
 
+    render_rollout()
+
     left_table, right_table = st.columns(2, gap="large")
     with left_table:
         render_jev_eval()
     with right_table:
         render_holdout_drills()
+
+
+def render_rollout() -> None:
+    """Firmware rollout as an orchestrated job: rings, gates, halt and rollback."""
+    st.subheader("Firmware rollout")
+    files = rollout.available_rollouts()
+    if not files:
+        st.info("No rollout scenarios found in scenarios/.")
+        return
+    choice = st.radio(
+        "Build",
+        files,
+        format_func=lambda p: p.stem.replace("rollout_", "").replace("_", " "),
+        horizontal=True,
+        key="rollout_scenario",
+    )
+    result = rollout_run(str(choice))
+    m = result.metrics
+
+    a, b, c, d = st.columns(4)
+    a.metric("Rings cleared", f"{m.rings_completed} of {len(rollout.RING_SHARES)}")
+    b.metric("Homes touched", f"{m.homes_touched:,}", f"of {m.devices:,} devices")
+    c.metric(
+        "Time to detect",
+        "no fault" if m.time_to_detect_s is None else f"{m.time_to_detect_s}s",
+        f"{m.homes_affected:,} homes affected" if m.homes_affected else "build held",
+        delta_color="inverse" if m.homes_affected else "off",
+    )
+    d.metric("Human approvals", m.human_approvals, f"{m.rolled_back:,} rolled back")
+
+    badges = " ".join(
+        [
+            pill(
+                f"halted at {m.halted_ring} on {m.failed_gate}" if m.halted else "all rings held",
+                "#dc2626" if m.halted else "#16a34a",
+            ),
+            pill(f"{m.reserve_violations} backup reserve violations", "#16a34a"),
+            pill(f"{m.held_s}s held for grid events / islanded homes", "#38bdf8"),
+        ]
+    )
+    st.markdown(f"<div class='gs-card'>{badges}</div>", unsafe_allow_html=True)
+    st.dataframe(
+        pd.DataFrame(rollout.ring_table(result)), hide_index=True, use_container_width=True
+    )
+
+    gate_rows = [
+        {
+            "ring": ring.ring,
+            "gate": gate.gate,
+            "result": "pass" if gate.passed else "FAIL",
+            "observed": gate.observed,
+            "threshold": gate.threshold,
+            "detail": gate.detail,
+        }
+        for ring in result.rings
+        for gate in ring.gates
+    ]
+    with st.expander("Health gates, ring by ring"):
+        st.dataframe(pd.DataFrame(gate_rows), hide_index=True, use_container_width=True)
+    st.caption(
+        usd(
+            "Simulated rollout of a simulated build. Rings are lab, 1% canary, 10%, 50% "
+            "and 100%; each one has to clear telemetry heartbeat, charge/discharge "
+            "response and backup reserve held before the next opens, no ring advances "
+            "during a grid event or while a home is islanded, and every promotion past "
+            "10% of the fleet needs a named human. Reproduce with "
+            f"`python -m gridsignal.rollout scenarios/{choice.name}`; the run writes a "
+            "replayable JSONL trace."
+        )
+    )
+
+    render_install_wave()
+
+
+def render_install_wave() -> None:
+    """Several hundred new units joining the mesh mid-event, on probation."""
+    st.subheader("Install wave")
+    result = install_run("scenarios/install_wave.yaml")
+    m = result.metrics
+    a, b, c, d = st.columns(4)
+    a.metric("Units joined", f"{m.registered:,}", f"{m.rejected_cards:,} rejected at the door")
+    b.metric("Cleared probation", f"{m.promoted:,}", f"{m.failed_health:,} failed health check")
+    c.metric(
+        "Time to first eligible award",
+        "none"
+        if m.time_to_first_eligible_award_s is None
+        else (f"{m.time_to_first_eligible_award_s}s"),
+        f"{m.joins_per_hour:,.0f} joins/h simulated",
+        delta_color="off",
+    )
+    d.metric(
+        "Awards to unverified units",
+        m.awards_to_unverified + m.awards_to_probation,
+        f"{m.existing_kw_lost:.0f} kW of existing commitment lost",
+        delta_color="off",
+    )
+    st.caption(
+        "Simulated install wave: new batteries are commissioned by an installer phone "
+        "check that registers their signed card, start on probation advertising no "
+        "biddable kW, and only become eligible after heartbeat, charge/discharge and "
+        "reserve checks. Reproduce with "
+        "`python -m gridsignal.install scenarios/install_wave.yaml`."
+    )
 
 
 def render_jev_eval() -> None:

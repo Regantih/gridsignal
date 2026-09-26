@@ -1,0 +1,31 @@
+name: Bad firmware build
+description: >
+  A build that passes the bench and then fails silently on the hot devices: the
+  inverter stops answering charge and discharge commands while the heartbeat keeps
+  arriving, so only the response gate catches it. Everything here is simulated: no
+  firmware, no device and no temperature in this file is real.
+seed: 42
+devices: 10000
+build:
+  version: 2026.09.3-rc1
+  previous: 2026.08.4
+fault:
+  # Of the devices sitting above the temperature threshold, this share silently stops
+  # responding. The heartbeat is unaffected, which is what makes it a silent failure.
+  # About 35% of the simulated fleet sits above the threshold, so this works out at
+  # roughly 3% of all devices.
+  silent_failure_share: 0.0867
+  high_temp_c: 35.0
+  breaks_heartbeat: false
+  breaks_reserve: false
+gates:
+  heartbeat: 0.99
+  response: 0.99
+  reserve_kwh: 4.0
+conditions:
+  # A simulated grid event is live for the first 5 minutes; no ring may advance in it.
+  grid_event_s: [0, 300]
+  islanded: []
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 60

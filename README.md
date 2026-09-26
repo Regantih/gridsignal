@@ -205,6 +205,47 @@ on the seeded fleet: no LLM, no API key, no network. An optional LLM coordinator
 (`src/gridsignal/mesh/llm.py`) can rank bids behind an explicit flag; it is **off by default** and
 falls back to the deterministic ranking when no provider is wired up.
 
+### Firmware rollout and install wave (Agent Mesh → Rollout panel)
+
+A fleet is also a software deployment target: the same orchestration that reassigns kW has to ship
+a build to thousands of devices without breaking the commitment. The rollout job runs the fleet in
+rings — **lab (5 devices) → 1% canary → 10% → 50% → 100%** — and each ring has to clear three
+gates before the next opens: **telemetry heartbeat**, **charge/discharge response**, and
+**backup reserve held**. A ring never advances while a simulated grid event is live or while a home
+in that ring is islanded; it waits, and gives up rather than shipping into the event. Every
+promotion past 10% of the fleet needs a named human, so the two largest rings stop until someone
+approves them. On the first failed gate the job halts and rolls the whole touched population back
+to the previous build.
+
+```bash
+python -m gridsignal.rollout scenarios/rollout_bad_build.yaml   # writes data/traces/rollout_bad_build.jsonl
+python -m gridsignal.rollout scenarios/rollout_good_build.yaml
+python -m gridsignal.install scenarios/install_wave.yaml        # writes data/traces/install_wave.jsonl
+```
+
+| Run | Scale | Result |
+|---|---|---|
+| `rollout_good_build.yaml` | 10,000 simulated devices | all 5 rings, 2 human approvals, 10,000 homes updated, 0 reserve violations |
+| `rollout_bad_build.yaml` | 10,000 simulated devices | halted in the 1% canary on `charge_discharge_response` **420 simulated seconds** after the first device updated; **100 homes touched, 3 affected, 100 rolled back**, 0 reserve violations |
+
+The bad build is the interesting one: it fails *silently*, only on devices above a simulated 35 °C,
+and the heartbeat keeps arriving the whole time. A heartbeat-only gate would have passed it
+straight through to 10,000 homes; the charge/discharge gate catches it inside the first hundred.
+
+The **install wave** is the other direction — units arriving rather than software leaving. Several
+hundred newly installed batteries join the mesh *during* an active event. Each one is commissioned
+by a simulated installer phone check that registers its signed card; a unit that never went through
+that check carries no valid signature and is rejected at the door. An accepted unit starts in
+**probation**, advertising zero biddable kW, and becomes eligible only after it clears the same
+three health gates. In the bundled wave: 400 units arrive, 390 register, 10 are rejected, 383 clear
+probation at ~95 joins/h simulated, the first eligible award lands 300 s after the first arrival,
+and **zero kW is awarded to an unverified or probationary unit** while **no existing commitment
+loses a single kW**. Awarded agents republish what they have *left*, so the same kW is never bid
+twice.
+
+All of it is simulated: no firmware, no installer, no device and no temperature in these scenarios
+is real, and nothing is ever sent to a battery.
+
 ### Jev, the decision layer
 
 *Code acts, Jev decides, humans approve when Jev is unsure.* The mesh does the arithmetic; the
@@ -474,6 +515,8 @@ Measured on this machine (Python 3.11, single process, no GPU); reproduce with
 | Mesh: register signed cards | 10,000 agents | ~242 ms |
 | Mesh: heartbeat sweep | 10,000 agents | ~106 ms |
 | Mesh: contract-net negotiation | 10,000 agents, 5,913 bids | ~22 ms |
+| Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
+| Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
 | Jev decision round trip | recorded live median | 326 ms (rules fallback: microseconds) |
 
