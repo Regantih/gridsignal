@@ -26,6 +26,7 @@ from gridsignal import (
     judgment_report,
     perf,
     replay,
+    transport,
 )
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
@@ -40,6 +41,10 @@ DEMO_FLEET = 10_000
 #: the 10,000 and 100,000-agent runs live in docs/PERFORMANCE.md.
 PERF_AGENTS = 2_000
 PERF_REPEATS = 3
+#: Agents in the live transport round the page runs over loopback sockets between real
+#: processes. Small for the same reason: the 1,000 and 10,000-agent runs, and the lossy
+#: ones, are in docs/PERFORMANCE.md.
+TRANSPORT_AGENTS = 150
 #: The larger of the two modelled hardware generations, the one the README quotes the
 #: ancillary headline on. Base Core-style means modelled from a public interview, not
 #: an official specification.
@@ -221,6 +226,7 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
     judgment = judgment_report.build()
     rules = judgment.blind[judgment_report.RULES]
     jev = judgment.blind[judgment_report.JEV]
+    wire = transport.measure(TRANSPORT_AGENTS, workers=2)
     after = perf.measure(PERF_AGENTS, repeats=PERF_REPEATS)
     before = perf.measure_before(PERF_AGENTS, repeats=PERF_REPEATS)
     speedup = before.total_p50_ms / after.total_p50_ms if after.total_p50_ms else 0.0
@@ -301,6 +307,19 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
                 "python -m gridsignal.perf --before",
                 live=True,
             ),
+            Claim(
+                "It survives a real transport, not just a function call",
+                f"p50 {wire.p50_ms:,.0f} ms, p95 {wire.p95_ms:,.0f} ms detect to award",
+                f"{wire.agents:,} agents in {wire.worker_processes} separate processes, "
+                f"one loopback TCP socket each, cards signed in the agent process and "
+                f"verified in the coordinator's: {wire.frames:,} frames at "
+                f"{wire.frames_per_s:,.0f}/s, {wire.coverage_pct:.0f}% of the call "
+                f"covered. Local loopback, not a WAN — no gateway, cellular or inverter "
+                f"time. At 10,000 agents with --drop 0.05 the call still clears and the "
+                f"tail moves; see docs/PERFORMANCE.md.",
+                "python -m gridsignal.transport",
+                live=True,
+            ),
         ),
     )
 
@@ -323,6 +342,9 @@ def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
         + judgment_report.calibration_reading(cal),
         f"Wear cost is this repository's assumption — "
         f"${wear.wear_usd_per_mwh:,.0f}/MWh for a {wear.label} — not vendor data.",
+        "The transport benchmark is local loopback between processes on one machine. "
+        "It measures this software's own overhead under a real socket, not a field "
+        "network: no gateway, no cellular link, no inverter.",
         "Nothing here contacts a real device, a real utility or a real ERCOT system, "
         "and no result should be read as a statement about Base's own fleet.",
     ]

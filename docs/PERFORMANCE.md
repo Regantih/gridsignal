@@ -103,9 +103,48 @@ no honest speedup to claim there.
 CI also runs `python -m gridsignal.perf --sizes 10000 --repeats 3 --json perf.json` and
 uploads `perf.json`, so a run's numbers can be compared with this page.
 
+## Over a real transport: separate processes, sockets, packet loss
+
+Everything above is in-process compute. This section is not: the coordinator runs in one OS
+process and the agents in two more, and the only thing they share is a TCP connection on
+`127.0.0.1`. One socket per agent, newline-delimited JSON frames, and each capability card
+is HMAC-signed in the agent process and verified in the coordinator process, so a forged
+card is refused across the wire rather than inside one interpreter.
+
+```bash
+python -m gridsignal.transport                        # 1,000 and 10,000 agents
+python -m gridsignal.transport --agents 1000 --drop 0.05
+python -m gridsignal.transport --agents 1000 --forged 5
+```
+
+One sample is the whole round trip an operator waits on: call for capacity broadcast ->
+signed bid -> ranked award -> the agent's acknowledgement.
+
+| agents | drop | p50 ms | p95 ms | max ms | frames/s | re-sends | covered | finished |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1,000 | 0% | 65.5 | 67.5 | 67.7 | 7,453 | 0 | 100% | 1,000 of 1,000 |
+| 10,000 | 0% | 816.9 | 834.8 | 836.6 | 6,950 | 0 | 100% | 10,000 of 10,000 |
+| 1,000 | 5% | 1,579.0 | 2,339.3 | 3,856.7 | 2,045 | 218 | 100% | 999 of 1,000 |
+| 10,000 | 5% | 3,990.3 | 4,885.0 | 6,534.4 | 7,827 | 2,049 | 100% | 9,999 of 10,000 |
+
+Read the ratios, not the milliseconds: they are this box (2 vCPU), and detect-to-award over
+loopback at 10,000 agents costs 816.9 ms against 25.9 ms for the same negotiation in one
+process, about 32x — the transport, not the ranking, is the bill.
+
+Under 5% loss, thrown-away frames are re-sent: the call still clears 100% at both sizes, and
+what it costs is the tail (p95 67.5 ms -> 2,339.3 ms at 1,000 agents). The honest failure is
+in the last column — one agent in each lossy run had four acknowledgements in a row dropped
+and was never confirmed, so the coordinator ends the round believing it is uncommitted. A
+field system needs a durable re-send queue, not four attempts.
+
+**Local loopback, not a WAN.** No cellular link, no gateway, no inverter, no internet path:
+these are the software's own costs under a real socket and a real process boundary.
+
 ## Limits
 
-- Simulated fleet, simulated agents, in-process messaging. No radio, no gateway, no inverter.
-- Single process, single core. The mesh is deliberately not parallelised: determinism and a
-  replayable trace matter more here than another 2x.
+- Simulated fleet, simulated agents. The transport benchmark above is local loopback only.
+- Everything outside that section is in-process messaging. No radio, no gateway, no inverter.
+- The product itself runs the mesh in one process, deliberately not parallelised:
+  determinism and a replayable trace matter more here than another 2x.
+- Four re-send attempts, in memory. One agent in 10,000 goes unconfirmed at 5% loss.
 - Numbers move with the machine. Compare the ratios, or re-run the one command.

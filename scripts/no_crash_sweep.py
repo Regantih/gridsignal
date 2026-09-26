@@ -59,6 +59,10 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
         ("-m", "gridsignal.perf", "--sizes", "1000", "--repeats", "2", "--before"),
     ),
     (
+        "transport benchmark over loopback sockets",
+        ("-m", "gridsignal.transport", "--agents", "150", "--drop", "0.05"),
+    ),
+    (
         "rollout bad build",
         ("-m", "gridsignal.rollout", "scenarios/rollout_bad_build.yaml", "--no-trace"),
     ),

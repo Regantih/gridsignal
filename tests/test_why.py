@@ -89,6 +89,18 @@ def test_the_model_is_presented_as_a_second_opinion_that_loses_to_the_rules() ->
     assert rules.correct >= jev.correct, "if that ever flips, rewrite the claim"
 
 
+def test_the_transport_claim_is_labelled_loopback_and_reports_both_percentiles() -> None:
+    """The one benchmark that crosses a process boundary must not read like a WAN result."""
+    claim = _claim(why.evidence_section(fleet_size=48), "real transport")
+
+    assert claim.live, "it is measured on the machine showing the page"
+    assert "p50" in claim.value and "p95" in claim.value
+    assert f"{why.TRANSPORT_AGENTS:,} agents in 2 separate processes" in claim.detail
+    assert "Local loopback, not a WAN" in claim.detail
+    assert claim.command == "python -m gridsignal.transport"
+    assert "loopback" in "\n".join(why.limits(fleet_size=48)).lower()
+
+
 def test_the_limits_report_the_tuning_exactly_as_the_command_computes_it() -> None:
     """One sentence, written once, so the page cannot read better than the run."""
     cal = judgment_report.build().calibration
