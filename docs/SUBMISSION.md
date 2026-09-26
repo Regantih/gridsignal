@@ -39,7 +39,7 @@ orchestration ships firmware in gated canary rings; Grid Signals scores a day-ah
 policy on real ERCOT prices and prices the wear of each cycle, so a spread too thin to pay for
 the pack is not taken.
 
-**Impact.** One approval turns $4,812 at risk into $4,761 recovered across 10,000 simulated
+**Impact.** One approval turns $4,812 at risk into $4,751 recovered across 10,000 simulated
 devices on a real ERCOT scarcity day, in ~0.1 s of compute. Only 47% of capturable scarcity-day
 value was visible day-ahead; the home eats export revenue; and wear-gating at a modelled
 $100/MWh skips 5.55 of 7.55 held-out cycles on an older pack. Measured, not smoothed.

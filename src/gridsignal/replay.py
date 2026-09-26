@@ -129,12 +129,15 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
     dispatchable = len([d for d in engine.mine if d.is_dispatchable])
 
     incident = engine.trigger_device_failure(FOCUS_DEVICE_ID)
+    ring_kw = incident.lost_kw
+    # The wave lands while the incident is open, so the engine merges it in: after this
+    # line ``incident.lost_kw`` already covers both faults.
     stale_kw = engine.inject_stale_telemetry(STALE_SHARE)
     rejected, phantom_kw = _spoof(engine, SPOOFED_AGENTS)
 
     price_mwh = engine.remaining_price_mwh()
     hours = engine.remaining_hours()
-    kw_lost = round(stale_kw + incident.lost_kw, 2)
+    kw_lost = incident.lost_kw
     dollars_at_risk = energy_value_usd(kw_lost, hours, price_mwh)
     # Measured before the approval: what the healthy fleet could still take on.
     spare_kw = engine.surplus_offer().offerable_kw
@@ -163,7 +166,7 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
             Fault(
                 "gateway outage",
                 f"the gateway firmware ring behind {FOCUS_DEVICE_ID} goes dark",
-                incident.lost_kw,
+                ring_kw,
             ),
             Fault(
                 "spoofed agents",

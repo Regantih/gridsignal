@@ -91,3 +91,11 @@ def test_headroom_cover_is_zero_when_nothing_was_lost():
     result = replay.run()
     nothing_lost = dataclasses.replace(result, kw_lost=0.0)
     assert nothing_lost.headroom_cover == 0.0
+
+
+def test_the_replay_never_recovers_more_than_it_put_at_risk():
+    """Same invariant as the Control Room and the operator workflow, at fleet scale."""
+    result = replay.run(SMALL)
+    assert result.dollars_recovered <= result.dollars_at_risk
+    assert result.recovered_share <= 1.0
+    assert result.dollars_unprotected >= 0.0

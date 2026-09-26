@@ -355,3 +355,41 @@ def test_no_zone_is_offered_past_its_simulated_feeder_cap():
     for zone in {d.zone for d in eng.mine}:
         committed = sum(d.assigned_kw for d in eng.mine if d.zone == zone)
         assert committed <= eng._zone_export_cap_kw(zone) + 1e-6, zone
+
+
+def test_a_later_loss_joins_the_open_incident_so_recovery_never_beats_the_exposure():
+    """A wave that lands while an incident is open is the same work, so it is merged.
+
+    Before this, ``dollars_at_risk`` was frozen at detection while the approval went
+    on to restore the merged wave's kW too, and an incident could report recovering
+    more than it ever said was at risk.
+    """
+    eng = ControlRoomEngine(fleet_size=1_000)
+    incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    ring_kw, ring_risk = incident.lost_kw, incident.dollars_at_risk
+
+    dropped = eng.inject_stale_telemetry()
+
+    assert dropped > 0
+    assert incident.lost_kw == pytest.approx(ring_kw + dropped, abs=0.01)
+    assert incident.dollars_at_risk > ring_risk
+    assert f"${incident.dollars_at_risk:,.2f}" in incident.impact
+    assert any(e.kind == "incident_merged" for e in eng.audit)
+
+    eng.approve_recovery()
+
+    assert incident.restored_kw <= incident.lost_kw
+    assert incident.dollars_recovered <= incident.dollars_at_risk
+    assert incident.dollars_recovered > ring_risk  # the merged wave really was recovered
+
+
+def test_no_incident_ever_recovers_more_than_it_put_at_risk():
+    for size, wave in ((48, False), (1_000, True), (1_000, False)):
+        eng = ControlRoomEngine(fleet_size=size)
+        eng.trigger_device_failure(FOCUS_DEVICE_ID)
+        if wave:
+            eng.inject_stale_telemetry()
+        eng.approve_recovery()
+        for incident in eng.incidents:
+            assert incident.dollars_recovered <= incident.dollars_at_risk
+            assert incident.restored_kw <= incident.lost_kw

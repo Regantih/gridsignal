@@ -707,6 +707,40 @@ class ControlRoomEngine:
             ),
         ]
 
+    def _absorb_loss(self, dropped_kw: float, cause: str) -> Incident | None:
+        """Fold a later loss into the incident the operator is already working.
+
+        A second wave that lands while an incident is open is the same piece of work:
+        the same approval recovers both. Its kW therefore joins the incident's exposure,
+        so what is reported at risk always covers everything the recovery restores.
+        The incident keeps the window and price it was opened against, so only the kW
+        moves.
+        """
+        open_incidents = [i for i in self.incidents if i.status is not IncidentStatus.RESOLVED]
+        if not open_incidents or dropped_kw <= 0:
+            return None
+        incident = open_incidents[-1]
+        incident.lost_kw = round(incident.lost_kw + dropped_kw, 2)
+        incident.dollars_at_risk = energy_value_usd(
+            incident.lost_kw, incident.window_hours, incident.price_mwh
+        )
+        incident.impact += (
+            f" A later {cause} added {dropped_kw:,.1f} kW while the incident was open: "
+            f"{incident.lost_kw:,.1f} kW and ${incident.dollars_at_risk:,.2f} are now at risk "
+            "on this incident."
+        )
+        self._log(
+            actor="orchestrator",
+            kind="incident_merged",
+            summary=f"{cause} merged into {incident.incident_id}",
+            detail=(
+                f"{dropped_kw:,.1f} kW more dropped out while the incident was open: "
+                f"{incident.lost_kw:,.1f} kW and ${incident.dollars_at_risk:,.2f} now at risk "
+                "on the same approval."
+            ),
+        )
+        return incident
+
     def inject_stale_telemetry(self, share: float = 0.03) -> float:
         """A wave of homes stops reporting: their capacity can no longer be counted.
 
@@ -735,6 +769,7 @@ class ControlRoomEngine:
                 "longer be confirmed and is removed from the commitment rather than assumed."
             ),
         )
+        self._absorb_loss(dropped, f"stale telemetry wave ({len(hit):,} homes)")
         return dropped
 
     # ------------------------------------------------------------------ recovery
@@ -781,10 +816,17 @@ class ControlRoomEngine:
         committed_before = self.snapshot().committed_kw
         incident.assigned_kw_before_recovery = {d.device_id: d.assigned_kw for d in self.devices}
         committed = self._allocate_dispatch()
-        incident.restored_kw = round(self.snapshot().committed_kw - committed_before, 2)
+        # Recovery can never give back more than the incident took away: capacity
+        # dispatched beyond the lost kW is spare headroom being sold, not a recovery,
+        # and the price and window may have moved since the incident was opened.
+        restored = round(self.snapshot().committed_kw - committed_before, 2)
+        incident.restored_kw = round(min(restored, incident.lost_kw), 2)
         hours = self.remaining_hours()
         price_mwh = self.remaining_price_mwh()
-        incident.dollars_recovered = energy_value_usd(incident.restored_kw, hours, price_mwh)
+        incident.dollars_recovered = min(
+            energy_value_usd(incident.restored_kw, hours, price_mwh),
+            incident.dollars_at_risk,
+        )
         self._tick(20)
         self._log(
             actor="orchestrator",

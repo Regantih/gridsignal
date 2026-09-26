@@ -24,6 +24,7 @@ from gridsignal.control_room.models import AuditEvent, Incident
 STAGES: dict[str, str] = {
     "detection": "detect",
     "incident_opened": "diagnose",
+    "incident_merged": "diagnose",
     "recommendation": "diagnose",
     "human_approval": "approve",
     "override": "approve",

@@ -181,3 +181,21 @@ def test_readme_alarm_numbers_come_from_the_code():
         f"**{with_wave.alarms:,} alarms \u2192 {with_wave.incidents} incidents "
         f"({with_wave.after:,.1f} per incident)**" in readme
     )
+
+
+def test_the_workflow_screen_never_shows_more_recovered_than_at_risk():
+    """The stale wave merges into the incident, so both numbers move together."""
+    eng = ControlRoomEngine(fleet_size=1_000)
+    eng.trigger_device_failure()
+    eng.inject_stale_telemetry()
+    incident = eng.approve_recovery()
+    assert incident.dollars_recovered <= incident.dollars_at_risk
+    steps = timeline(eng.audit, incident)
+    assert any("merged into" in s.summary for s in steps)
+
+
+def test_cli_reports_recovered_within_at_risk(capsys):
+    assert main(["--devices", "1000", "--stale-wave"]) == 0
+    out = capsys.readouterr().out
+    at_risk, recovered = re.search(r"\$([\d,]+) at risk, \$([\d,]+) recovered", out).groups()
+    assert float(recovered.replace(",", "")) <= float(at_risk.replace(",", ""))
