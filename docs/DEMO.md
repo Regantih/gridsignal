@@ -49,6 +49,30 @@ Ends at 4:50. Speed and scale are deliberately not spoken: the fleet-scale timin
 ratio and the caveat that absolute times are machine-dependent live in
 [`docs/PERFORMANCE.md`](PERFORMANCE.md).
 
+## Loom shot list
+
+Record at 1440x900 or larger, browser full screen, one tab, bookmarks bar and terminal off
+camera, notifications off. Sidebar stays open — every move below is a sidebar control or a
+button on the page — and **Advanced panels** stays **off** the whole take, so nothing appears
+that the script does not name. Do the pre-warm above, then click **Reset Demo** and start
+recording on the Control Room overview.
+
+| At | On screen | Click | Keep off camera |
+|---|---|---|---|
+| 0:00 | Control Room header, simulation banner, coverage 100%, 36,000 kW committed | nothing — let the banner read | terminal, editor, this file |
+| 0:30 | Fleet overview and the map spread across zones | **Trigger BAT-042 Failure** | the scenario picker below the fold |
+| 1:05 | Incident card: 332 alarms grouped into 1, timeline, dollars at risk | scroll to **Operator workflow** | the override form (mentioned, not filled) |
+| 1:40 | Operator principles panel and the one Verdict card | nothing — read the six principles | Advanced toggle |
+| 2:10 | Approval gate with the named approver | **Approve Recovery Plan**, then scroll to **Backup promise ledger** | the ledger's per-interval table beyond the first rows |
+| 2:35 | Member App for BAT-001: backup hours, home load, earnings | sidebar **View → Member App**, pick **BAT-001**, then **BAT-042** | the member picker list |
+| 3:05 | Agent Mesh: signed cards, one rejected signature | sidebar **View → Agent Mesh**, scenario `lying_agent`, **Run scenario** | the raw JSONL trace expander |
+| 3:35 | Rollout panel halted at the 1% canary | **Bad build** | the good-build run |
+| 4:00 | Grid Signals: day-ahead vs real-time split, held-out table | sidebar **View → Grid Signals** | the ancillary comparison table |
+| 4:25 | Why page, evidence and limits side by side | sidebar **View → Why**, scroll once to **Limits** | everything after Limits |
+
+If a question comes after the take, turn **Advanced panels** on to answer it and turn it off
+again; the Why page is the one to leave up.
+
 ## What is cut from the five-minute version
 
 Home-first dispatch in detail, the storm reserve policy, mutual aid, the congestion map, the

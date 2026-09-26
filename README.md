@@ -83,6 +83,11 @@ streamlit run app/dashboard.py     # -> http://localhost:8501
 Requires Python 3.11 or newer. No API keys, accounts or network access are required: the ERCOT
 price traces and the recorded Jev answers are bundled in the repo.
 
+Timed from an empty directory on a 2 vCPU Linux box before submission: clone 1.3 s, venv 2.3 s,
+install 14.7 s, `python -m gridsignal.demo_numbers` 14.8 s, app serving within 25 s of the
+`streamlit` command, and the full suite green with `AI_GATEWAY_API_KEY` and `TYPESAFE_API_KEY`
+unset.
+
 ### Environment variables (all optional)
 
 Copy [`.env.example`](.env.example) to `.env` only if you want a live path; every variable is

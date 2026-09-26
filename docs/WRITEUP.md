@@ -10,13 +10,14 @@ it and fix it.
 batteries run as a mesh of agents. Every battery, gateway and zone publishes an HMAC-signed
 capability card; when capacity is lost, healthy agents bid and the cheapest covering set is
 proposed. Jev, a fast decision model, judges root cause, trust and backup risk against six
-pre-committed principles — hard vetoes on member backup, market rules and deliverability — and
-names the one that decided it; signatures, rules and a named human still decide. Only then is
-the device quarantined, its kW reassigned and the sequence audited.
-Related alarms collapse into one timeline, and any award is overridable with a logged reason.
+pre-committed principles and names the one that decided it; signatures, rules and a named human
+still decide. Only then is the device quarantined, its kW reassigned and the sequence audited.
+Related alarms collapse into one timeline; any award is overridable with a logged reason.
 Dispatch is home-first: the house runs off the grid while storage is held for the
-day-ahead peak, the member's backup reserve is never sold, and a partner utility's units are a
-tenant the mesh may never touch. The same orchestration ships firmware in canary rings.
+day-ahead peak, the member's reserve is never sold, and a partner utility's units are a
+tenant the mesh may never touch. The same orchestration ships firmware in canary rings, takes
+JSON-lines telemetry, and runs coordinator and agents as separate processes over multiplexed
+loopback TCP.
 
 **Impact.** One approval turns $4,812 at risk into $4,751 recovered across 10,000 simulated
 devices on a real ERCOT scarcity day. Only 47% of a scarcity day's capturable value was visible

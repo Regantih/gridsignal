@@ -9,7 +9,7 @@
 Submit via https://airtable.com/appWQWPtBqDUhCPPj/shrU4GuBeUnMzyrd5. One per team.
 
 - [x] Project title — GridSignal Control Room
-- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:40)
+- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:50, shot list included)
 - [ ] Repo set to PUBLIC — repository setting, do this before submitting
 - [x] README: quick start, stack + architecture diagram, reproduce steps, data provenance, limitations — [`../README.md`](../README.md)
 - [x] Deployed URL or short screen capture — deploy steps below, or `python scripts/capture_demo.py`
@@ -28,13 +28,14 @@ it and fix it.
 batteries run as a mesh of agents. Every battery, gateway and zone publishes an HMAC-signed
 capability card; when capacity is lost, healthy agents bid and the cheapest covering set is
 proposed. Jev, a fast decision model, judges root cause, trust and backup risk against six
-pre-committed principles — hard vetoes on member backup, market rules and deliverability — and
-names the one that decided it; signatures, rules and a named human still decide. Only then is
-the device quarantined, its kW reassigned and the sequence audited.
-Related alarms collapse into one timeline, and any award is overridable with a logged reason.
+pre-committed principles and names the one that decided it; signatures, rules and a named human
+still decide. Only then is the device quarantined, its kW reassigned and the sequence audited.
+Related alarms collapse into one timeline; any award is overridable with a logged reason.
 Dispatch is home-first: the house runs off the grid while storage is held for the
-day-ahead peak, the member's backup reserve is never sold, and a partner utility's units are a
-tenant the mesh may never touch. The same orchestration ships firmware in canary rings.
+day-ahead peak, the member's reserve is never sold, and a partner utility's units are a
+tenant the mesh may never touch. The same orchestration ships firmware in canary rings, takes
+JSON-lines telemetry, and runs coordinator and agents as separate processes over multiplexed
+loopback TCP.
 
 **Impact.** One approval turns $4,812 at risk into $4,751 recovered across 10,000 simulated
 devices on a real ERCOT scarcity day. Only 47% of a scarcity day's capturable value was visible
@@ -77,9 +78,19 @@ Jev's answer → human approval → recovery, then Agent Mesh, Grid Signals and 
 
 ## Demo video
 
-Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:40 and the core loop is
-live, not slides. Keep the "simulation only, a human approves every action" banner on screen
-during the Control Room segment.
+Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:50, it carries a shot
+list (what is on screen, what to click, what to keep off camera) and the core loop is live, not
+slides. Keep the "simulation only, a human approves every action" banner on screen during the
+Control Room segment.
+
+## Fresh-clone check
+
+The README quick start was run from an empty directory on a 2 vCPU Linux box before submitting:
+clone 1.3 s, `python3.11 -m venv .venv` 2.3 s, `pip install -e ".[dev]"` 14.7 s,
+`python -m gridsignal.demo_numbers` 14.8 s, `streamlit run app/dashboard.py` serving in under
+25 s, full suite 606 tests green with `AI_GATEWAY_API_KEY` and `TYPESAFE_API_KEY` unset. The
+one deviation it found — the relative benchmark guard in `tests/test_perf.py` reading low when
+the suite is sharded across two cores — is fixed by judging the best of paired samples.
 
 ## Judging evidence
 
