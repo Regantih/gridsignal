@@ -8,7 +8,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev,capture]"
+      - run: python -m playwright install --with-deps chromium
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q
+      - name: no-crash sweep (every CLI entry point and every screen, keyless and offline)
+        run: python scripts/no_crash_sweep.py --json sweep.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: no-crash-sweep
+          path: sweep.json

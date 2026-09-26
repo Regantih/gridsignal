@@ -172,3 +172,10 @@ def test_gate_thresholds_come_from_the_scenario():
     assert scenario.response_gate == pytest.approx(0.99)
     lenient = replace(scenario, response_gate=0.5, grid_event_s=None)
     assert not rollout.run_rollout(lenient, trace=None).metrics.halted
+
+
+def test_cli_device_override_keeps_nested_scenario_dataclasses(tmp_path, capsys):
+    """Regression: the --devices override used to flatten the fault and gate objects."""
+    assert rollout.main([str(GOOD), "--devices", "2000", "--no-trace"]) == 0
+    out = capsys.readouterr().out
+    assert "2,000 simulated devices" in out

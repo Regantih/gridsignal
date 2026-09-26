@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 import yaml
@@ -552,7 +552,9 @@ def main(argv: list[str] | None = None) -> int:
 
     scenario = load_rollout(args.scenario)
     if args.devices is not None:
-        scenario = RolloutScenario(**{**asdict(scenario), "devices": args.devices})  # type: ignore[arg-type]
+        # ``replace`` and not ``asdict``: asdict() would turn the nested fault and gate
+        # dataclasses into plain dicts, and the rollout reads their attributes.
+        scenario = replace(scenario, devices=args.devices)
     trace = None if args.no_trace else trace_path(scenario)
     result = run_rollout(scenario, trace=trace)
     print(result.summary())

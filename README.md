@@ -639,6 +639,20 @@ network. The committed output is in [`docs/media/`](docs/media): the eight still
 |---|---|---|
 | ![Control Room incident](docs/media/02-control-room-incident.png) | ![Agent Mesh](docs/media/04-agent-mesh.png) | ![Grid Signals](docs/media/05-grid-signals-insight.png) |
 
+## No-crash sweep
+
+```bash
+pip install -e ".[capture]"
+python -m playwright install chromium
+python scripts/no_crash_sweep.py        # 58 checks, ~60s, exits non-zero on any traceback
+```
+
+Every CLI entry point with real arguments (not `--help`) and every control on all four screens —
+both price days, all three fleet scales, the failure/approve/offer loop, both map modes, every
+congestion zone, six member homes, every expander and slider, all five chaos replays, both
+firmware builds — run with the API keys stripped and an unroutable proxy set, so any code path
+that quietly wants the network fails here. CI runs it on every push and uploads `sweep.json`.
+
 ## Tech Stack and Architecture
 
 - Python 3.11, Streamlit, Plotly, pandas
