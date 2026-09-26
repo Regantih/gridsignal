@@ -15,7 +15,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from gridsignal import ancillary, holdout, insight, judgment_report, member, pipeline
+from gridsignal import (
+    ancillary,
+    business,
+    holdout,
+    insight,
+    judgment_report,
+    member,
+    pipeline,
+)
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
 from gridsignal.fleet import FOCUS_DEVICE_ID
@@ -186,7 +194,13 @@ def canonical() -> dict[str, str]:
     cal = judgment_report.build().calibration
     pilot = ancillary.holdout_summary(ancillary.BASE_CORE)
     unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
+    models = business.compare()
     return {
+        "break_even_battery_month_usd": f"{models.break_even_battery_month_usd:,.2f}",
+        "break_even_month_usd": f"{models.break_even_month_usd:,.2f}",
+        "break_even_kw_month_usd": f"{models.break_even_kw_month_usd:,.2f}",
+        "certainty_cost_usd": f"{models.certainty_cost_usd:,.2f}",
+        "partner_unclamped_breaches": str(models.unclamped_breaches),
         "calibration_fitted_before": f"{cal.train_before:.0%}",
         "calibration_fitted_after": f"{cal.train_after:.0%}",
         "calibration_holdout_before": f"{cal.before:.0%}",

@@ -329,6 +329,51 @@ and no ordinary household load can take a pack below the member's promised energ
 arbitrage studies keep `backup_kwh=0` — they are a study of the price signal, not a product, and
 say so.
 
+#### Base's two business models, scored on the same simulated fleet
+
+Base has described two ways the same battery earns: a **retail-choice** model, where Base is the
+member's retail provider and sells the battery's energy and grid services itself, and a
+**utility-partner** model, where the utility controls dispatch and pays Base for access (public
+interview with Base's COO, [sourcery.vc](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b),
+3 Aug 2026). `src/gridsignal/business.py` runs both over the same seven bundled held-out days and
+the same simulated Base Core-style battery, so the difference is arithmetic, not opinion.
+
+```bash
+python -m gridsignal.business   # both models, the assumptions, and the break-even fee
+```
+
+| | retail-choice | utility-partner |
+|---|---|---|
+| who picks the dispatch hour | Base, from the price | the utility, from its own peak |
+| who carries price risk | Base | the utility |
+| who bills the member | Base, as the retail provider | the utility |
+| who may sell ECRS and Non-Spin | Base, inside the ADER pilot | the utility's QSE |
+| who enforces the backup promise | Base | Base, over the utility's call |
+| what Base earns | market revenue, variable | an access fee, certain |
+
+Base's access fee is not public, so the model does not invent one: it reports the **break-even
+fee**, what the utility would have to pay for the partner model to match what retail earns on the
+same days. For the battery alone — its energy and its grid services — that is
+**$125.86 per battery-month**, or **$13.98 per kW-month** on the 9.0 kW the pilot lets it
+register. To replace the whole retail relationship, the margin on the member's own supply
+included, **$146.53 per battery-month**. The gap is the finding: in the retail model most of what
+Base earns is the member's electricity bill, not the battery's market revenue, so "the utility
+pays us for the fleet" and "we sell the member power" are not the same business at the same price.
+
+Dispatching on a clock rather than on price leaves
+**$0.65 per battery per day of wholesale value** behind (median), and on 2 of the 7 days the
+called schedule is worth *less than nothing* because it refills through an expensive hour. That is
+what the utility buys and what Base stops carrying. What does not change with the model: with the
+reserve floor removed, the utility's call spends the member's promised
+backup on **7 of 7 days**; with it, on none. The partner picks the hour, Base still answers to the
+member.
+
+Simulated, and the assumptions are printed with the numbers: a modelled 14¢/kWh flat retail rate
+(no Base tariff is public), a modelled 16:00–20:00 call window standing in for a
+[4CP](https://www.ercot.com/mktinfo/4cp)-driven call, and the utility's avoided transmission
+charge, hardware, acquisition and financing all left out, which is why this is a comparison of
+revenue paths and not a P&L. Tests: `tests/test_business.py`.
+
 #### Deliverability proof before every award
 
 A bid is a claim about one instant; an award is a promise about a window. Before any

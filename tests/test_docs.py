@@ -192,6 +192,19 @@ CLAIMS: tuple[tuple[str, str], ...] = (
     (r"2024-05-08 alone carrying (\d+)%", "ancillary_top_day_share"),
     (r"all five products[^|\n]{0,90}?median of \$(\d+\.\d\d)", "unrestricted_median_usd"),
     (r"all five products[^|\n]{0,110}?mean of \$(\d+\.\d\d)", "unrestricted_mean_usd"),
+    # Base's two business models, from `python -m gridsignal.business`. The break-even
+    # access fee has two readings and neither may be quoted without the other holding.
+    (
+        r"battery alone[^|]{0,120}?\*{0,2}\$([\d,]+\.\d\d) per battery-month",
+        "break_even_battery_month_usd",
+    ),
+    (
+        r"retail relationship[^|]{0,120}?\*{0,2}\$([\d,]+\.\d\d) per battery-month",
+        "break_even_month_usd",
+    ),
+    (r"\$([\d,]+\.\d\d) per kW-month", "break_even_kw_month_usd"),
+    (r"\$(\d+\.\d\d) per battery per day of wholesale value", "certainty_cost_usd"),
+    (r"promised\s+backup on \*{0,2}(\d) of 7 days", "partner_unclamped_breaches"),
 )
 
 #: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the
