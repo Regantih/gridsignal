@@ -79,6 +79,11 @@ class GridEvent:
     price_mwh: float
     started_at: datetime
     ends_at: datetime
+    price_source: str = ""
+
+    @property
+    def duration_hours(self) -> float:
+        return (self.ends_at - self.started_at).total_seconds() / 3600.0
 
 
 @dataclass
@@ -112,6 +117,12 @@ class Incident:
     impact: str
     recommended_action: str
     owner: str
+    lost_kw: float = 0.0
+    window_hours: float = 0.0
+    price_mwh: float = 0.0
+    dollars_at_risk: float = 0.0
+    restored_kw: float = 0.0
+    dollars_recovered: float = 0.0
     approval_required: bool = True
     approved_by: str | None = None
     approved_at: datetime | None = None

@@ -8,8 +8,9 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
 **Tracks:** Orchestration (Control Room) + Open Grid Data
 
-> **Simulation only.** The Control Room uses deterministic local mock data. It does not connect to
-> real devices, utilities, ERCOT systems or any operational control plane, and it never dispatches
+> **Simulation only.** The fleet, the failure and the recovery are deterministic local mock data;
+> only the ERCOT settlement prices are real (a cached public price trace). It does not connect to
+> real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
 > anything. A human operator must approve every recovery action.
 
 ## Problem
@@ -25,8 +26,11 @@ GridSignal Control Room closes that loop in one screen: telemetry loss becomes a
 a root-cause hypothesis and quantified impact, the orchestrator proposes a recovery plan and fans out
 role-specific tasks, **a human approves**, and only then is the failed device quarantined and its
 committed kW reassigned across healthy headroom — with an immutable audit timeline of the whole
-sequence. The original ERCOT signal pipeline (`python -m gridsignal.pipeline`) remains as the data
-side of the project.
+sequence.
+
+The impact is priced against **real ERCOT data**: the grid event sits on the most expensive
+two-hour window of a real LZ_HOUSTON trading day, so the incident shows dollars at risk
+(`kW x hours x $/MWh`) before approval and dollars recovered after it.
 
 ## Quick Start
 
@@ -40,8 +44,16 @@ pip install -e ".[dev]"
 streamlit run app/dashboard.py     # -> http://localhost:8501
 ```
 
-No API keys, accounts or network access are required. `.env` is optional and only used by the
-live-ERCOT pipeline (`pip install -e ".[ercot]"`).
+No API keys, accounts or network access are required: a cached ERCOT price trace is bundled in
+`data/processed/`. `.env` is optional and only used by the live-ERCOT pipeline
+(`pip install -e ".[ercot]"`).
+
+Refresh the cached prices from ERCOT's public MIS reports (needs the `[ercot]` extra and network,
+still no credentials):
+
+```bash
+python -m gridsignal.ingest --date 2026-09-22          # LZ_HOUSTON real-time 15-min SPP
+```
 
 ## Tests and formatting
 
@@ -62,13 +74,15 @@ Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEM
 ## Tech Stack and Architecture
 
 - Python 3.11, Streamlit, Plotly, pandas
-- `gridstatus` + scikit-learn only for the optional live-ERCOT pipeline (`.[ercot]` extra)
-- Control Room state lives in memory; the ERCOT pipeline uses local Parquet in `data/`
+- `gridstatus` + scikit-learn only for refreshing ERCOT data and the optional pipeline
+  (`.[ercot]` extra)
+- Control Room state lives in memory; ERCOT prices are cached as Parquet in `data/processed/`
 
 ```mermaid
 flowchart LR
-    subgraph CR["Control Room (simulation only)"]
+    subgraph CR["Control Room (simulated fleet, real prices)"]
         F[fleet.py<br/>deterministic 48-device fleet] --> E[ControlRoomEngine]
+        PR[prices.py<br/>cached ERCOT SPP Parquet] --> E
         E -->|detect| I[Incident<br/>severity, cause, impact, plan]
         I --> T[Role tasks<br/>Operator / Reliability / Field]
         I --> H{{Human approval}}
@@ -78,8 +92,9 @@ flowchart LR
         I --> A
         E --> D[Streamlit dashboard<br/>app/dashboard.py]
     end
-    subgraph GP["ERCOT pipeline (optional)"]
-        P[ingest -> detect -> forecast -> signals] --> Q[(Parquet store)]
+    subgraph GP["ERCOT pipeline"]
+        G[gridstatus<br/>public ERCOT MIS] --> P[ingest.py] --> Q[(Parquet store)]
+        Q --> PR
     end
 ```
 
@@ -88,8 +103,11 @@ flowchart LR
 | `src/gridsignal/fleet.py` | Deterministic synthetic fleet (seeded, 48 devices, BAT-042 is the demo device) |
 | `src/gridsignal/control_room/models.py` | Device, GridEvent, Incident, Task, AuditEvent, FleetSnapshot |
 | `src/gridsignal/control_room/engine.py` | State machine: baseline → failure → incident → **human approval** → recovery |
-| `app/dashboard.py` | Single-page operator UI: overview, map/grid, incident, tasks, audit, demo controls |
-| `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow |
+| `src/gridsignal/ingest.py` | Pulls real-time settlement point prices from ERCOT via gridstatus and caches them as Parquet |
+| `src/gridsignal/prices.py` | Loads the cached trace, finds the peak window, prices kW at risk in dollars |
+| `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
+| `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
+| `tests/test_prices.py`, `tests/test_ingest.py` | Price-trace loading, peak-window selection, dollar conversion, cache provenance |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 
@@ -107,9 +125,12 @@ Optional live-data path: `pip install -e ".[ercot]"`, copy `.env.example` to `.e
 | Dataset | Source | Notes |
 |---|---|---|
 | Simulated battery fleet | `src/gridsignal/fleet.py` | Seeded synthetic data, no real customer or device data |
-| Simulated grid event | `src/gridsignal/control_room/engine.py` | ERCOT-style peak-demand window, values are illustrative |
-| Real-time settlement point prices | ERCOT, via gridstatus | Optional pipeline only, not used by the Control Room |
-| System load / fuel mix | ERCOT, via gridstatus | Optional pipeline only |
+| Simulated grid event | `src/gridsignal/control_room/engine.py` | 240 kW / 2 h commitment; the window is chosen from the real price trace |
+| Real-time settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2026-09-22 (96 intervals, peak $199.74/MWh). Cached at `data/processed/lz_houston_rtm_spp_sample.parquet` with provenance in the sidecar `.json`; refresh with `python -m gridsignal.ingest --date <YYYY-MM-DD>` |
+| System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
+
+Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
+ahead, so the figures are per-fleet-commitment and small by design — one home battery is a few kW.
 
 ## Known Limitations and Next Steps
 
@@ -117,10 +138,12 @@ Optional live-data path: `pip install -e ".[ercot]"`, copy `.env.example` to `.e
   (state lives in the Streamlit session and resets on server restart).
 - Detection is a single rule (telemetry staleness) on one scripted device rather than a monitor
   over a real event stream.
-- The ERCOT pipeline modules (`ingest`, `detect`, `forecast`, `signals`, `backtest`) are still
-  stubs.
-- Next: replay real ERCOT price/load traces into the simulated event so the incident impact is
-  expressed in dollars at risk as well as kW.
+- Only the price half of the ERCOT pipeline is implemented; `detect`, `forecast`, `signals` and
+  `backtest` are still stubs, as are load and fuel-mix ingest.
+- ERCOT's public SPP report only keeps roughly the last week online, so `--date` must be recent;
+  the bundled sample is the cached copy that keeps the demo reproducible.
+- Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
+  exposure change minute to minute rather than as a single window average.
 
 ## Team
 

@@ -18,6 +18,7 @@ from gridsignal.control_room.models import (
     TaskStatus,
 )
 from gridsignal.fleet import FOCUS_DEVICE_ID
+from gridsignal.prices import energy_value_usd
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
 
@@ -92,7 +93,7 @@ def render_header() -> None:
 def render_overview(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     ev = snap.grid_event
-    cols = st.columns(6)
+    cols = st.columns(7)
     cols[0].metric("Fleet size", snap.total_devices)
     cols[1].metric(
         "Available capacity",
@@ -117,6 +118,13 @@ def render_overview(eng: ControlRoomEngine) -> None:
         "Open incidents",
         snap.open_incidents,
         delta=f"{len(snap.incidents)} total",
+        delta_color="off",
+    )
+    window_value = energy_value_usd(ev.target_kw, ev.duration_hours, ev.price_mwh)
+    cols[6].metric(
+        "Event price (real)",
+        f"${ev.price_mwh:,.2f}/MWh",
+        delta=f"window value ${window_value:,.2f}",
         delta_color="off",
     )
 
@@ -195,6 +203,34 @@ def render_map(eng: ControlRoomEngine) -> None:
             )
 
 
+def render_prices(eng: ControlRoomEngine) -> None:
+    trace = eng.prices
+    ev = eng.grid_event
+    frame = trace.frame.rename(columns={"interval_start": "Interval", "spp": "$/MWh"})
+    fig = px.line(frame, x="Interval", y="$/MWh", height=230)
+    fig.update_traces(line={"color": "#38bdf8", "width": 2})
+    fig.add_vrect(
+        x0=ev.started_at,
+        x1=ev.ends_at,
+        fillcolor="#f59e0b",
+        opacity=0.18,
+        line_width=0,
+        annotation_text="grid event",
+        annotation_position="top left",
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.caption(
+        f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
+        f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
+        "Cached locally as Parquet so the demo runs offline; the fleet itself is simulated."
+    )
+
+
 def render_incident(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     st.subheader("Active incident")
@@ -230,7 +266,36 @@ def render_incident(eng: ControlRoomEngine) -> None:
         f"</div>",
         unsafe_allow_html=True,
     )
+    render_money(incident)
     render_approval(eng, incident)
+
+
+def render_money(incident: Incident) -> None:
+    """Price the lost capacity against the real settlement prices for the window."""
+    risk, recovered = st.columns(2)
+    risk.metric(
+        "Dollars at risk",
+        f"${incident.dollars_at_risk:,.2f}",
+        delta=(
+            f"{incident.lost_kw:.1f} kW x {incident.window_hours:.2f} h "
+            f"x ${incident.price_mwh:,.2f}/MWh"
+        ),
+        delta_color="off",
+    )
+    if incident.status is IncidentStatus.RESOLVED:
+        recovered.metric(
+            "Dollars recovered",
+            f"${incident.dollars_recovered:,.2f}",
+            delta=f"{incident.restored_kw:.1f} kW reassigned after approval",
+            delta_color="off",
+        )
+    else:
+        recovered.metric(
+            "Dollars recovered",
+            "$0.00",
+            delta="pending operator approval",
+            delta_color="off",
+        )
 
 
 def render_approval(eng: ControlRoomEngine, incident: Incident) -> None:
@@ -330,6 +395,8 @@ def main() -> None:
     with left:
         st.subheader("Fleet map")
         render_map(eng)
+        st.subheader("ERCOT price trace")
+        render_prices(eng)
     with right:
         render_incident(eng)
         render_tasks(eng)

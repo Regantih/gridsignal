@@ -27,9 +27,10 @@ from gridsignal.control_room.models import (
     TaskStatus,
 )
 from gridsignal.fleet import DEFAULT_SEED, FOCUS_DEVICE_ID, build_fleet
+from gridsignal.prices import PriceTrace, energy_value_usd, load_price_trace
 
-SIM_START = datetime(2026, 9, 26, 17, 5, 0)
 GRID_EVENT_TARGET_KW = 240.0
+GRID_EVENT_HOURS = 2.0
 TELEMETRY_STALE_SECONDS = 120
 
 OWNERS: dict[Role, str] = {
@@ -46,27 +47,33 @@ class ApprovalError(RuntimeError):
 class ControlRoomEngine:
     """In-memory, deterministic simulation of a battery-fleet control room."""
 
-    def __init__(self, seed: int = DEFAULT_SEED) -> None:
+    def __init__(self, seed: int = DEFAULT_SEED, price_trace: PriceTrace | None = None) -> None:
         self.seed = seed
+        self.prices = price_trace or load_price_trace()
         self.reset()
 
     # ------------------------------------------------------------------ setup
 
     def reset(self) -> None:
         """Return the simulation to its stable starting state."""
-        self._clock = SIM_START
+        window_start, window_end, window_price = self.prices.peak_window(GRID_EVENT_HOURS)
+        self._clock = window_start
         self.devices: list[Device] = build_fleet(self.seed)
         self.incidents: list[Incident] = []
         self.audit: list[AuditEvent] = []
         self._incident_seq = 0
         self.grid_event = GridEvent(
             name="ERCOT peak-demand response window",
-            zone="ERCOT, all load zones",
+            zone=self.prices.location,
             status="active",
             target_kw=GRID_EVENT_TARGET_KW,
-            price_mwh=412.0,
-            started_at=self._clock,
-            ends_at=self._clock + timedelta(hours=2),
+            price_mwh=window_price,
+            started_at=window_start,
+            ends_at=window_end,
+            price_source=(
+                f"ERCOT {self.prices.market} settlement point prices, "
+                f"{self.prices.location} {self.prices.date} (cached Parquet)"
+            ),
         )
         self._allocate_dispatch()
         self._log(
@@ -76,7 +83,8 @@ class ControlRoomEngine:
             detail=(
                 f"{self.snapshot().committed_kw:.0f} kW committed against a "
                 f"{self.grid_event.target_kw:.0f} kW target across "
-                f"{len([d for d in self.devices if d.is_dispatchable])} dispatchable devices."
+                f"{len([d for d in self.devices if d.is_dispatchable])} dispatchable devices "
+                f"at ${self.grid_event.price_mwh:.2f}/MWh ({self.grid_event.price_source})."
             ),
         )
 
@@ -105,6 +113,14 @@ class ControlRoomEngine:
             audit=self.audit,
             now=self._clock,
         )
+
+    def remaining_hours(self) -> float:
+        """Hours left in the grid event from the current simulated time."""
+        return max((self.grid_event.ends_at - self._clock).total_seconds() / 3600.0, 0.0)
+
+    def remaining_price_mwh(self) -> float:
+        """Average real settlement price across the rest of the event window."""
+        return self.prices.window_price_mwh(self._clock, self.grid_event.ends_at)
 
     def _headroom_kw(self, device: Device) -> float:
         if not device.is_dispatchable:
@@ -150,6 +166,9 @@ class ControlRoomEngine:
 
         lost_kw = device.assigned_kw
         self._tick(45)
+        window_hours = self.remaining_hours()
+        price_mwh = self.remaining_price_mwh()
+        dollars_at_risk = energy_value_usd(lost_kw, window_hours, price_mwh)
         device.status = DeviceStatus.OFFLINE
         device.last_telemetry_s = TELEMETRY_STALE_SECONDS + 18
         device.assigned_kw = 0.0
@@ -180,12 +199,18 @@ class ControlRoomEngine:
             impact=(
                 f"{lost_kw:.1f} kW of committed capacity dropped out of a "
                 f"{self.grid_event.target_kw:.0f} kW commitment while the grid event is active. "
-                "Without reassignment the fleet under-delivers on the window."
+                f"At ${price_mwh:.2f}/MWh across the remaining {window_hours:.2f} h of the "
+                f"window that is ${dollars_at_risk:,.2f} at risk if the fleet under-delivers."
             ),
+            lost_kw=lost_kw,
+            window_hours=round(window_hours, 3),
+            price_mwh=price_mwh,
+            dollars_at_risk=dollars_at_risk,
             recommended_action=(
                 f"Quarantine {device_id} (mark unavailable, stop counting its capacity) and "
-                f"reassign {lost_kw:.1f} kW across healthy devices with headroom, "
-                "then dispatch Field Support to inspect the gateway."
+                f"reassign {lost_kw:.1f} kW across healthy devices with headroom to recover "
+                f"the ${dollars_at_risk:,.2f} at risk, then dispatch Field Support to "
+                "inspect the gateway."
             ),
             owner=OWNERS[Role.FLEET_OPERATOR],
         )
@@ -276,7 +301,12 @@ class ControlRoomEngine:
             detail="Device is excluded from dispatch until Field Support clears it.",
         )
 
+        committed_before = self.snapshot().committed_kw
         committed = self._allocate_dispatch()
+        incident.restored_kw = round(self.snapshot().committed_kw - committed_before, 2)
+        hours = self.remaining_hours()
+        price_mwh = self.remaining_price_mwh()
+        incident.dollars_recovered = energy_value_usd(incident.restored_kw, hours, price_mwh)
         self._tick(20)
         self._log(
             actor="orchestrator",
@@ -284,7 +314,9 @@ class ControlRoomEngine:
             summary=f"Dispatch reassigned: {committed:.0f} kW committed",
             detail=(
                 f"Target {self.grid_event.target_kw:.0f} kW covered by "
-                f"{len([d for d in self.devices if d.assigned_kw > 0])} devices."
+                f"{len([d for d in self.devices if d.assigned_kw > 0])} devices. "
+                f"{incident.restored_kw:.1f} kW restored over the remaining {hours:.2f} h "
+                f"at ${price_mwh:.2f}/MWh recovers ${incident.dollars_recovered:,.2f}."
             ),
         )
 
@@ -314,7 +346,8 @@ class ControlRoomEngine:
             f"Fleet: {snap.online} online, {snap.degraded} degraded, "
             f"{snap.offline} offline, {snap.unavailable} quarantined "
             f"of {snap.total_devices} simulated devices.",
-            f"Grid event: {snap.grid_event.name} ({snap.grid_event.zone}), "
+            f"Grid event: {snap.grid_event.name} ({snap.grid_event.zone} at "
+            f"${snap.grid_event.price_mwh:.2f}/MWh), "
             f"{snap.committed_kw:.0f} kW committed of {snap.grid_event.target_kw:.0f} kW "
             f"target ({snap.coverage_pct:.0f}% coverage).",
         ]
@@ -322,14 +355,15 @@ class ControlRoomEngine:
         pending = self.pending_incident
         if pending is not None:
             parts.append(
-                f"{pending.incident_id} is awaiting operator approval; no dispatch change "
-                "has been made."
+                f"{pending.incident_id} is awaiting operator approval with "
+                f"${pending.dollars_at_risk:,.2f} at risk; no dispatch change has been made."
             )
         elif resolved:
             last = resolved[-1]
             parts.append(
                 f"{last.incident_id} ({last.device_id}) was approved by {last.approved_by} "
-                "and the commitment was held by reassigning healthy devices."
+                f"and reassigning healthy devices recovered "
+                f"${last.dollars_recovered:,.2f} of the ${last.dollars_at_risk:,.2f} at risk."
             )
         else:
             parts.append("No open incidents.")

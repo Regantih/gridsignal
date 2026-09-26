@@ -4,6 +4,7 @@ from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.engine import ApprovalError
 from gridsignal.control_room.models import DeviceStatus, IncidentStatus, Role, Severity, TaskStatus
 from gridsignal.fleet import FOCUS_DEVICE_ID, build_fleet
+from gridsignal.prices import energy_value_usd
 
 
 def test_fleet_is_deterministic():
@@ -12,6 +13,19 @@ def test_fleet_is_deterministic():
     assert [d.device_id for d in a] == [d.device_id for d in b]
     assert [d.state_of_charge for d in a] == [d.state_of_charge for d in b]
     assert any(d.device_id == FOCUS_DEVICE_ID for d in a)
+
+
+def test_grid_event_is_priced_from_the_real_ercot_trace():
+    eng = ControlRoomEngine()
+    event = eng.grid_event
+    trace = eng.prices
+    assert event.zone == trace.location
+    assert trace.date in event.price_source
+    # The event sits on the most expensive window of the real trading day.
+    assert (event.started_at, event.ends_at, event.price_mwh) == trace.peak_window(
+        event.duration_hours
+    )
+    assert event.price_mwh > 0
 
 
 def test_baseline_state_is_stable_and_covered():
@@ -44,6 +58,18 @@ def test_failure_opens_incident_and_waits_for_human():
         Role.RELIABILITY_ENGINEER,
         Role.FIELD_SUPPORT,
     }
+    # Dollars at risk are priced off the real trace: kW x remaining hours x $/MWh.
+    assert incident.lost_kw == pytest.approx(before - snap.committed_kw, abs=0.2)
+    assert incident.price_mwh == eng.prices.window_price_mwh(
+        incident.opened_at, eng.grid_event.ends_at
+    )
+    assert incident.dollars_at_risk == energy_value_usd(
+        incident.lost_kw, incident.window_hours, incident.price_mwh
+    )
+    assert incident.dollars_at_risk > 0
+    assert incident.dollars_recovered == 0.0
+    assert f"${incident.dollars_at_risk:,.2f}" in incident.impact
+
     field_task = next(t for t in incident.tasks if t.role is Role.FIELD_SUPPORT)
     assert field_task.status is TaskStatus.BLOCKED
     assert [e.kind for e in eng.audit][-3:] == ["detection", "incident_opened", "recommendation"]
@@ -72,6 +98,22 @@ def test_approval_recovers_capacity_and_quarantines_device():
     kinds = [e.kind for e in eng.audit]
     assert kinds.index("human_approval") < kinds.index("reassignment") < kinds.index("recovered")
     assert "quarantine" in kinds
+
+
+def test_approval_recovers_the_dollars_that_were_at_risk():
+    eng = ControlRoomEngine()
+    incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    at_risk = incident.dollars_at_risk
+
+    eng.approve_recovery()
+
+    assert incident.restored_kw == pytest.approx(incident.lost_kw, abs=0.3)
+    assert incident.dollars_recovered > 0
+    # Recovery lands later in the window, so it recovers slightly less than the exposure.
+    assert incident.dollars_recovered == pytest.approx(at_risk, rel=0.15)
+    assert incident.dollars_recovered <= at_risk
+    assert incident.dollars_at_risk == at_risk  # the original exposure is not rewritten
+    assert f"${incident.dollars_recovered:,.2f}" in eng.human_summary()
 
 
 def test_approval_requires_a_pending_plan():
