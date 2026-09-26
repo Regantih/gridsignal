@@ -11,6 +11,8 @@ an append-only audit trail. Recovery only happens after an explicit human approv
 
 from __future__ import annotations
 
+import math
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -36,6 +38,7 @@ from gridsignal.fleet import (
     build_fleet,
     gateway_ring,
 )
+from gridsignal.mesh.negotiation import WEAR_USD_PER_KW
 from gridsignal.prices import PriceTrace, energy_value_usd, load_price_trace
 
 # Each home commits this many *exported* kW to the event — what is left after its own
@@ -47,6 +50,9 @@ TELEMETRY_STALE_SECONDS = 120
 #: Floor on the hours left in the event, so headroom never divides by zero at the
 #: closing bell; with a window this short the inverter is the binding limit anyway.
 MIN_DISPATCH_HOURS = 0.25
+#: Simulated export ceiling per operator-controlled home on one zone's feeder, the
+#: stand-in for deliverability. An assumption of this simulation, not a utility limit.
+DELIVERABILITY_KW_PER_DEVICE = 6.0
 
 OWNERS: dict[Role, str] = {
     Role.FLEET_OPERATOR: "M. Alvarez (Fleet Operator)",
@@ -73,6 +79,42 @@ class ReserveOutcome:
     @property
     def backup_hours_gained(self) -> float:
         return round(self.backup_hours_after - self.backup_hours_before, 1)
+
+
+@dataclass(frozen=True)
+class HeldCapacity:
+    """kW the fleet is deliberately not offering, and the reason it is held."""
+
+    reason: str
+    kw: float
+
+
+@dataclass(frozen=True)
+class SurplusOffer:
+    """Spare capacity beyond the event commitment: what is offered, what is held."""
+
+    target_kw: float
+    committed_kw: float
+    offerable_kw: float
+    held: tuple[HeldCapacity, ...]
+    price_mwh: float
+    hours: float
+    revenue_usd: float
+    wear_usd: float
+
+    @property
+    def idle_kw(self) -> float:
+        """Spare kW that is not being offered right now."""
+        return round(sum(h.kw for h in self.held), 2)
+
+    @property
+    def net_usd(self) -> float:
+        """Simulated revenue from the surplus after the modelled cycle wear."""
+        return round(self.revenue_usd - self.wear_usd, 2)
+
+    @property
+    def held_summary(self) -> str:
+        return "; ".join(f"{h.kw:,.0f} kW {h.reason}" for h in self.held)
 
 
 def subject_for(device_id: str, ring_size: int) -> str:
@@ -264,6 +306,153 @@ class ControlRoomEngine:
             ),
         )
         return committed
+
+    # ------------------------------------------------------------------ surplus
+
+    def _zone_export_cap_kw(self, zone: str) -> float:
+        """Simulated feeder export ceiling for one zone.
+
+        A real fleet cannot push every kW it owns onto one distribution feeder. This
+        stands in for that limit at a flat kW per operator-controlled home; it is an
+        assumption of this simulation, not a measured ERCOT or utility limit.
+        """
+        return DELIVERABILITY_KW_PER_DEVICE * sum(1 for d in self.mine if d.zone == zone)
+
+    def offer_floor_usd_mwh(self) -> float:
+        """Price below which cycling a battery costs more wear than the kWh earns.
+
+        ``WEAR_USD_PER_KW`` of modelled wear over ``hours_left`` of discharge, in
+        $/MWh. Above it the spare kW is worth offering; below it holding is the
+        cheaper answer and the Control Room says so instead of dispatching.
+        """
+        hours = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
+        return round(WEAR_USD_PER_KW * 1000.0 / hours, 2)
+
+    def _spare_kw(self, device: Device) -> float:
+        """Export headroom this battery has not already promised to the event."""
+        return round(max(self._headroom_kw(device) - device.assigned_kw, 0.0), 3)
+
+    def surplus_offer(self) -> SurplusOffer:
+        """What the fleet could still offer beyond its commitment, and what it holds.
+
+        Nothing is mutated: this is the answer to "you are sitting on tens of MW, why
+        is it idle?" — every kW of the fleet's nameplate is either committed, offered,
+        or held for a named reason.
+        """
+        hours = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
+        price = self.remaining_price_mwh()
+        floor = self.offer_floor_usd_mwh()
+
+        committed = round(sum(d.assigned_kw for d in self.mine), 2)
+        spare_by_zone: dict[str, float] = defaultdict(float)
+        for device in self.mine:
+            spare_by_zone[device.zone] += self._spare_kw(device)
+
+        deliverable = 0.0
+        for zone, spare in spare_by_zone.items():
+            zone_committed = sum(d.assigned_kw for d in self.mine if d.zone == zone)
+            allowance = max(self._zone_export_cap_kw(zone) - zone_committed, 0.0)
+            deliverable += min(spare, allowance)
+        spare_total = round(sum(spare_by_zone.values()), 2)
+        deliverable = round(deliverable, 2)
+
+        held: list[HeldCapacity] = []
+        reserve_kw = sum(
+            home.reserve_kwh(d, self.reserve_fraction) / hours
+            for d in self.mine
+            if d.is_dispatchable
+        )
+        held.append(HeldCapacity("member backup reserve", round(reserve_kw, 2)))
+        held.append(
+            HeldCapacity(
+                "serving the member's own home",
+                round(sum(d.home_load_kw for d in self.mine if d.is_dispatchable), 2),
+            )
+        )
+        offline_kw = sum(d.power_kw for d in self.mine if not d.is_dispatchable)
+        if offline_kw:
+            held.append(HeldCapacity("offline, degraded or quarantined", round(offline_kw, 2)))
+        other_tenant = sum(d.power_kw for d in self.devices if not d.is_operator_controlled)
+        if other_tenant:
+            held.append(
+                HeldCapacity(
+                    f"another tenant's batteries ({UTILITY_PARTNER} controls them)",
+                    round(other_tenant, 2),
+                )
+            )
+        if spare_total - deliverable > 0.01:
+            held.append(
+                HeldCapacity(
+                    "deliverability: simulated feeder export cap",
+                    round(spare_total - deliverable, 2),
+                )
+            )
+        offerable = deliverable if price >= floor else 0.0
+        if offerable == 0.0 and deliverable > 0:
+            held.append(
+                HeldCapacity(
+                    f"price ${price:,.2f}/MWh is under the ${floor:,.2f}/MWh wear floor",
+                    deliverable,
+                )
+            )
+
+        return SurplusOffer(
+            target_kw=self.grid_event.target_kw,
+            committed_kw=committed,
+            offerable_kw=round(offerable, 2),
+            held=tuple(held),
+            price_mwh=price,
+            hours=round(hours, 3),
+            revenue_usd=energy_value_usd(offerable, hours, price),
+            wear_usd=round(offerable * WEAR_USD_PER_KW, 2),
+        )
+
+    def offer_surplus(self, approver: str = OWNERS[Role.FLEET_OPERATOR]) -> SurplusOffer:
+        """Commit the offerable surplus on top of the event target, and log it.
+
+        Idempotent in the sense that matters: the second call finds no spare left
+        within the feeder caps and offers 0 kW. The member reserve is untouched,
+        because the surplus is measured from :meth:`discharge_headroom_kw`, which
+        already holds it back.
+        """
+        offer = self.surplus_offer()
+        if offer.offerable_kw <= 0:
+            self._log(
+                actor=approver,
+                kind="surplus_held",
+                summary=f"{offer.idle_kw:,.0f} kW of spare capacity held, not offered",
+                detail=offer.held_summary,
+            )
+            return offer
+
+        for zone in sorted({d.zone for d in self.mine}):
+            in_zone = [d for d in self.mine if d.zone == zone and self._spare_kw(d) > 0]
+            spare = sum(self._spare_kw(d) for d in in_zone)
+            if spare <= 0:
+                continue
+            zone_committed = sum(d.assigned_kw for d in self.mine if d.zone == zone)
+            allowance = max(self._zone_export_cap_kw(zone) - zone_committed, 0.0)
+            taken = min(spare, allowance)
+            for device in in_zone:
+                # Round the added kW *down*: a rounded-up commitment would be a kW the
+                # battery does not have, and would show as a reserve breach on paper.
+                extra = math.floor(taken * self._spare_kw(device) / spare * 100) / 100
+                device.assigned_kw = round(device.assigned_kw + extra, 2)
+
+        self._log(
+            actor=approver,
+            kind="surplus_offered",
+            summary=(
+                f"{offer.offerable_kw:,.0f} kW of spare capacity offered at "
+                f"${offer.price_mwh:,.2f}/MWh"
+            ),
+            detail=(
+                f"${offer.revenue_usd:,.2f} of simulated revenue over "
+                f"{offer.hours:.2f} h, less ${offer.wear_usd:,.2f} of modelled wear. "
+                f"Held back: {offer.held_summary}"
+            ),
+        )
+        return offer
 
     # ------------------------------------------------------------------ reserve
 

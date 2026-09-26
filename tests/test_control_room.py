@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import timedelta
 
 import pytest
@@ -276,3 +277,81 @@ def test_a_full_event_at_the_dispatched_plan_never_eats_the_reserve():
             violations.append((device.device_id, round(left, 3)))
     assert not violations, violations
     assert sum(d.assigned_kw for d in eng.mine) > 0  # the check had something to bite on
+
+
+# ------------------------------------------------------- idle capacity in a high-price window
+
+
+def test_the_fleet_offers_its_spare_kw_when_the_price_clears_the_wear_floor():
+    """Spare headroom is offered on top of the target, and the dollars are reported."""
+    eng = ControlRoomEngine()
+    before = eng.surplus_offer()
+
+    assert before.price_mwh > eng.offer_floor_usd_mwh()
+    assert before.offerable_kw > 0
+    assert before.revenue_usd == pytest.approx(
+        energy_value_usd(before.offerable_kw, before.hours, before.price_mwh), abs=0.01
+    )
+    assert before.net_usd < before.revenue_usd  # wear is priced in
+
+    committed_before = sum(d.assigned_kw for d in eng.mine)
+    eng.offer_surplus()
+    committed_after = sum(d.assigned_kw for d in eng.mine)
+
+    assert committed_after > committed_before
+    assert committed_after - committed_before == pytest.approx(before.offerable_kw, abs=1.0)
+    assert eng.surplus_offer().offerable_kw < before.offerable_kw
+    assert any(e.kind == "surplus_offered" for e in eng.audit)
+
+
+def test_every_idle_kw_has_a_named_reason():
+    """Nothing is simply idle: each held block says why, and none of it is unexplained."""
+    eng = ControlRoomEngine()
+    offer = eng.surplus_offer()
+
+    reasons = {h.reason for h in offer.held}
+    assert "member backup reserve" in reasons
+    assert "serving the member's own home" in reasons
+    assert all(h.kw > 0 for h in offer.held)
+    assert offer.idle_kw == pytest.approx(sum(h.kw for h in offer.held), abs=0.01)
+
+
+def test_offering_the_surplus_still_leaves_every_member_their_reserve():
+    """Take the offer, run the whole window at it, and check the floor holds."""
+    eng = ControlRoomEngine()
+    eng.offer_surplus()
+    hours = max(eng.remaining_hours(), MIN_DISPATCH_HOURS)
+
+    violations = []
+    for device in eng.mine:
+        drawn = (device.assigned_kw + device.home_load_kw) * hours
+        left = device.available_kwh - reserve_kwh(device, eng.reserve_fraction) - drawn
+        if left < -1e-6:
+            violations.append((device.device_id, round(left, 3)))
+    assert not violations, violations
+
+
+def test_a_cheap_window_holds_the_surplus_and_says_the_price_is_the_reason():
+    """Below the wear floor the answer is "held", with the price named, not a dispatch."""
+    eng = ControlRoomEngine()
+    eng.prices = replace(eng.prices, frame=eng.prices.frame.assign(spp=0.0))
+
+    offer = eng.surplus_offer()
+    assert offer.offerable_kw == 0.0
+    assert offer.revenue_usd == 0.0
+    assert any("wear floor" in h.reason for h in offer.held)
+
+    committed_before = sum(d.assigned_kw for d in eng.mine)
+    eng.offer_surplus()
+    assert sum(d.assigned_kw for d in eng.mine) == pytest.approx(committed_before)
+    assert any(e.kind == "surplus_held" for e in eng.audit)
+
+
+def test_no_zone_is_offered_past_its_simulated_feeder_cap():
+    """Deliverability binds the offer and is reported as a reason when it does."""
+    eng = ControlRoomEngine()
+    eng.offer_surplus()
+
+    for zone in {d.zone for d in eng.mine}:
+        committed = sum(d.assigned_kw for d in eng.mine if d.zone == zone)
+        assert committed <= eng._zone_export_cap_kw(zone) + 1e-6, zone

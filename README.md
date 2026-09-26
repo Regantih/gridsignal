@@ -129,6 +129,31 @@ The sidebar **View** switch picks between the four pages:
   and the backup hours that buys. Applying it reallocates the fleet and writes a `reserve_policy`
   entry to the audit log.
 
+#### Spare capacity: offered, or held for a named reason
+
+A fleet that covers its event target and then sits on tens of MW of idle inverter is leaving
+money on the table, so the Control Room accounts for **every** spare kW. The **Spare capacity**
+panel offers the headroom that is left after the member reserve and the existing commitments,
+and lists what it holds back and why: member backup reserve, energy serving the member's own
+home, offline/degraded units, another tenant's batteries, a simulated feeder export cap
+(`DELIVERABILITY_KW_PER_DEVICE = 6 kW` per operator-controlled unit, a modelling assumption),
+or a price below the cycle-wear floor. Offering it writes a `surplus_offered` entry to the audit
+log; holding it writes `surplus_held` with the reasons.
+
+On the bundled scarcity window at **$138.39/MWh over 2.00 h**, one command
+(`python -m gridsignal.surplus`) reports:
+
+| Simulated fleet | Event target | Offered on top | Simulated revenue | After modelled wear |
+|---|---:|---:|---:|---:|
+| 48 devices | 171 kW | 46 kW | $12.69 | $12.23 |
+| 10,000 devices | 36,000 kW | 9,425 kW | $2,608.63 | $2,514.38 |
+
+At 10,000 devices the held-back blocks are 24,500 kW of member backup reserve, 19,329 kW serving
+members' own homes and 21,330 kW of the partner utility's tenant — no unexplained idle capacity.
+Prices are real cached ERCOT prints; the fleet, the feeder cap and the wear cost are simulated.
+Tests: `tests/test_control_room.py` (offer, named reasons, reserve floor after offering, a cheap
+window held with the price named, and the per-zone feeder cap).
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.

@@ -117,3 +117,19 @@ def test_incident_panel_shows_the_jev_read_out() -> None:
     text = " ".join(m.value for m in app.markdown)
     assert "Code acts, Jev decides" in text
     assert any(label in text for label in ("Jev live", "Jev (recorded answer)", "Jev offline"))
+
+
+def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    assert not app.exception, app.exception
+
+    captions = " ".join(c.value for c in app.caption)
+    assert "wear floor" in captions
+
+    offer = next(b for b in app.button if "spare capacity" in b.label)
+    offer.click().run()
+    assert not app.exception, app.exception
+
+    reasons = [df.value for df in app.dataframe if "Why" in df.value.columns]
+    assert reasons and "member backup reserve" in set(reasons[0]["Why"])

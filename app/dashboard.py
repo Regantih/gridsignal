@@ -357,6 +357,42 @@ def render_home_first(eng: ControlRoomEngine) -> None:
         )
 
 
+def render_surplus(eng: ControlRoomEngine) -> None:
+    """Account for every spare kW: offered at this price, or held for a named reason."""
+    st.markdown("<div class='gs-kicker'>Spare capacity</div>", True)
+    offer = eng.surplus_offer()
+    cols = st.columns(3)
+    cols[0].metric("Offerable now", f"{offer.offerable_kw:,.0f} kW")
+    cols[1].metric(
+        "Worth",
+        f"${offer.revenue_usd:,.2f}",
+        delta=f"${offer.net_usd:,.2f} after modelled wear",
+        delta_color="off",
+    )
+    cols[2].metric("Held back", f"{offer.idle_kw:,.0f} kW")
+
+    if offer.held:
+        st.dataframe(
+            pd.DataFrame(
+                [{"Held kW": round(h.kw), "Why": h.reason} for h in offer.held],
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+    if st.button(
+        f"Offer {offer.offerable_kw:,.0f} kW of spare capacity",
+        disabled=offer.offerable_kw <= 0,
+        key="offer_surplus",
+    ):
+        eng.offer_surplus()
+        st.rerun()
+    st.caption(
+        f"At ${offer.price_mwh:,.2f}/MWh against a ${eng.offer_floor_usd_mwh():,.2f}/MWh "
+        "wear floor. Feeder export caps and member reserve are simulated assumptions; "
+        "reproduce with `python -m gridsignal.surplus`."
+    )
+
+
 def render_reserve_policy(eng: ControlRoomEngine) -> None:
     """Raise the member reserve floor before a storm, and price what that costs."""
     st.markdown("<div class='gs-kicker'>Storm reserve policy</div>", True)
@@ -1906,6 +1942,7 @@ def main() -> None:
         st.subheader("ERCOT price trace")
         render_prices(eng)
     with right:
+        render_surplus(eng)
         render_reserve_policy(eng)
         render_dispatch_priority(eng)
         render_incident(eng)
