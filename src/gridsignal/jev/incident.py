@@ -9,8 +9,18 @@ from __future__ import annotations
 from gridsignal.control_room.engine import ControlRoomEngine
 from gridsignal.control_room.models import Device, DeviceStatus, Incident
 from gridsignal.fleet import GATEWAY_RING_SIZE
-from gridsignal.jev import rules
+from gridsignal.jev import judgment, rules
 from gridsignal.jev.client import JevClient, JevResponse
+from gridsignal.jev.judgment import (
+    CLEAN_DIAGNOSIS_CONFIDENCE,
+    MUDDIED_DIAGNOSIS_CONFIDENCE,
+    Calibration,
+    Situation,
+    Verdict,
+    judge,
+    situation_from_snapshot,
+    tuned_calibration,
+)
 from gridsignal.jev.policy import ApprovalDecision, ApprovalPolicy, decide
 from gridsignal.jev.questions import IncidentSnapshot, Suspect, incident_questions
 from gridsignal.mesh.build import gateway_id
@@ -112,3 +122,39 @@ def ask(
         policy=policy,
     )
     return response, decision
+
+
+def judge_incident(
+    engine: ControlRoomEngine,
+    incident: Incident,
+    client: JevClient | None = None,
+    calibration: Calibration | None = None,
+) -> tuple[Situation, JevResponse, Verdict]:
+    """Run the recovery plan past the six operator principles, one question each.
+
+    Same fixtures, same offline guarantee: with no key and no recording the fallback
+    answers with zero confidence and the step goes to a human. Weights and bars come
+    from the calibration fitted on the *simulated* override log unless one is passed in.
+    """
+    snapshot = snapshot_from_engine(engine, incident)
+    situation = situation_from_snapshot(
+        snapshot,
+        label=f"{incident.incident_id} recovery plan",
+        # One dark gateway ring is an unambiguous root cause; a wave spread across rings
+        # is not. A simulated stand-in for how sure the diagnosis is.
+        root_cause_confidence=(
+            CLEAN_DIAGNOSIS_CONFIDENCE
+            if snapshot.offline_gateway_rings <= 1
+            else MUDDIED_DIAGNOSIS_CONFIDENCE
+        ),
+    )
+    jev = client or JevClient.for_scenario(fixture_name(engine), fallback=judgment.rules_answers)
+    if jev.fallback is None:
+        jev.fallback = judgment.rules_answers
+    response = jev.ask(situation.as_state(), judgment.PACK.questions())
+    jev.flush()
+    return (
+        situation,
+        response,
+        judge(response, situation, calibration=calibration or tuned_calibration()),
+    )

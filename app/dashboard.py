@@ -49,6 +49,7 @@ from gridsignal.fleet import (
 from gridsignal.jev import evaluate as jev_evaluate
 from gridsignal.jev import incident as jev_incident
 from gridsignal.jev.client import JevResponse, Source
+from gridsignal.jev.judgment import Action, PrincipleType, Verdict
 from gridsignal.jev.policy import ApprovalDecision, ApprovalPolicy
 from gridsignal.jev.questions import BACKUP_RISK, ROOT_CAUSE, TRUST_PREFIX
 from gridsignal.mesh.cards import CardStatus
@@ -772,9 +773,55 @@ def render_jev_card(response: JevResponse, decision: ApprovalDecision) -> None:
     st.dataframe(pd.DataFrame(jev_answer_rows(response)), hide_index=True, use_container_width=True)
 
 
+def principle_rows(verdict: Verdict) -> list[dict[str, object]]:
+    """One row per operator principle, in the priority order the YAML pack fixes."""
+    return [
+        {
+            "principle": row.principle.title,
+            "weighs as": "hard veto" if row.principle.type is PrincipleType.VETO else "soft",
+            "question": row.principle.question,
+            "answer": row.answer,
+            "probability safe": round(row.satisfied, 2),
+            "Jev confidence": round(row.confidence, 2),
+            "weight": round(row.weight, 2) if row.weight else "—",
+        }
+        for row in verdict.breakdown
+    ]
+
+
+ACTION_COLOR = {
+    Action.ACT: "#16a34a",
+    Action.ACT_AND_NOTIFY: "#f59e0b",
+    Action.ASK_A_HUMAN: "#dc2626",
+}
+
+
+def render_principles(verdict: Verdict) -> None:
+    """The six principles behind this decision, and which of them decided it."""
+    badges = " ".join(
+        [
+            pill(verdict.action.value, ACTION_COLOR[verdict.action]),
+            pill(JEV_LABEL[verdict.source], JEV_COLOR[verdict.source]),
+            pill(f"score {verdict.score:.2f} vs bar {verdict.bar:.2f}", "#475569"),
+        ]
+    )
+    st.markdown(
+        f"<div class='gs-card'><div class='gs-kicker'>Operator principles</div>{badges}"
+        f"<div class='gs-body' style='margin-top:.5rem'><b>Why:</b> {verdict.reason}</div>"
+        f"<div class='gs-body' style='margin-top:.35rem'>Three hard vetoes, then three "
+        f"weighted principles; the certainty bar rises with the money at stake. Weights "
+        f"and bars are calibrated on <b>simulated</b> operator overrides, not on real "
+        f"Base operators.</div></div>",
+        unsafe_allow_html=True,
+    )
+    st.dataframe(pd.DataFrame(principle_rows(verdict)), hide_index=True, use_container_width=True)
+
+
 def render_jev(eng: ControlRoomEngine, incident: Incident) -> None:
     response, decision = jev_incident.ask(eng, incident)
     render_jev_card(response, decision)
+    _, _, verdict = jev_incident.judge_incident(eng, incident)
+    render_principles(verdict)
 
 
 def render_money(incident: Incident) -> None:

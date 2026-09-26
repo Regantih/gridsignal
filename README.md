@@ -554,6 +554,61 @@ lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, so **every
 demo is still approved by a person — the auto-approval path is exercised by tests, not by the
 demo. Latency is the recorded live round trip (median 326 ms); the rules answer in microseconds.
 
+### The operator judgment model (safety pack v2, committed before it was scored)
+
+The four questions above ask *what happened*. A second pack asks *what an operator would weigh
+before letting the fix run*. [`src/gridsignal/jev/principles.yaml`](src/gridsignal/jev/principles.yaml)
+fixes six principles in priority order — and it, plus the blind answer key in
+[`data/holdout_safety_labels.yaml`](data/holdout_safety_labels.yaml), were committed before a
+single question was run:
+
+| # | Principle | Weighs as |
+| --- | --- | --- |
+| 1 | Protect member backup first | hard veto |
+| 2 | Never break ERCOT market rules | hard veto |
+| 3 | Commit only what the fleet can deliver | hard veto |
+| 4 | Prefer reversible steps | soft |
+| 5 | More money at stake needs more certainty | soft |
+| 6 | When in doubt, ask a human | soft |
+
+Jev answers one yes/no question per principle with a probability; the deterministic rules layer
+answers the same six with **confidence 0.0**, so its answers can never be mistaken for judgement.
+A transparent policy combines them into exactly `act`, `act-and-notify` or `ask-a-human`: any hard
+veto answered unsafe (below 0.5) holds the step for a person, the three soft principles are scored
+against their weights, and the bar the score must clear *rises with the money at stake* (+0.10 as
+dollars approach $5,000). Every verdict carries a plain-language reason naming the principles that
+decided it, and the per-principle breakdown is shown in the Control Room next to the approval
+button.
+
+```bash
+python -m gridsignal.judgment_report   # blind score, disagreements, calibration — no key needed
+```
+
+**Blind score on the four held-out drills** (24 answers, scored against the committed key before
+any tuning): rules fallback **21/24 (88%)**, Jev **17/24 (71%)**. Every disagreement is settled by
+the key and reported with the winner — all four go to the rules layer, and all four are Jev calling
+a backup or market-rule question *unsafe* where the key says it is safe. Jev is the more anxious
+reader of these states; on this pack that costs it accuracy, and it never turned a held-back step
+into an automatic one.
+
+**Learning from overrides (simulated).** 96 deterministic episodes are generated across fleet size,
+price day, reserve floor, stale-telemetry share and four labelled complications; a documented
+stand-in operator decides each one with a written reason (80 of the 96 are overrides). This is a
+**simulated** override log — no real Base operator data is used and none is claimed. A grid search
+moves only the three soft weights and the two bars (never the vetoes, the questions or the policy
+shape) on half the operating conditions, and is scored on the half it never saw:
+
+| Agreement with the simulated operator | Fitted half | Held-out half |
+| --- | --- | --- |
+| as committed | 58% | 71% |
+| after tuning | 77% | 73% |
+
+Read that honestly: the fit gains 19 points, the held-out half gains 2. The tuned weights
+(`ask a human` 0.45, `reversible` 0.60, `certainty for money` 0.15, act bar 0.70) are written to
+`data/judgment_calibration.json` and are what the Control Room judges with; with that file absent
+the product behaves exactly as committed. Jev answers replay from `data/jev_fixtures/judgment_*.json`,
+so the report and the whole suite run with no key and no network.
+
 ### Held-out chaos drills (written after the rules were frozen)
 
 The five scenarios above are the ones the detection rules and the Jev questions were written

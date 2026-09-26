@@ -1,0 +1,20 @@
+{
+  "agreement_held_out_after": 0.7292,
+  "agreement_held_out_before": 0.7083,
+  "calibration": {
+    "act_threshold": 0.7,
+    "dollar_scale": 5000.0,
+    "money_slope": 0.1,
+    "notify_threshold": 0.6,
+    "veto_floor": 0.5,
+    "weights": {
+      "ask_when_in_doubt": 0.45,
+      "certainty_for_money": 0.15,
+      "reversible": 0.6
+    }
+  },
+  "episodes": 96,
+  "fitted_on": 48,
+  "held_out": 48,
+  "note": "Soft-principle weights and certainty bars fitted on a SIMULATED operator override log; not calibrated on real Base operators. Reproduce with python -m gridsignal.judgment_report."
+}

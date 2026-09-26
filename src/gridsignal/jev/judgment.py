@@ -35,6 +35,7 @@ here is claimed to match how a real Base operator decides.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
@@ -42,9 +43,18 @@ from pathlib import Path
 
 import yaml
 
+from gridsignal import paths
 from gridsignal.jev.client import JevAnswer, JevResponse, Question, QuestionKind, Source
+from gridsignal.jev.questions import IncidentSnapshot
+
+#: Simulated diagnosis confidence: one dark gateway ring is an unambiguous root cause,
+#: a wave spread across rings is not. Documented assumptions, never fitted.
+CLEAN_DIAGNOSIS_CONFIDENCE = 0.9
+MUDDIED_DIAGNOSIS_CONFIDENCE = 0.55
 
 PRINCIPLES_PATH = Path(__file__).with_name("principles.yaml")
+#: Written by ``python -m gridsignal.judgment_report`` from the simulated override log.
+TUNED_PATH = paths.DATA_DIR / "judgment_calibration.json"
 PREFIX = "principle_"
 
 #: Simulated grid-stress markers used by the rules fallback and by the state Jev sees.
@@ -105,6 +115,22 @@ class Calibration:
         """The certainty a step needs: higher when there is more money on it."""
         pressure = min(max(dollars, 0.0) / self.dollar_scale, 1.0)
         return min(base + self.money_slope * pressure, 1.0)
+
+    @classmethod
+    def from_dict(cls, raw: Mapping[str, object]) -> Calibration:
+        weights = {str(k): float(v) for k, v in dict(raw.get("weights") or {}).items()}  # type: ignore[arg-type]
+        numbers = {
+            field_name: float(raw[field_name])  # type: ignore[arg-type]
+            for field_name in (
+                "act_threshold",
+                "notify_threshold",
+                "veto_floor",
+                "money_slope",
+                "dollar_scale",
+            )
+            if field_name in raw
+        }
+        return cls(weights=weights, **numbers)
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -185,6 +211,18 @@ def load_pack(path: Path = PRINCIPLES_PATH) -> Pack:
 PACK = load_pack()
 
 
+def tuned_calibration(path: Path = TUNED_PATH, pack: Pack = PACK) -> Calibration:
+    """The weights and bars fitted on the simulated override log, if they are recorded.
+
+    Falls back to the pack as committed, so the product behaves identically on a clone
+    that has never run the calibration.
+    """
+    if not path.exists():
+        return pack.calibration
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return Calibration.from_dict(dict(raw.get("calibration") or raw))
+
+
 @dataclass(frozen=True)
 class Situation:
     """One step the fleet is about to take, as the judgment layer sees it.
@@ -196,7 +234,9 @@ class Situation:
     dollars: float
     committed_kw: float
     uncovered_kw: float
-    min_spare_kwh_after_plan: float
+    #: Stored energy left **above** the member's backup reserve once the plan has run.
+    #: Zero lands exactly on the reserve; negative eats into it.
+    spare_kwh_above_reserve: float
     backup_reserve_kwh: float
     mean_soc: float
     bidders: int
@@ -211,9 +251,9 @@ class Situation:
 
     @property
     def reserve_margin(self) -> float:
-        """How much of the backup reserve survives the plan, 1.0 = untouched."""
+        """Spare energy above the reserve as a share of it: 0 is exactly on the line."""
         reserve = self.backup_reserve_kwh or 1.0
-        return round(self.min_spare_kwh_after_plan / reserve, 4)
+        return round(self.spare_kwh_above_reserve / reserve, 4)
 
     @property
     def grid_stressed(self) -> bool:
@@ -226,9 +266,7 @@ class Situation:
     def as_state(self) -> dict[str, object]:
         return {
             "simulation": True,
-            "note": (
-                "Simulated home-battery fleet. No real devices, utilities or market systems."
-            ),
+            "note": ("Simulated home-battery fleet. No real devices, utilities or market systems."),
             "step": self.label,
             "money": {
                 "dollars_at_stake": round(self.dollars, 2),
@@ -241,15 +279,15 @@ class Situation:
                 "bidders_whose_card_did_not_verify_or_contradicts_telemetry": (
                     self.unverified_bidders
                 ),
-                "kw_controlled_by_a_utility_partner_not_this_fleet": round(
-                    self.other_tenant_kw, 2
-                ),
+                "kw_controlled_by_a_utility_partner_not_this_fleet": round(self.other_tenant_kw, 2),
                 "kw_that_cannot_be_held_for_the_whole_window": round(self.undeliverable_kw, 2),
                 "reversible_within_the_event": self.reversible,
                 "root_cause_confidence": round(self.root_cause_confidence, 4),
             },
             "member_backup": {
-                "min_spare_kwh_after_plan": round(self.min_spare_kwh_after_plan, 3),
+                "spare_kwh_above_the_reserve_after_the_plan": round(
+                    self.spare_kwh_above_reserve, 3
+                ),
                 "homeowner_backup_reserve_kwh": round(self.backup_reserve_kwh, 3),
                 "mean_state_of_charge_of_committed": round(self.mean_soc, 4),
             },
@@ -274,7 +312,9 @@ def rules_probabilities(situation: Situation) -> dict[str, float]:
     margin = situation.reserve_margin
     money_pressure = min(situation.dollars / 5000.0, 1.0)
     return {
-        "protect_backup": _clamp(margin),
+        # Exactly on the reserve is a coin flip; a reserve's worth of room above it is
+        # as safe as this rule gets; an emptied reserve is a flat no.
+        "protect_backup": _clamp(0.5 + 0.5 * min(margin, 1.0)),
         "market_rules": _clamp(
             1.0 - min(situation.unverified_bidders, 3) / 3.0
             if situation.other_tenant_kw <= 0
@@ -343,11 +383,54 @@ def situation_from_state(state: Mapping[str, object]) -> Situation:
         undeliverable_kw=number(plan, "kw_that_cannot_be_held_for_the_whole_window"),
         reversible=bool(plan.get("reversible_within_the_event", True)),
         root_cause_confidence=number(plan, "root_cause_confidence"),
-        min_spare_kwh_after_plan=number(backup, "min_spare_kwh_after_plan"),
+        spare_kwh_above_reserve=number(backup, "spare_kwh_above_the_reserve_after_the_plan"),
         backup_reserve_kwh=number(backup, "homeowner_backup_reserve_kwh", 1.0) or 1.0,
         mean_soc=number(backup, "mean_state_of_charge_of_committed", 1.0),
         frequency_hz=number(grid, "frequency_hz", NOMINAL_HZ),
         islanded_homes=int(number(grid, "homes_islanded_on_their_own_battery")),
+    )
+
+
+def situation_from_snapshot(
+    snapshot: IncidentSnapshot,
+    label: str,
+    reversible: bool = True,
+    undeliverable_kw: float = 0.0,
+    unverified_bidders: int | None = None,
+    other_tenant_kw: float = 0.0,
+    root_cause_confidence: float = 0.0,
+    spare_is_net_of_reserve: bool = False,
+) -> Situation:
+    """The step described by an incident snapshot, in the judgment layer's terms.
+
+    The Control Room and the agent mesh both build :class:`IncidentSnapshot`, so both
+    reach the judgment model through this one door. They differ in one place: the mesh
+    already nets the backup reserve out of the spare energy on a capability card, while
+    the Control Room reports the whole pack, so ``spare_is_net_of_reserve`` says which
+    of the two the caller is holding.
+    """
+    spare = snapshot.plan_min_spare_kwh
+    return Situation(
+        label=label,
+        dollars=snapshot.dollars_at_risk,
+        committed_kw=snapshot.proposed_kw,
+        uncovered_kw=snapshot.uncovered_kw,
+        spare_kwh_above_reserve=round(
+            spare if spare_is_net_of_reserve else spare - snapshot.backup_reserve_kwh, 3
+        ),
+        backup_reserve_kwh=snapshot.backup_reserve_kwh,
+        mean_soc=snapshot.plan_mean_soc,
+        bidders=snapshot.bidders,
+        unverified_bidders=(
+            snapshot.rejected_cards if unverified_bidders is None else unverified_bidders
+        ),
+        other_tenant_kw=other_tenant_kw,
+        undeliverable_kw=undeliverable_kw,
+        frequency_hz=snapshot.frequency_hz,
+        islanded_homes=snapshot.islanded_agents,
+        price_usd_mwh=snapshot.price_usd_mwh,
+        reversible=reversible,
+        root_cause_confidence=root_cause_confidence,
     )
 
 
@@ -474,9 +557,8 @@ def judge(
         first = pack.by_id(vetoed[0])
         action = Action.ASK_A_HUMAN
         others = ", ".join(pack.by_id(v).title.lower() for v in vetoed[1:])
-        reason = (
-            f"Held for a human on {first.title.lower()}: {first.no_means.rstrip('.')}."
-            + (f" Also unsafe on {others}." if others else "")
+        reason = f"Held for a human on {first.title.lower()}: {first.no_means.rstrip('.')}." + (
+            f" Also unsafe on {others}." if others else ""
         )
     elif offline:
         action = Action.ASK_A_HUMAN

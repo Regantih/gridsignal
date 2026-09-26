@@ -1,5 +1,91 @@
 {
   "entries": {
+    "2a276774f3dade4849cf2b2b": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.84,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.16,
+            "yes": 0.84
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": true
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.82,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.18,
+            "yes": 0.82
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.89,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.11,
+            "yes": 0.89
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.93,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.07,
+            "yes": 0.93
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.67,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.33,
+            "yes": 0.67
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.81,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.19,
+            "yes": 0.81
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 339.6,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "38658fd7d24e49f9d3b58e74": {
       "answers": {
         "backup_risk": {
@@ -234,7 +320,7 @@
   },
   "model": "typesafe-ai/jev",
   "note": "Recorded Jev answers for simulated fleet state; replayed when no API key is set.",
-  "recorded_at": "2026-09-26T04:28:00+00:00",
+  "recorded_at": "2026-09-26T08:11:13+00:00",
   "scenario": "control_room_2023-09-06_10000",
   "transport": "vercel-ai-gateway"
 }
