@@ -67,8 +67,18 @@ def _notice(
     incident: Incident | None,
     affected: bool,
     backup_hours: float,
+    degraded: bool = False,
 ) -> tuple[str, str, str]:
     """Plain-English status for the homeowner: no jargon, no incident IDs."""
+    if (incident is None or not affected) and degraded:
+        return (
+            "Your battery is reporting slowly",
+            "Your system is online and still backing up your home, but it is sending us "
+            "readings less often than usual, so we have it on a watch list and are holding "
+            "back some of its grid participation until it settles.",
+            f"Nothing to do. You have about {backup_hours:.1f} hours of backup held in reserve.",
+        )
+
     if incident is None or not affected:
         return (
             "Your battery is healthy",
@@ -127,7 +137,8 @@ def member_summary(
             extra_kw = max(device.assigned_kw - before, 0.0)
             protected = round(recovery.dollars_recovered * extra_kw / recovery.restored_kw, 2)
 
-    headline, body, next_step = _notice(incident, affected, backup_hours)
+    degraded = device.status is DeviceStatus.DEGRADED
+    headline, body, next_step = _notice(incident, affected, backup_hours, degraded)
     return MemberSummary(
         device_id=device.device_id,
         site=device.site,

@@ -127,3 +127,15 @@ def test_reset_returns_every_home_to_the_calm_state(eng: ControlRoomEngine) -> N
     assert eng.device(FOCUS_DEVICE_ID).status is DeviceStatus.ONLINE
     assert view.protected_usd == 0.0
     assert view.earned_usd > 0
+
+
+def test_a_degraded_battery_is_not_described_to_its_owner_as_healthy(
+    eng: ControlRoomEngine,
+) -> None:
+    degraded = next(d for d in eng.devices if d.status is DeviceStatus.DEGRADED)
+
+    view = member.member_summary(eng, degraded.device_id)
+
+    assert not view.is_affected
+    assert "healthy" not in view.headline.lower()
+    assert "reporting slowly" in view.headline.lower()
