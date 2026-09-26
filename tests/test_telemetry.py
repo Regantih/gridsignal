@@ -2,16 +2,27 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 from datetime import UTC, datetime, timedelta
+from types import ModuleType
 
 import pytest
 
-from gridsignal import telemetry
+from gridsignal import paths, telemetry
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import DeviceStatus
 
 AS_OF = datetime(2023, 9, 6, 17, 0, tzinfo=UTC)
+
+
+def load_script(name: str) -> ModuleType:
+    """Import a file from ``scripts/``, which is not an installed package."""
+    spec = importlib.util.spec_from_file_location(name, paths.ROOT / "scripts" / f"{name}.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def row(**overrides: object) -> str:
@@ -194,7 +205,7 @@ def test_the_bundled_bad_rows_demonstrate_every_class_of_rejection(
 
 def test_the_sample_files_are_exactly_what_the_generator_writes() -> None:
     """Regenerating the bundled samples must reproduce the committed bytes."""
-    import scripts.make_telemetry_sample as maker
+    maker = load_script("make_telemetry_sample")
 
     expected = "\n".join(json.dumps(r) for r in maker.rows()) + "\n"
     assert telemetry.SAMPLE_FILE.read_text(encoding="utf-8") == expected
