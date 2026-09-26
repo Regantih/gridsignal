@@ -6,11 +6,13 @@ Run with:  streamlit run app/dashboard.py
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit.delta_generator import DeltaGenerator
 
 from gridsignal import (
     ancillary,
@@ -93,28 +95,99 @@ TASK_BADGE = {
     TaskStatus.DONE: ("Done", "#16a34a"),
 }
 
+#: One type scale, one spacing step and one set of surface colours for every view, so a
+#: card in the Member App is built from the same parts as a card in the Control Room.
+#: Muted text is #a3b1c6 rather than the grey it started as: on the #11161f card that is
+#: a 7.7:1 contrast ratio, past WCAG AA for small text with room to spare.
 CSS = """
 <style>
+:root {
+  --gs-surface: #11161f; --gs-line: #263041;
+  --gs-ink: #e6edf6; --gs-body: #c3cfe0; --gs-muted: #a3b1c6; --gs-accent: #38bdf8;
+  --gs-step: .5rem; --gs-radius: 12px;
+}
 .block-container {padding-top: 2rem; max-width: 1500px;}
-.gs-card {background: #11161f; border: 1px solid #263041; border-radius: 12px;
-          padding: 1rem 1.15rem; margin-bottom: 0.85rem;}
+.gs-card {background: var(--gs-surface); border: 1px solid var(--gs-line);
+          border-radius: var(--gs-radius); padding: 1rem 1.15rem;
+          margin-bottom: calc(var(--gs-step) * 1.7);}
 .gs-pill {display:inline-block; padding: 2px 10px; border-radius: 999px;
-          font-size: 0.74rem; font-weight: 600; color: #fff;}
+          font-size: 0.74rem; font-weight: 600; color: #fff;
+          margin-right: calc(var(--gs-step) * .5);}
 .gs-kicker {text-transform: uppercase; letter-spacing: .08em; font-size: .7rem;
-            color: #8b98ad; margin-bottom: .2rem;}
-.gs-title {font-size: 1.02rem; font-weight: 650; color: #e6edf6; margin-bottom: .35rem;}
-.gs-body {font-size: .87rem; color: #b9c4d4; line-height: 1.45;}
-.gs-sim {background: #1b2537; border-left: 4px solid #38bdf8; border-radius: 8px;
-         padding: .65rem .9rem; font-size: .85rem; color: #cfe0f2;}
-.gs-insight {border-color: #38bdf8; background: linear-gradient(180deg,#132030 0%,#11161f 100%);}
-.gs-huge {font-size: 3.4rem; font-weight: 700; color: #38bdf8; line-height: 1.1;}
-.gs-lead {font-size: 1.05rem; font-weight: 600; color: #e6edf6; margin-bottom: .45rem;}
+            font-weight: 600; color: var(--gs-muted);
+            margin: 0 0 calc(var(--gs-step) * .5);}
+.gs-title {font-size: 1.02rem; font-weight: 650; color: var(--gs-ink);
+           margin-bottom: calc(var(--gs-step) * .7);}
+.gs-body {font-size: .87rem; color: var(--gs-body); line-height: 1.5;}
+.gs-sim {background: #1b2537; border-left: 4px solid var(--gs-accent); border-radius: 8px;
+         padding: .65rem .9rem; font-size: .85rem; color: #cfe0f2; line-height: 1.5;}
+.gs-insight {border-color: var(--gs-accent);
+             background: linear-gradient(180deg,#132030 0%,var(--gs-surface) 100%);}
+.gs-huge {font-size: 3.4rem; font-weight: 700; color: var(--gs-accent); line-height: 1.1;
+          font-variant-numeric: tabular-nums;}
+.gs-lead {font-size: 1.05rem; font-weight: 600; color: var(--gs-ink);
+          margin-bottom: calc(var(--gs-step) * .9);}
+/* A term a first-time reader would not know, with its meaning on hover. */
+.gs-term {border-bottom: 1px dotted var(--gs-muted); cursor: help;}
 /* Seven metrics share one row, so the default value size truncates mid-number. */
-[data-testid="stMetricValue"] {font-size: 1.75rem;}
-[data-testid="stMetricLabel"] p {font-size: .8rem; color: #8b98ad;}
-[data-testid="stMetricDelta"] {font-size: .78rem;}
+[data-testid="stMetricValue"] {font-size: 1.75rem; font-variant-numeric: tabular-nums;}
+[data-testid="stMetricLabel"] p {font-size: .8rem; color: var(--gs-muted);}
+[data-testid="stMetricDelta"] {font-size: .78rem; font-variant-numeric: tabular-nums;}
+[data-testid="stCaptionContainer"] p {color: var(--gs-muted); line-height: 1.5;}
 </style>
 """
+
+#: Every term in the product a member or a first-time judge would have to look up, and
+#: the sentence that explains it. A metric whose label uses one of these carries the
+#: explanation as a tooltip; prose underlines it with `term()`.
+GLOSSARY: dict[str, str] = {
+    "headroom": (
+        "The kW a battery can still offer after its member's backup reserve and "
+        "everything it has already promised."
+    ),
+    "backup reserve": (
+        "Stored energy held back for the member's own home; the fleet may never sell it."
+    ),
+    "reserve floor": (
+        "The least state of charge every battery must keep for its member's own home."
+    ),
+    "state of charge": "How full the battery is, as a share of its usable capacity.",
+    "day-ahead": (
+        "ERCOT's market that clears the day before delivery, so the price is known in advance."
+    ),
+    "held-out": (
+        "Days the policy was never tuned on, scored once, so the result is not hindsight."
+    ),
+    "ancillary": (
+        "Capacity ERCOT pays for standing ready (Reg Up, Reg Down, RRS, ECRS, Non-Spin) "
+        "rather than for energy delivered."
+    ),
+    "congestion": (
+        "When the wires cannot carry the cheapest power, zones settle at different prices; "
+        "the gap to the hub average is the congestion basis."
+    ),
+    "probation": ("A newly installed battery may not take awards until it passes a health check."),
+    "quarantined": "Taken out of dispatch by the operator until it can be trusted again.",
+    "canary": "A small first ring of devices a new build runs on before the rest of the fleet.",
+    "equivalent full cycle": (
+        "One full charge and discharge worth of throughput, however it was spread out."
+    ),
+    "wear cost": (
+        "What one MWh through the battery costs in pack life — an assumption of this repo."
+    ),
+    "uplift": "Dollars the policy earned above the simple baseline, per battery per day.",
+    "offerable": (
+        "kW the fleet could sell right now: spare power above every member's reserve and "
+        "everything already promised."
+    ),
+    "clock baseline": (
+        "Charge 01:00-05:00 and discharge 17:00-21:00 every day, ignoring the price."
+    ),
+    "mesh": ("The batteries, gateways and zone coordinators that bid to each other as agents."),
+    "tenant": ("A block of batteries a partner utility dispatches; this fleet may never bid them."),
+    "ring": "One stage of a firmware rollout: lab, 1% canary, 10%, 50%, then the rest.",
+    "spike": "An interval whose price jumps far above the recent rolling baseline.",
+}
 
 
 # Plotting every marker of a 10,000-device fleet is slow and unreadable, so the map
@@ -244,12 +317,87 @@ def pill(text: str, color: str) -> str:
     return f"<span class='gs-pill' style='background:{color}'>{text}</span>"
 
 
+def money(amount: float, cents: bool = True) -> str:
+    """Dollars, thousands-separated, with the minus sign outside the dollar sign."""
+    body = f"{abs(amount):,.2f}" if cents else f"{abs(amount):,.0f}"
+    return f"-${body}" if amount <= -0.005 else f"${body}"
+
+
+def power(kw: float, decimals: int = 0) -> str:
+    """Power. The fleet is priced in kW everywhere, so kW it stays at every scale."""
+    return f"{kw:,.{decimals}f} kW"
+
+
+def energy(kwh: float, decimals: int = 0) -> str:
+    return f"{kwh:,.{decimals}f} kWh"
+
+
+def hours(value: float) -> str:
+    return f"{value:,.1f} h"
+
+
+def seconds(value: float) -> str:
+    return f"{value:,.0f} s"
+
+
+def ratio(part: float, whole: float) -> str:
+    """Counts out of counts read as words, never as a fraction to be misread as division."""
+    return f"{part:,.0f} of {whole:,.0f}"
+
+
+def explain(label: str) -> str | None:
+    """The glossary sentence for the first term this label uses, if it uses one.
+
+    Whole words only, so 'Powering your home' is not explained as a rollout ring.
+    """
+    lowered = label.lower()
+    hits = []
+    for word, text in GLOSSARY.items():
+        found = re.search(rf"\b{re.escape(word)}s?\b", lowered)
+        if found:
+            hits.append((found.start(), text))
+    return min(hits)[1] if hits else None
+
+
+def term(word: str, key: str | None = None) -> str:
+    """Inline jargon, underlined, with its plain-language meaning on hover."""
+    meaning = GLOSSARY[key or word.lower()]
+    return f"<span class='gs-term' title='{meaning}'>{word}</span>"
+
+
+def caption(text: str, box: DeltaGenerator | None = None) -> None:
+    """Small print, one style everywhere.
+
+    Dollar signs are escaped: Streamlit reads a pair of them as LaTeX, which turns
+    "earned $1.01 of $1.68" into two typeset symbols and loses the numbers.
+    """
+    (box or st).caption(text.replace("$", r"\$"))
+
+
+def metric(
+    box: DeltaGenerator,
+    label: str,
+    value: object,
+    note: str | None = None,
+    tooltip: str | None = None,
+) -> None:
+    """One metric, laid out the same way everywhere.
+
+    The second line is always context ("per battery", "0 total"), never a movement, so it
+    is a caption rather than a delta: no arrow and no green or red to read a trend into.
+    Any jargon in the label arrives with its plain-language meaning attached.
+    """
+    box.metric(label, value, help=tooltip or explain(label))
+    if note:
+        caption(note, box)
+
+
 def render_header() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
     left, right = st.columns([3, 2])
     with left:
         st.title("⚡ GridSignal Control Room")
-        st.caption("Distributed home-battery fleet orchestration — Texas (simulated)")
+        caption("Distributed home-battery fleet orchestration — Texas (simulated)")
     with right:
         st.markdown(
             "<div class='gs-sim'><b>SIMULATION ONLY.</b> Deterministic mock fleet, priced with "
@@ -283,43 +431,41 @@ def render_overview(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     ev = snap.grid_event
     cols = st.columns(7)
-    cols[0].metric("Fleet size", f"{snap.total_devices:,}")
-    cols[1].metric(
+    metric(cols[0], "Fleet size", f"{snap.total_devices:,}")
+    metric(
+        cols[1],
         "Capacity available",
-        f"{snap.available_capacity_kwh:,.0f} kWh",
-        delta=f"{snap.committed_kw:,.0f} kW committed",
-        delta_color="off",
+        energy(snap.available_capacity_kwh),
+        note=f"{snap.committed_kw:,.0f} kW committed",
     )
-    cols[2].metric(
-        "Online", f"{snap.online:,}", delta=f"{snap.degraded} degraded", delta_color="off"
-    )
-    cols[3].metric(
+    metric(cols[2], "Online", f"{snap.online:,}", note=f"{snap.degraded} degraded")
+    metric(
+        cols[3],
         "Offline / quarantined",
         f"{snap.offline:,} / {snap.unavailable:,}",
-        delta=(f"{FOCUS_DEVICE_ID} gateway ring" if snap.offline or snap.unavailable else "none"),
-        delta_color="off",
+        note=(f"{FOCUS_DEVICE_ID} gateway ring" if snap.offline or snap.unavailable else "none"),
     )
-    cols[4].metric(
+    metric(
+        cols[4],
         "Grid event",
         ev.status.title(),
-        delta=(
+        note=(
             f"{coverage_pct_text(snap.committed_kw, ev.target_kw, snap.coverage_pct)} "
             f"of {ev.target_kw:,.0f} kW"
         ),
-        delta_color="off",
     )
-    cols[5].metric(
+    metric(
+        cols[5],
         "Open incidents",
         snap.open_incidents,
-        delta=f"{len(snap.incidents)} total",
-        delta_color="off",
+        note=f"{len(snap.incidents)} total",
     )
     window_value = energy_value_usd(ev.target_kw, ev.duration_hours, ev.price_mwh)
-    cols[6].metric(
+    metric(
+        cols[6],
         f"{ev.zone} price (real)",
         f"${ev.price_mwh:,.0f}/MWh",
-        delta=f"window ${window_value:,.0f}",
-        delta_color="off",
+        note=f"window ${window_value:,.0f}",
     )
 
     banner = coverage_banner(snap.committed_kw, ev.target_kw)
@@ -334,26 +480,26 @@ def render_home_first(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     st.markdown("<div class='gs-kicker'>Home-first dispatch</div>", True)
     cols = st.columns(4)
-    cols[0].metric("Battery discharge", f"{snap.discharge_kw:,.0f} kW")
-    cols[1].metric(
+    metric(cols[0], "Battery discharge", power(snap.discharge_kw))
+    metric(
+        cols[1],
         "Served to members' homes",
-        f"{snap.home_load_kw:,.0f} kW",
-        delta="simulated household load",
-        delta_color="off",
+        power(snap.home_load_kw),
+        note="simulated household load",
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Exported to the grid",
-        f"{snap.committed_kw:,.0f} kW",
-        delta=f"{snap.coverage_pct:.0f}% of target",
-        delta_color="off",
+        power(snap.committed_kw),
+        note=f"{snap.coverage_pct:.0f}% of target",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         "Partner tenant",
-        f"{snap.partner_kw:,.0f} kW",
-        delta=UTILITY_PARTNER,
-        delta_color="off",
+        power(snap.partner_kw),
+        note=UTILITY_PARTNER,
     )
-    st.caption(
+    caption(
         "Exported kW is battery discharge minus the home's own load. The partner"
         " tenant's units are shown for visibility only — this mesh never bids, awards"
         " or reassigns a battery it does not control."
@@ -380,7 +526,7 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             hide_index=True,
             use_container_width=True,
         )
-        st.caption(
+        caption(
             "Base Core-style units are modelled at 40 kWh / 20 kW per public interview, "
             "not an official specification."
         )
@@ -401,7 +547,7 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             hide_index=True,
             use_container_width=True,
         )
-        st.caption(
+        caption(
             "Simulated tenancy: in non-retail-choice territory the utility partner runs "
             "its own schedule and this control room only reads it."
         )
@@ -412,14 +558,19 @@ def render_surplus(eng: ControlRoomEngine) -> None:
     st.markdown("<div class='gs-kicker'>Spare capacity</div>", True)
     offer = eng.surplus_offer()
     cols = st.columns(3)
-    cols[0].metric("Offerable now", f"{offer.offerable_kw:,.0f} kW")
-    cols[1].metric(
-        "Worth",
-        f"${offer.revenue_usd:,.2f}",
-        delta=f"${offer.net_usd:,.2f} after modelled wear",
-        delta_color="off",
+    metric(cols[0], "Offerable now", power(offer.offerable_kw), tooltip=GLOSSARY["offerable"])
+    metric(
+        cols[1],
+        "Worth at this price",
+        money(offer.revenue_usd),
+        note=f"${offer.net_usd:,.2f} after modelled wear",
     )
-    cols[2].metric("Held back", f"{offer.idle_kw:,.0f} kW")
+    metric(
+        cols[2],
+        "Held back for members",
+        power(offer.idle_kw),
+        tooltip=GLOSSARY["backup reserve"],
+    )
 
     if offer.held:
         st.dataframe(
@@ -436,7 +587,7 @@ def render_surplus(eng: ControlRoomEngine) -> None:
     ):
         eng.offer_surplus()
         st.rerun()
-    st.caption(
+    caption(
         f"At ${offer.price_mwh:,.2f}/MWh against a ${eng.offer_floor_usd_mwh():,.2f}/MWh "
         "wear floor. Feeder export caps and member reserve are simulated assumptions; "
         "reproduce with `python -m gridsignal.surplus`."
@@ -448,19 +599,19 @@ def render_fleet_replay() -> None:
     st.markdown("<div class='gs-kicker'>Full-fleet scarcity replay</div>", True)
     result = replay_run(replay.FLEET_SIZE)
     cols = st.columns(4)
-    cols[0].metric("Batteries replayed", f"{result.fleet_size:,}")
-    cols[1].metric("At risk at the peak", f"${result.dollars_at_risk:,.0f}")
-    cols[2].metric(
+    metric(cols[0], "Batteries replayed", f"{result.fleet_size:,}")
+    metric(cols[1], "At risk at the peak", money(result.dollars_at_risk, cents=False))
+    metric(
+        cols[2],
         "Protected",
-        f"${result.dollars_recovered:,.0f}",
-        delta=f"{result.spare_kw_at_fault:,.0f} kW spare headroom made it possible",
-        delta_color="off",
+        money(result.dollars_recovered, cents=False),
+        note=f"{result.spare_kw_at_fault:,.0f} kW spare headroom made it possible",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         "Per minute of fault",
-        f"${result.protected_usd_per_fault_minute:,.0f}",
-        delta=f"{result.fault_minutes:.1f} simulated min",
-        delta_color="off",
+        money(result.protected_usd_per_fault_minute, cents=False),
+        note=f"{result.fault_minutes:.1f} simulated min",
     )
     st.dataframe(
         pd.DataFrame(
@@ -472,7 +623,7 @@ def render_fleet_replay() -> None:
         hide_index=True,
         use_container_width=True,
     )
-    st.caption(
+    caption(
         f"Real cached ERCOT {result.location} {result.date} settlement prices "
         f"(${result.price_mwh:,.0f}/MWh across the {result.window_hours:.2f} h peak window); "
         "the devices, the faults and the spoofed cards are simulated. Without orchestration "
@@ -502,20 +653,20 @@ def render_reserve_policy(eng: ControlRoomEngine) -> None:
 
     outcome = eng.reserve_outcome(home.STORM_RESERVE_FRACTION)
     cols = st.columns(3)
-    cols[0].metric("Reserve floor", f"{eng.reserve_fraction:.0%}")
-    cols[1].metric(
+    metric(cols[0], "Reserve floor", f"{eng.reserve_fraction:.0%}")
+    metric(
+        cols[1],
         "Revenue given up at 50%",
-        f"${outcome.revenue_given_up_usd:,.2f}",
-        delta=f"{outcome.committed_kw_after - outcome.committed_kw_before:,.0f} kW export",
-        delta_color="off",
+        money(outcome.revenue_given_up_usd),
+        note=f"{outcome.committed_kw_after - outcome.committed_kw_before:,.0f} kW export",
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Backup protected at 50%",
-        f"{outcome.backup_hours_after:,.1f} h",
-        delta=f"{outcome.backup_hours_gained:+.1f} h per member",
-        delta_color="off",
+        hours(outcome.backup_hours_after),
+        note=f"{outcome.backup_hours_gained:+.1f} h per member",
     )
-    st.caption(
+    caption(
         "Before a forecast storm the operator holds more energy back for members and "
         "sells less into the event. Both numbers come from the same simulated fleet."
     )
@@ -628,7 +779,7 @@ def render_map(eng: ControlRoomEngine) -> None:
     )
 
     if len(shown) < len(snap.devices):
-        st.caption(
+        caption(
             f"Map shows {len(shown):,} of {len(snap.devices):,} devices: every unhealthy "
             "device plus a sample of healthy ones."
         )
@@ -651,7 +802,7 @@ def render_map(eng: ControlRoomEngine) -> None:
                 unsafe_allow_html=True,
             )
     if len(tiles) < len(snap.devices):
-        st.caption(f"First {len(tiles)} tiles of {len(snap.devices):,} simulated devices.")
+        caption(f"First {len(tiles)} tiles of {len(snap.devices):,} simulated devices.")
 
 
 def render_prices(eng: ControlRoomEngine) -> None:
@@ -675,7 +826,7 @@ def render_prices(eng: ControlRoomEngine) -> None:
         plot_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(fig, use_container_width=True)
-    st.caption(
+    caption(
         usd(
             f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
             f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
@@ -827,34 +978,34 @@ def render_jev(eng: ControlRoomEngine, incident: Incident) -> None:
 def render_money(incident: Incident) -> None:
     """Price the lost capacity against the real settlement prices for the window."""
     risk, recovered, scale = st.columns(3)
-    risk.metric(
+    metric(
+        risk,
         "Dollars at risk",
-        f"${incident.dollars_at_risk:,.2f}",
-        delta=(
+        money(incident.dollars_at_risk),
+        note=(
             f"{incident.lost_kw:.1f} kW x {incident.window_hours:.2f} h "
             f"x ${incident.price_mwh:,.2f}/MWh"
         ),
-        delta_color="off",
     )
     if incident.status is IncidentStatus.RESOLVED:
-        recovered.metric(
+        metric(
+            recovered,
             "Dollars recovered",
-            f"${incident.dollars_recovered:,.2f}",
-            delta=f"{incident.restored_kw:.1f} kW reassigned after approval",
-            delta_color="off",
+            money(incident.dollars_recovered),
+            note=f"{incident.restored_kw:.1f} kW reassigned after approval",
         )
     else:
-        recovered.metric(
+        metric(
+            recovered,
             "Dollars recovered",
             "$0.00",
-            delta="pending operator approval",
-            delta_color="off",
+            note="pending operator approval",
         )
-    scale.metric(
+    metric(
+        scale,
         "Devices in outage",
         f"{len(incident.cohort) or 1:,}",
-        delta="one gateway firmware ring",
-        delta_color="off",
+        note="one gateway firmware ring",
     )
 
 
@@ -933,13 +1084,13 @@ def render_alarm_grouping(eng: ControlRoomEngine) -> None:
         )
         return
     cols = st.columns(3)
-    cols[0].metric("Raw alarms", f"{report.alarms:,}")
-    cols[1].metric("Incidents to work", f"{report.incidents:,}")
-    cols[2].metric(
+    metric(cols[0], "Raw alarms", f"{report.alarms:,}")
+    metric(cols[1], "Incidents to work", f"{report.incidents:,}")
+    metric(
+        cols[2],
         "Alarms per incident",
         f"{report.after:,.1f}",
-        delta=f"{report.before:.1f} before grouping",
-        delta_color="off",
+        note=f"{report.before:.1f} before grouping",
     )
     st.dataframe(
         pd.DataFrame(
@@ -957,7 +1108,7 @@ def render_alarm_grouping(eng: ControlRoomEngine) -> None:
         hide_index=True,
         use_container_width=True,
     )
-    st.caption(f"{report.headline}. Reproduce with `python -m gridsignal.workflow`.")
+    caption(f"{report.headline}. Reproduce with `python -m gridsignal.workflow`.")
 
 
 def render_timeline(eng: ControlRoomEngine) -> None:
@@ -1063,14 +1214,14 @@ def render_scenario_controls() -> None:
             index=keys.index(DEFAULT_SCENARIO) if DEFAULT_SCENARIO in keys else 0,
         )
         chosen = next(s for s in scenarios if s.key == st.session_state.get("scenario", keys[0]))
-        st.caption(chosen.blurb)
+        caption(chosen.blurb)
         st.radio(
             "Fleet scale",
             FLEET_SIZES,
             format_func=lambda n: f"{n:,} devices",
             key="fleet_size",
         )
-        st.caption(
+        caption(
             "A gateway firmware ring covers one device per 48, so the same failure takes "
             "out more of the fleet — and more revenue — as the fleet grows."
         )
@@ -1116,14 +1267,14 @@ def render_dispatch_priority(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     in_zone = [d for d in eng.devices if d.zone == eng.priority_zone and d.assigned_kw > 0]
     cols = st.columns(2)
-    cols[0].metric("Committed", f"{snap.committed_kw:,.0f} kW", delta=f"{snap.coverage_pct:.0f}%")
-    cols[1].metric(
+    metric(cols[0], "Committed", power(snap.committed_kw), note=f"{snap.coverage_pct:.0f}%")
+    metric(
+        cols[1],
         "Discharging first",
         f"{len(in_zone):,} devices" if eng.priority_zone else "whole fleet",
-        delta=f"{sum(d.assigned_kw for d in in_zone):,.0f} kW" if in_zone else "by headroom",
-        delta_color="off",
+        note=power(sum(d.assigned_kw for d in in_zone)) if in_zone else "by headroom",
     )
-    st.caption(
+    caption(
         "Zone order comes from the bundled ERCOT basis in Grid Signals: the zone that "
         "priced furthest above the hub average goes first. The target, the member "
         "reserve and the approval gate are unchanged — this only decides who carries the "
@@ -1134,7 +1285,7 @@ def render_dispatch_priority(eng: ControlRoomEngine) -> None:
 def render_demo_controls(eng: ControlRoomEngine) -> None:
     with st.sidebar:
         st.header("Demo Controls")
-        st.caption("Judges can replay the story without reloading the page.")
+        caption("Judges can replay the story without reloading the page.")
         pending_or_done = any(i.device_id == FOCUS_DEVICE_ID for i in eng.incidents)
         if st.button(
             f"Trigger {FOCUS_DEVICE_ID} Failure",
@@ -1157,7 +1308,7 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
             "6. Audit timeline records everything"
         )
         st.divider()
-        st.caption(
+        caption(
             "Safety boundary: this tool is a simulation. It performs no dispatch, "
             "no device commands and no utility integration. Recovery executes only "
             "after explicit human approval."
@@ -1231,7 +1382,7 @@ def render_holdout() -> None:
     results = holdout_run()
     st.subheader("Held-out days (parameters frozen, never tuned on these)")
     if not results:
-        st.caption(
+        caption(
             "No held-out days bundled. Run python scripts/fetch_holdout.py "
             "with the [ercot] extra to cache them."
         )
@@ -1239,23 +1390,23 @@ def render_holdout() -> None:
 
     summary = holdout.summarize(results)
     cols = st.columns(4)
-    cols[0].metric("Days scored", f"{summary.days}")
-    cols[1].metric(
-        "Days beating naive",
-        f"{summary.days_won}/{summary.days}",
-        delta_color="off",
+    metric(cols[0], "Days scored", f"{summary.days}")
+    metric(
+        cols[1],
+        "Days beating the clock baseline",
+        ratio(summary.days_won, summary.days),
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Mean uplift",
-        f"${summary.mean_uplift_usd:,.2f}",
-        delta="per battery per day",
-        delta_color="off",
+        money(summary.mean_uplift_usd),
+        note="per battery per day",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         "Worst day",
-        f"${summary.worst_uplift_usd:,.2f}",
-        delta="per battery",
-        delta_color="off",
+        money(summary.worst_uplift_usd),
+        note="per battery",
     )
 
     frame = holdout.as_frame(results)
@@ -1284,7 +1435,7 @@ def render_holdout() -> None:
         hide_index=True,
         use_container_width=True,
     )
-    st.caption(
+    caption(
         usd(
             "Every figure is per battery per day on real cached LZ_HOUSTON 15-minute RTM "
             "settlement prices. Windows are planned from the day-ahead curve published "
@@ -1309,7 +1460,7 @@ def render_degradation() -> None:
     """Wear-aware dispatch: what a cycle costs, and which days are not worth taking."""
     results = degradation_run()
     st.markdown("#### Degradation-aware dispatch, by battery type")
-    st.caption(
+    caption(
         usd(
             "A cycle is only taken when the expected spread covers the energy and the "
             "wear of moving it. The wear cost is an assumption of this build \u2014 pack "
@@ -1349,8 +1500,8 @@ def render_degradation() -> None:
         use_container_width=True,
     )
     for result in results:
-        st.caption(usd(result.verdict))
-    st.caption(
+        caption(usd(result.verdict))
+    caption(
         "Dollars are per battery per day against the naive schedule; wear is charged on "
         "the throughput the policy adds over that schedule, so cycling less is credited. "
         "Reproduce with python -m gridsignal.degradation."
@@ -1362,19 +1513,19 @@ def render_lookahead_correction(results: list[holdout.DayResult]) -> None:
     corrected = holdout.summarize(results)
     as_first = holdout.summarize(holdout_as_first_scored())
     cols = st.columns(2)
-    cols[0].metric(
+    metric(
+        cols[0],
         "Corrected: day-ahead and last settled print only",
-        f"${corrected.mean_uplift_usd:,.2f}",
-        delta=f"mean uplift, wins {corrected.days_won}/{corrected.days}",
-        delta_color="off",
+        money(corrected.mean_uplift_usd),
+        note=wins(corrected.days_won, corrected.days),
     )
-    cols[1].metric(
+    metric(
+        cols[1],
         "As first scored (same-interval price)",
-        f"${as_first.mean_uplift_usd:,.2f}",
-        delta=f"mean uplift, wins {as_first.days_won}/{as_first.days}",
-        delta_color="off",
+        money(as_first.mean_uplift_usd),
+        note=wins(as_first.days_won, as_first.days),
     )
-    st.caption(
+    caption(
         usd(
             "A real-time price is published only after its interval is over, so the "
             "policy now decides each interval from the day-ahead curve and the last "
@@ -1391,25 +1542,25 @@ def render_home_first_cost(results: list[holdout.DayResult]) -> None:
     home_first = holdout.summarize(results)
     savings = round(sum(r.member_savings_usd for r in results) / max(len(results), 1), 2)
     cols = st.columns(3)
-    cols[0].metric(
+    metric(
+        cols[0],
         "Grid-only battery",
-        f"${grid_only.mean_uplift_usd:,.2f}",
-        delta=f"mean uplift, wins {grid_only.days_won}/{grid_only.days}",
-        delta_color="off",
+        money(grid_only.mean_uplift_usd),
+        note=wins(grid_only.days_won, grid_only.days),
     )
-    cols[1].metric(
+    metric(
+        cols[1],
         "Home-first battery",
-        f"${home_first.mean_uplift_usd:,.2f}",
-        delta=f"mean uplift, wins {home_first.days_won}/{home_first.days}",
-        delta_color="off",
+        money(home_first.mean_uplift_usd),
+        note=wins(home_first.days_won, home_first.days),
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Member savings, home-first",
-        f"${savings:,.2f}",
-        delta="energy the house did not buy",
-        delta_color="off",
+        money(savings),
+        note="energy the house did not buy",
     )
-    st.caption(
+    caption(
         usd(
             "Serving the house first costs export revenue, and the table above is the "
             "home-first result. On the scarcity held-out day the grid-only battery earns "
@@ -1456,7 +1607,7 @@ def render_member(eng: ControlRoomEngine) -> None:
     with st.sidebar:
         st.header("Member")
         st.selectbox("Home", devices, key="member_device")
-        st.caption("Same simulation as the Control Room, seen from one house.")
+        caption("Same simulation as the Control Room, seen from one house.")
         st.divider()
 
     device_id = st.session_state.get("member_device", FOCUS_DEVICE_ID)
@@ -1476,10 +1627,11 @@ def render_member(eng: ControlRoomEngine) -> None:
 
     stale = view.is_affected  # no live readings: every number below is a last-known value
     cols = st.columns(4)
-    cols[0].metric(
+    metric(
+        cols[0],
         "Whole-home backup, last reported" if stale else "Whole-home backup left",
-        f"{view.backup_hours:.1f} h",
-        delta=(
+        hours(view.backup_hours),
+        note=(
             "from the last reading before contact was lost"
             if stale
             else (
@@ -1488,25 +1640,24 @@ def render_member(eng: ControlRoomEngine) -> None:
                 else f"{view.backup_kwh:,.1f} kWh reserved for you"
             )
         ),
-        delta_color="off",
     )
-    cols[1].metric(
+    metric(
+        cols[1],
         "Powering your home, last reported" if stale else "Powering your home now",
-        f"{view.home_load_kw:,.1f} kW",
-        delta=f"{view.discharge_kw:,.1f} kW discharging in total",
-        delta_color="off",
+        power(view.home_load_kw, 1),
+        note=f"{view.discharge_kw:,.1f} kW discharging in total",
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Exported to the grid",
-        f"{view.export_kw:,.1f} kW",
-        delta=f"earned ${view.earned_usd:,.2f} of ${view.grid_value_usd:,.2f}",
-        delta_color="off",
+        power(view.export_kw, 1),
+        note=f"earned ${view.earned_usd:,.2f} of ${view.grid_value_usd:,.2f}",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         "Helped protect",
-        f"${view.protected_usd:,.2f}",
-        delta="covering a neighbour's outage",
-        delta_color="off",
+        money(view.protected_usd),
+        note="covering a neighbour's outage",
     )
 
     left, right = st.columns([3, 2], gap="large")
@@ -1528,7 +1679,7 @@ def render_member(eng: ControlRoomEngine) -> None:
             yaxis_title=None,
         )
         st.plotly_chart(fig, use_container_width=True)
-        st.caption(
+        caption(
             usd(
                 f"{view.stored_kwh:,.1f} kWh stored right now, with at least "
                 f"{view.reserve_kwh:,.1f} kWh held back for you. Backup hours assume a "
@@ -1555,7 +1706,7 @@ def render_member(eng: ControlRoomEngine) -> None:
             "</div></div>",
             unsafe_allow_html=True,
         )
-        st.caption(
+        caption(
             "You never see incident IDs, kW targets or operator tooling here. "
             "Recovery decisions stay with a human operator in the Control Room."
         )
@@ -1564,6 +1715,10 @@ def render_member(eng: ControlRoomEngine) -> None:
 def signed_usd(amount: float) -> str:
     """Dollars with the sign outside the symbol, as a person would write it."""
     return f"{'-' if amount < 0 else '+'}${abs(amount):,.2f}"
+
+
+def wins(won: int, days: int) -> str:
+    return f"mean uplift, wins {ratio(won, days)} days"
 
 
 def render_insight() -> None:
@@ -1585,29 +1740,31 @@ def render_insight() -> None:
     )
 
     cols = st.columns(4)
-    cols[0].metric(
+    metric(
+        cols[0],
         "Day-ahead share, scarcity days",
         f"{s.scarcity_visible_share:.0%}",
-        delta=f"{s.ordinary_visible_share:.0%} on ordinary days",
-        delta_color="off",
+        note=f"{s.ordinary_visible_share:.0%} on ordinary days",
     )
-    cols[1].metric(
+    metric(
+        cols[1],
         "Only visible in real time",
-        f"${s.scarcity_blind_usd:,.2f}",
-        delta="per battery per scarcity day",
-        delta_color="off",
+        money(s.scarcity_blind_usd),
+        note="per battery per scarcity day",
+        tooltip="Value a battery could only earn by reacting on the day, not the day before.",
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Equivalent ordinary days",
         f"{s.ordinary_days_equivalent}",
-        delta=f"at ${s.ordinary_day_usd:,.2f} each",
-        delta_color="off",
+        note=f"at {money(s.ordinary_day_usd)} each",
+        tooltip="How many ordinary days it takes to earn what one scarcity day pays.",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         f"Intervals {insight.dam.DEVIATION_MULTIPLE:.0f}x above day-ahead",
-        f"{s.divergent_intervals}/{s.intervals:,}",
-        delta=f"{s.ordinary_divergent_intervals} on ordinary days",
-        delta_color="off",
+        ratio(s.divergent_intervals, s.intervals),
+        note=f"{s.ordinary_divergent_intervals} on ordinary days",
     )
 
     with st.expander("Day by day: day-ahead plan vs. perfect real-time foresight"):
@@ -1637,7 +1794,7 @@ def render_insight() -> None:
             hide_index=True,
             use_container_width=True,
         )
-        st.caption(
+        caption(
             usd(
                 "Both columns settle the same real 15-minute LZ_HOUSTON prints for one "
                 "13.5 kWh / 5 kW battery. Day-ahead plan = charge and export windows chosen "
@@ -1689,22 +1846,27 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
     )
     sketch = congestion.placement_sketch(batteries, ranks=ranks)
     if sketch.empty:
-        st.caption("No bundled zone priced above the hub average, so the sketch places none.")
+        caption("No bundled zone priced above the hub average, so the sketch places none.")
         return
 
     cols = st.columns(3)
-    cols[0].metric("Placed", f"{int(sketch['batteries placed'].sum()):,}")
-    cols[1].metric(
+    metric(
+        cols[0],
+        "Placed",
+        f"{int(sketch['batteries placed'].sum()):,}",
+        tooltip="Where the next batteries would sit under this sketch, not a siting plan.",
+    )
+    metric(
+        cols[1],
         "Value at these prices",
         f"${sketch.attrs['total_usd_per_day']:,.0f}/day",
-        delta=congestion.HINDSIGHT,
-        delta_color="off",
+        note=congestion.HINDSIGHT,
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Top zone",
         sketch.iloc[0]["metro"],
-        delta=f"{int(sketch.iloc[0]['batteries placed']):,} batteries",
-        delta_color="off",
+        note=f"{int(sketch.iloc[0]['batteries placed']):,} batteries",
     )
 
     fig = px.bar(
@@ -1735,7 +1897,7 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
         hide_index=True,
         use_container_width=True,
     )
-    st.caption(
+    caption(
         usd(
             f"Every dollar here is {congestion.HINDSIGHT_NOTE}. "
             "Data-driven sketch on a few bundled days of prices, not a forecast and not a "
@@ -1801,7 +1963,7 @@ def render_congestion() -> None:
         hide_index=True,
         use_container_width=True,
     )
-    st.caption(
+    caption(
         usd(
             f"Both columns settle the same 13.5 kWh / 5 kW battery at that zone's own real "
             f"15-minute prints across {summary.days} bundled days. The only difference is "
@@ -1832,7 +1994,7 @@ def render_congestion() -> None:
         st.dataframe(widest, hide_index=True, use_container_width=True)
         days = congestion.bundled_days()
         meta = congestion.provenance(days[-1])
-        st.caption(
+        caption(
             f"{len(days)} bundled trade days, {len(congestion.ZONES)} ERCOT load zones plus "
             f"{congestion.HUB_AVERAGE}, {meta.get('market', '')} settlement point prices from "
             f"{meta.get('source', 'ERCOT')}. Each Parquet file has a provenance sidecar "
@@ -1879,7 +2041,7 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
         f"<div class='gs-card' style='text-align:center'>{holdout_card}</div>",
         unsafe_allow_html=True,
     )
-    st.caption(
+    caption(
         usd(
             "The scenario-day figure is one extreme day and is never the claim on its own: "
             "the held-out average beside it is what the frozen policy does on days it was "
@@ -1923,28 +2085,29 @@ def render_ancillary(fleet_size: int) -> None:
     )
 
     cols = st.columns(4)
-    cols[0].metric(
+    metric(
+        cols[0],
         "Scarcity day, energy",
-        f"${scarcity.energy_usd:,.2f}",
-        delta="per battery",
-        delta_color="off",
+        money(scarcity.energy_usd),
+        note="per battery",
     )
-    cols[1].metric(
+    metric(
+        cols[1],
         "Scarcity day, ancillary",
-        f"${scarcity.ancillary_usd:,.2f}",
-        delta=f"+{scarcity.uplift_usd:,.2f} vs energy alone",
+        money(scarcity.ancillary_usd),
+        note=f"+{money(scarcity.uplift_usd)} vs energy alone",
     )
-    cols[2].metric(
+    metric(
+        cols[2],
         "Median held-out day",
-        f"${summary.median_uplift_usd:,.2f}",
-        delta=f"mean ${summary.mean_uplift_usd:,.2f}, concentrated in rare days",
-        delta_color="off",
+        money(summary.median_uplift_usd),
+        note=f"mean ${summary.mean_uplift_usd:,.2f}, concentrated in rare days",
     )
-    cols[3].metric(
+    metric(
+        cols[3],
         "Backup reserve violations",
         f"{summary.reserve_violations}",
-        delta=f"{summary.days} held-out days",
-        delta_color="off",
+        note=f"{summary.days} held-out days",
     )
 
     split = pd.DataFrame(
@@ -1974,7 +2137,7 @@ def render_ancillary(fleet_size: int) -> None:
             use_container_width=True,
         )
         top_date, top_share = summary.top_day_share
-        st.caption(
+        caption(
             f"{top_date} alone carries {top_share:.0%} of the held-out uplift: this is a "
             "rare-day product, not a daily annuity."
         )
@@ -1996,9 +2159,9 @@ def render_ancillary(fleet_size: int) -> None:
             hide_index=True,
             use_container_width=True,
         )
-        st.caption(f"{scarcity.battery}, {scarcity.date}: every hour it sold capacity.")
+        caption(f"{scarcity.battery}, {scarcity.date}: every hour it sold capacity.")
 
-    st.caption(
+    caption(
         usd(
             "Real ERCOT day-ahead ancillary clearing prices "
             f"({meta.get('source', ingest.AS_SOURCE_URL)}, fetched "
@@ -2026,16 +2189,14 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     render_headline(summary, trace.date, fleet_size)
 
     cols = st.columns(4)
-    cols[0].metric("GridSignal", f"${summary.signal_usd:,.2f}", delta="per battery")
-    cols[1].metric(
-        "Naive 1-5am / 5-9pm", f"${summary.naive_usd:,.2f}", delta="per battery", delta_color="off"
-    )
-    cols[2].metric("Uplift", f"${summary.uplift_usd:,.2f}", delta=f"{summary.uplift_pct:+.0f}%")
-    cols[3].metric(
+    metric(cols[0], "GridSignal", money(summary.signal_usd), note="per battery")
+    metric(cols[1], "Clock baseline", money(summary.naive_usd), note="per battery")
+    metric(cols[2], "Uplift", money(summary.uplift_usd), note=f"{summary.uplift_pct:+.0f}%")
+    metric(
+        cols[3],
         "Spike intervals",
         f"{int(result.detections['is_spike'].sum())}",
-        delta=f"{len(result.windows)} window(s)",
-        delta_color="off",
+        note=f"{len(result.windows)} window(s)",
     )
 
     render_signal_chart(result.plan)
@@ -2047,7 +2208,7 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     with right:
         st.markdown("<div class='gs-kicker'>Scarcity windows detected</div>", True)
         if result.windows.empty:
-            st.caption("No interval cleared the spike threshold on this day.")
+            caption("No interval cleared the spike threshold on this day.")
         else:
             windows = result.windows.assign(
                 window=lambda w: (
@@ -2078,7 +2239,7 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     st.divider()
     render_congestion()
 
-    st.caption(
+    caption(
         usd(
             f"Backtest on real cached ERCOT {trace.market} prices for {trace.location}, "
             f"{trace.date} ({len(trace.frame)} intervals, peak ${trace.peak_mwh:,.2f}/MWh). "
@@ -2197,7 +2358,7 @@ def render_registry(result: RunResult) -> None:
         by=["card", "agent"], key=lambda s: s.map(rank) if s.name == "card" else s
     )
     st.dataframe(frame, hide_index=True, use_container_width=True, height=360)
-    st.caption(
+    caption(
         "Every card is signed with an HMAC key the registry generates at startup. "
         "A card whose signature does not verify is rejected; an agent that stops "
         "sending heartbeats goes stale. Neither can win an award."
@@ -2239,7 +2400,7 @@ def render_agent_mesh() -> None:
         choice = st.selectbox(
             "Replay", files, format_func=lambda p: p.stem.replace("_", " "), key="mesh_scenario"
         )
-        st.caption(
+        caption(
             "Same run as `python -m gridsignal.simulate "
             f"scenarios/{choice.name}`, replayed from its JSONL trace."
         )
@@ -2249,15 +2410,16 @@ def render_agent_mesh() -> None:
     metrics, scenario = result.metrics, result.scenario
 
     st.subheader(scenario.name)
-    st.caption(scenario.description.strip())
+    caption(scenario.description.strip())
     a, b, c, d, e = st.columns(5)
-    a.metric("Agents in mesh", f"{metrics.agents:,}")
-    b.metric("Capacity covered", f"{metrics.covered_pct:.0f}%", f"{metrics.covered_kw:,.1f} kW")
-    c.metric("Time to cover", f"{metrics.time_to_cover_s}s")
-    d.metric("Messages", f"{metrics.messages:,}")
-    e.metric(
+    metric(a, "Agents in the mesh", f"{metrics.agents:,}")
+    metric(b, "Capacity covered", f"{metrics.covered_pct:.0f}%", power(metrics.covered_kw, 1))
+    metric(c, "Time to cover", seconds(metrics.time_to_cover_s))
+    metric(d, "Messages", f"{metrics.messages:,}")
+    metric(
+        e,
         "Dollars recovered",
-        f"${metrics.dollars_recovered:,.2f}",
+        money(metrics.dollars_recovered),
         f"of ${metrics.dollars_at_risk:,.2f} at risk",
     )
 
@@ -2323,15 +2485,15 @@ def render_rollout() -> None:
     m = result.metrics
 
     a, b, c, d = st.columns(4)
-    a.metric("Rings cleared", f"{m.rings_completed} of {len(rollout.RING_SHARES)}")
-    b.metric("Homes touched", f"{m.homes_touched:,}", f"of {m.devices:,} devices")
-    c.metric(
+    metric(a, "Rings cleared", ratio(m.rings_completed, len(rollout.RING_SHARES)))
+    metric(b, "Homes touched", f"{m.homes_touched:,}", f"of {m.devices:,} devices")
+    metric(
+        c,
         "Time to detect",
-        "no fault" if m.time_to_detect_s is None else f"{m.time_to_detect_s}s",
+        "no fault" if m.time_to_detect_s is None else seconds(m.time_to_detect_s),
         f"{m.homes_affected:,} homes affected" if m.homes_affected else "build held",
-        delta_color="inverse" if m.homes_affected else "off",
     )
-    d.metric("Human approvals", m.human_approvals, f"{m.rolled_back:,} rolled back")
+    metric(d, "Human approvals", m.human_approvals, f"{m.rolled_back:,} rolled back")
 
     badges = " ".join(
         [
@@ -2362,7 +2524,7 @@ def render_rollout() -> None:
     ]
     with st.expander("Health gates, ring by ring"):
         st.dataframe(pd.DataFrame(gate_rows), hide_index=True, use_container_width=True)
-    st.caption(
+    caption(
         usd(
             "Simulated rollout of a simulated build. Rings are lab, 1% canary, 10%, 50% "
             "and 100%; each one has to clear telemetry heartbeat, charge/discharge "
@@ -2383,23 +2545,23 @@ def render_install_wave() -> None:
     result = install_run("scenarios/install_wave.yaml")
     m = result.metrics
     a, b, c, d = st.columns(4)
-    a.metric("Units joined", f"{m.registered:,}", f"{m.rejected_cards:,} rejected at the door")
-    b.metric("Cleared probation", f"{m.promoted:,}", f"{m.failed_health:,} failed health check")
-    c.metric(
+    metric(a, "Units joined", f"{m.registered:,}", f"{m.rejected_cards:,} rejected at the door")
+    metric(b, "Cleared probation", f"{m.promoted:,}", f"{m.failed_health:,} failed health check")
+    metric(
+        c,
         "Time to first eligible award",
         "none"
         if m.time_to_first_eligible_award_s is None
-        else (f"{m.time_to_first_eligible_award_s}s"),
+        else seconds(m.time_to_first_eligible_award_s),
         f"{m.joins_per_hour:,.0f} joins/h simulated",
-        delta_color="off",
     )
-    d.metric(
+    metric(
+        d,
         "Awards to unverified units",
         m.awards_to_unverified + m.awards_to_probation,
         f"{m.existing_kw_lost:.0f} kW of existing commitment lost",
-        delta_color="off",
     )
-    st.caption(
+    caption(
         "Simulated install wave: new batteries are commissioned by an installer phone "
         "check that registers their signed card, start on probation advertising no "
         "biddable kW, and only become eligible after heartbeat, charge/discharge and "
@@ -2441,7 +2603,7 @@ def render_jev_eval() -> None:
     st.dataframe(summary, hide_index=True, use_container_width=True)
     with st.expander("Per-scenario detail"):
         st.dataframe(detail, hide_index=True, use_container_width=True)
-    st.caption(
+    caption(
         "Ground truth is the injection that caused the capacity loss, declared in each "
         "scenario YAML. The rules were written against these same injections, so treat "
         "their accuracy as a ceiling, not as evidence they generalise. Replayed from "
@@ -2481,7 +2643,7 @@ def render_holdout_drills() -> None:
     )
     st.dataframe(summary, hide_index=True, use_container_width=True)
     st.dataframe(detail, hide_index=True, use_container_width=True)
-    st.caption(
+    caption(
         "Four drills in `scenarios/holdout/` written after the detection rules and the "
         "Jev questions were frozen, and scored once before anything changed: a Spain-style "
         "cascade, an under-frequency event with the coordinator unreachable, a "

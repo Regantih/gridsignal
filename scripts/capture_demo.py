@@ -158,7 +158,7 @@ def walk(page: Page, base: str) -> None:
     shot(page, "07-scale-scarcity", "Recovery complete")
 
     sidebar.get_by_role("button", name="Reset Demo").click()
-    shot(page, "08-reset", "Commitment covered")
+    shot(page, "08-reset", "Delivering")
 
 
 def main() -> int:

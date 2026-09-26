@@ -866,6 +866,22 @@ Full instructions, including what was verified against a clean non-editable inst
 If the deployed URL is unavailable, the scripted capture below produces the same walkthrough as a
 video.
 
+## Interface conventions
+
+One design system drives all four views (`CSS`, `metric()`, `caption()` in
+[`app/dashboard.py`](app/dashboard.py)), and `tests/test_dashboard.py` fails the build when a
+screen breaks it:
+
+- **One number format.** Money as `$1,234.56` with the minus sign outside the symbol, power in
+  kW and energy in kWh at every fleet scale, durations as `16.7 h` / `420 s`, counts out of
+  counts as "6 of 7". Every rendered metric is matched against that grammar in a test.
+- **No fake trends.** The line under a number is context ("per battery", "9,617 kW spare
+  headroom made it possible"), so it renders as a caption — never a green or red delta arrow.
+- **No jargon without its meaning.** Headroom, reserve floor, day-ahead, held-out, ancillary,
+  probation, equivalent full cycle and the rest come from one `GLOSSARY`; any metric whose
+  label uses one carries the plain-language sentence as a tooltip.
+- **Contrast.** Muted text is `#a3b1c6` on the `#11161f` card surface, 7.7:1, past WCAG AA.
+
 ## Screen capture (deploy fallback)
 
 ```bash

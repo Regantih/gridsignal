@@ -237,3 +237,124 @@ def test_control_room_shows_the_timeline_and_logs_an_override_with_its_reason() 
     assert any("logged with your reason" in s.value for s in app.success)
     logged = [df.value for df in app.dataframe if "Reason" in df.value.columns]
     assert logged and "crew on the street" in set(logged[0]["Reason"])
+
+
+# --- design pass: one number format, one set of units, no jargon without its meaning ---
+
+#: Every shape a metric value is allowed to take. Anything with a digit in it that does
+#: not match one of these is a number formatted its own way, which is the thing the
+#: design pass exists to stop.
+VALUE_FORMATS = (
+    r"-?\$[\d,]+(?:\.\d{2})?(?:/MWh|/day)?",  # money, minus sign outside the dollar
+    r"[\d,]+(?:\.\d+)? (?:kW|kWh|MWh)",  # power and energy
+    r"[\d,]+(?:\.\d+)? (?:h|s)",  # durations
+    r"[\d,]+%",
+    r"[\d,]+ of [\d,]+",  # counts out of counts
+    r"[\d,]+ / [\d,]+",  # a pair the label names in the same order
+    r"[\d,]+(?:\.\d+)?",
+)
+
+
+@pytest.fixture(scope="module")
+def rendered_views() -> dict[str, AppTest]:
+    views = {}
+    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh"):
+        app = AppTest.from_file(APP, default_timeout=300)
+        app.run()
+        app.session_state["view"] = view
+        app.run()
+        assert not app.exception, (view, app.exception)
+        views[view] = app
+    return views
+
+
+def test_every_metric_value_uses_one_of_the_agreed_number_formats(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    allowed = re.compile("|".join(f"(?:{p})" for p in VALUE_FORMATS))
+    for view, app in rendered_views.items():
+        for m in app.metric:
+            if not any(ch.isdigit() for ch in m.value):
+                continue  # a word, not a number: "Active", "no fault", "whole fleet"
+            match = allowed.fullmatch(m.value)
+            assert match, f"{view} / {m.label}: {m.value!r} is formatted its own way"
+
+
+def test_dollar_amounts_never_put_the_minus_sign_inside(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    for view, app in rendered_views.items():
+        texts = [m.value for m in app.metric] + [c.value for c in app.caption]
+        for text in texts:
+            assert "$-" not in text, f"{view}: {text!r}"
+
+
+def test_metric_context_lines_are_captions_not_deltas(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    """The second line under a number is context, so it never gets an arrow or a colour."""
+    for view, app in rendered_views.items():
+        for m in app.metric:
+            assert not m.delta, f"{view} / {m.label}: {m.delta!r} would render as a trend"
+
+
+def test_a_metric_whose_label_uses_jargon_carries_the_explanation(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    for view, app in rendered_views.items():
+        for m in app.metric:
+            meaning = dashboard.explain(m.label)
+            if meaning is None:
+                continue
+            assert m.help, f"{view} / {m.label}: jargon with no tooltip"
+
+
+def test_every_glossary_entry_is_one_plain_sentence() -> None:
+    for word, meaning in dashboard.GLOSSARY.items():
+        assert meaning.endswith("."), word
+        assert len(meaning.split()) <= 30, word
+        assert not meaning.lower().startswith(word), word  # no circular definitions
+
+
+def test_the_formatters_agree_on_signs_separators_and_units() -> None:
+    assert dashboard.money(-0.2) == "-$0.20"
+    assert dashboard.money(0) == "$0.00"
+    assert dashboard.money(12345.678, cents=False) == "$12,346"
+    assert dashboard.power(10500) == "10,500 kW"
+    assert dashboard.energy(1182.4) == "1,182 kWh"
+    assert dashboard.hours(16.68) == "16.7 h"
+    assert dashboard.seconds(420) == "420 s"
+    assert dashboard.ratio(6, 7) == "6 of 7"
+
+
+def test_inline_jargon_is_underlined_with_its_meaning_on_hover() -> None:
+    markup = dashboard.term("headroom")
+    assert "gs-term" in markup
+    assert dashboard.GLOSSARY["headroom"] in markup
+
+
+def test_one_design_system_drives_every_card() -> None:
+    css = dashboard.CSS
+    for token in (
+        "--gs-surface",
+        "--gs-line",
+        "--gs-ink",
+        "--gs-muted",
+        "--gs-step",
+        "--gs-radius",
+    ):
+        assert token in css
+    # Spacing and card geometry come from the tokens, never from a one-off pixel value.
+    assert "padding: 1rem 1.15rem" in css
+    assert css.count("var(--gs-step)") >= 5
+
+
+def test_small_print_keeps_its_dollar_amounts_readable(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    """Streamlit typesets a pair of unescaped dollar signs as LaTeX and eats the number."""
+    for view, app in rendered_views.items():
+        for c in app.caption:
+            for pos, ch in enumerate(c.value):
+                if ch == "$":
+                    assert pos and c.value[pos - 1] == "\\", f"{view}: {c.value!r}"
