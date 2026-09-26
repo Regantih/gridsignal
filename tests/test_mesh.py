@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
+from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import Device, DeviceStatus
+from gridsignal.fleet import FOCUS_DEVICE_ID
+from gridsignal.home import DEFAULT_RESERVE_FRACTION, STORM_RESERVE_FRACTION, reserve_kwh
 from gridsignal.mesh.build import card_for, gateway_id, heartbeat_all, register_fleet, zone_id
 from gridsignal.mesh.cards import (
     AgentCard,
@@ -307,3 +310,62 @@ def test_a_supplied_ranker_decides_the_award_order() -> None:
     award_set = coordinator.propose(call, bids)
 
     assert award_set.awards[0].agent_id == most_expensive_first(call, bids)[0].agent_id
+
+
+# --------------------------------------------- one fleet state: reserve held exactly once
+
+
+def test_cards_hold_back_the_same_member_reserve_the_control_room_does():
+    """A card's spare energy is what is left after the event, the home and the reserve."""
+    eng = ControlRoomEngine()
+    hours = 2.0
+
+    checked = 0
+    for device in eng.mine:
+        card = card_for(device, hours)
+        committed_kwh = (device.assigned_kw + device.home_load_kw) * hours
+        reserve = reserve_kwh(device, eng.reserve_fraction)
+        assert card.capability("reserve_kwh") == reserve
+        assert (
+            card.capability("kwh_available")
+            <= device.available_kwh - committed_kwh - reserve + 1e-6
+        )
+        checked += 1
+    assert checked > 0
+
+
+def test_raising_the_reserve_floor_shrinks_what_the_mesh_may_bid():
+    """The two engines share one reserve policy, so a storm floor reaches the auction."""
+    eng = ControlRoomEngine()
+    device = eng.device(FOCUS_DEVICE_ID)
+
+    normal = card_for(device, 2.0, DEFAULT_RESERVE_FRACTION).capability("kwh_available")
+    storm = card_for(device, 2.0, STORM_RESERVE_FRACTION).capability("kwh_available")
+
+    extra_reserve = reserve_kwh(device, STORM_RESERVE_FRACTION) - reserve_kwh(
+        device, DEFAULT_RESERVE_FRACTION
+    )
+    assert extra_reserve > 0
+    assert storm == pytest.approx(max(normal - extra_reserve, 0.0), abs=0.01)
+    assert storm < normal
+
+
+def test_an_award_taken_in_full_still_leaves_the_member_their_reserve():
+    """Run the auction, then spend every awarded kW for the whole window."""
+    eng = ControlRoomEngine()
+    registry = AgentRegistry()
+    bus = MessageBus()
+    hours = 2.0
+    register_fleet(registry, eng.devices, hours, bus, eng.reserve_fraction)
+    coordinator = Coordinator(registry, bus)
+
+    call = coordinator.call_for_capacity(gap_kw=200.0, hours=hours)
+    bids = coordinator.collect_bids(call)
+    award_set = coordinator.propose(call, bids)
+    assert award_set.awards
+
+    for award in award_set.awards:
+        device = eng.device(award.agent_id)
+        spent = (device.assigned_kw + device.home_load_kw + award.kw) * hours
+        left = device.available_kwh - spent
+        assert left >= reserve_kwh(device, eng.reserve_fraction) - 1e-6, device.device_id

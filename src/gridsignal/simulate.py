@@ -33,7 +33,13 @@ from gridsignal.mesh.build import card_for, gateway_id, heartbeat_all, register_
 from gridsignal.mesh.cards import AgentCard, CardStatus, derived_signing_key
 from gridsignal.mesh.llm import LLMCoordinator
 from gridsignal.mesh.messages import MessageBus, MessageKind, read_jsonl
-from gridsignal.mesh.negotiation import BACKUP_RESERVE_KWH, AwardSet, Bid, Coordinator
+from gridsignal.mesh.negotiation import (
+    BACKUP_RESERVE_KWH,
+    AwardSet,
+    Bid,
+    Coordinator,
+    reserve_floor_kwh,
+)
 from gridsignal.mesh.registry import AgentRegistry
 from gridsignal.mesh.scenarios import (
     TRACE_DIR,
@@ -713,7 +719,7 @@ def run_scenario(
             1
             for award in award_set.awards
             if registry.card(award.agent_id).capability("kwh_available") - award.kw * hours
-            < BACKUP_RESERVE_KWH
+            < reserve_floor_kwh(registry.card(award.agent_id))
         )
         awards.append(award_set)
         covered_kw += award_set.covered_kw

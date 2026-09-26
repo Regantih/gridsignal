@@ -388,25 +388,30 @@ read them as a repair of known weaknesses, not as evidence of generalisation:
    the cause is the grid; if healthy homes are islanded together, the cause is distribution, not
    the batteries.
 
-| Decision layer | Root-cause accuracy (after tuning on held-out) |
+The table below was re-scored again after the external-review fix that made the mesh hold back
+the *same* member reserve the Control Room holds (`reserve_kwh` per member, not a flat 4 kWh
+floor), which changes every bid and therefore every state Jev is asked about; the Jev answers
+were re-recorded against the new state. Reproduce with `python -m gridsignal.drills`.
+
+| Decision layer | Root-cause accuracy (after tuning on held-out, re-scored after the reserve fix) |
 | --- | --- |
 | rules-only | 4/4 |
-| Jev | 1/4 |
+| Jev | 2/4 |
 
 | Drill | Injected root cause | rules-only | Jev | kW recovered | Time to recover | Backup reserve violations | Self-deployed locally | Response (cycles) |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `cascade_spain_style` | grid_event | grid_event ✓ | gateway_outage ✗ | 909 of 1,099 kW (83%) | 195s | 0 | 0 kW | n/a |
-| `frequency_dip_coordinator_down` | grid_event | grid_event ✓ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 238 kW | 12 (within 15) |
-| `large_load_squeeze` | grid_event | grid_event ✓ | spoofed_agent ✗ | 965 of 1,207 kW (80%) | 120s | 0 | 0 kW | n/a |
-| `neighborhood_island` | gateway_outage | gateway_outage ✓ | device_fault ✗ | 768 of 1,010 kW (76%) | 75s | 0 | 0 kW | n/a |
+| `cascade_spain_style` | grid_event | grid_event ✓ | gateway_outage ✗ | 947 of 1,039 kW (91%) | 195s | 0 | 0 kW | n/a |
+| `frequency_dip_coordinator_down` | grid_event | grid_event ✓ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 245 kW | 12 (within 15) |
+| `large_load_squeeze` | grid_event | grid_event ✓ | grid_event ✓ | 979 of 1,206 kW (81%) | 120s | 0 | 0 kW | n/a |
+| `neighborhood_island` | gateway_outage | gateway_outage ✓ | grid_event ✗ | 739 of 887 kW (83%) | 75s | 0 | 0 kW | n/a |
 
 What moved and what did not: the rules went 0/4 → 4/4, and the frequency drill now answers in
-**12 simulated cycles** with 238 kW deployed from the cards themselves before the coordinator is
-back, then covers the remaining 362 kW at 225 s once it is — the same 600 kW, counted once.
-Jev stayed at 1/4 on the re-recorded answers, and its per-drill answers moved around
-(`neighborhood_island` went from `grid_event` to `device_fault`), so the fair reading is that
-the deterministic rules, not the model, are what improved. Backup reserve violations stayed at
-**zero** in every drill, before and after, and nothing was auto-approved either way.
+**12 simulated cycles** with 245 kW deployed from the cards themselves before the coordinator is
+back, then covers the remainder at 225 s once it is — the same 600 kW, counted once.
+Jev moved 1/4 → 2/4 on answers re-recorded against the post-reserve-fix state, and its per-drill
+answers moved around in both directions, so the fair reading is still that the deterministic
+rules, not the model, are what improved. Backup reserve violations stayed at **zero** in every
+drill, before and after, and nothing was auto-approved either way.
 
 What each drill injects, and what the numbers say:
 
@@ -427,17 +432,17 @@ What each drill injects, and what the numbers say:
   no ERCOT frequency data is used and nothing is dispatched. The baseline result is the honest
   one: the fleet covered the full 600 kW gap but only **after the coordinator returned**, at
   ~12,900 simulated cycles against a 15-cycle concept, because the cards carried no local rule.
-  After tuning on held-out they do, and the first 238 kW lands in 12 simulated cycles.
+  After tuning on held-out they do, and the first 245 kW lands in 12 simulated cycles.
 - **`neighborhood_island`** — a simulated distribution outage where 200 LZ_AUSTIN homes island on
   their own batteries. The islanded homes are never bid or awarded, so the mesh protects
-  homeowner backup over export revenue: **zero reserve violations**, 76% of the gap covered by
+  homeowner backup over export revenue: **zero reserve violations**, 83% of the gap covered by
   the rest of the fleet and the remainder escalated. Ten simulated minutes later the feeder is
   restored and those homes resync and republish their cards; nothing has to be unwound, because
   their stored energy was never sold.
 - **`large_load_squeeze`** — a simulated 1,200 kW data-center-style ramp on top of a device
   fault, while three validly signed agents publish conflicting inflated capacity. Jev calls it a
-  spoofed agent; the HMAC check does not, because the cards really are signed, and after tuning
-  the rules call it a grid event because the ramp is 99% of the missing kW. 80% covered,
+  spoofed agent at baseline; the HMAC check does not, because the cards really are signed, and
+  after tuning the rules call it a grid event because the ramp is 99% of the missing kW. 81% covered,
   escalated, no reserve spent.
 
 Across all four drills, in both the baseline and the tuned run, the fleet spent **zero**

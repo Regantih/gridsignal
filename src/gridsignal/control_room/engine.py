@@ -44,6 +44,9 @@ TARGET_KW_PER_DEVICE = 4.5
 GRID_EVENT_TARGET_KW = TARGET_KW_PER_DEVICE * FLEET_SIZE
 GRID_EVENT_HOURS = 2.0
 TELEMETRY_STALE_SECONDS = 120
+#: Floor on the hours left in the event, so headroom never divides by zero at the
+#: closing bell; with a window this short the inverter is the binding limit anyway.
+MIN_DISPATCH_HOURS = 0.25
 
 OWNERS: dict[Role, str] = {
     Role.FLEET_OPERATOR: "M. Alvarez (Fleet Operator)",
@@ -167,22 +170,35 @@ class ControlRoomEngine:
         """Average real settlement price across the rest of the event window."""
         return self.prices.window_price_mwh(self._clock, self.grid_event.ends_at)
 
-    def _headroom_kw(self, device: Device) -> float:
-        """Exportable kW: what the inverter and the stored energy allow after the home.
+    def discharge_headroom_kw(self, device: Device) -> float:
+        """How many kW this battery can discharge for the rest of the event.
 
-        The house is served first and the member's reserve floor is untouchable, so
-        only the surplus above both is ever offered to the grid. Another tenant's
-        batteries are not ours to dispatch and always read zero here.
+        Two limits, both in kW: the inverter (derated on a degraded device) and the
+        energy above the member's reserve spread over the hours left::
+
+            headroom_kw = min(power_kw * trust,
+                              max(0, available_kwh - reserve_kwh) / hours_left)
+
+        The reserve is held back here and never appears in any later step, so no
+        dispatch path can spend it. Another tenant's batteries are not ours and read
+        zero.
         """
         if not device.is_dispatchable or not device.is_operator_controlled:
             return 0.0
         # A degraded device is only trusted with half of its nameplate power.
         trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
-        hours = max(GRID_EVENT_HOURS, 1e-6)
-        reserve = home.reserve_kwh(device, self.reserve_fraction)
-        energy_kw = (device.available_kwh - reserve) / hours - device.home_load_kw
-        power_kw = device.power_kw * trust - device.home_load_kw
-        return round(max(min(power_kw, energy_kw), 0.0), 3)
+        hours_left = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
+        reserve_kwh = home.reserve_kwh(device, self.reserve_fraction)
+        energy_kw = max(0.0, device.available_kwh - reserve_kwh) / hours_left
+        return round(max(min(device.power_kw * trust, energy_kw), 0.0), 3)
+
+    def _headroom_kw(self, device: Device) -> float:
+        """Exportable kW: the discharge headroom left once the house is served.
+
+        The home is on the same side of the meter, so its load comes out of the
+        discharge before anything reaches the grid.
+        """
+        return round(max(self.discharge_headroom_kw(device) - device.home_load_kw, 0.0), 3)
 
     def _share(self, pool: list[Device], target: float) -> float:
         """Split ``target`` kW across ``pool`` in proportion to headroom."""

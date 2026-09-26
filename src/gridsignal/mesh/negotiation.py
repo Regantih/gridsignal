@@ -21,7 +21,7 @@ import math
 from collections.abc import Collection
 from dataclasses import dataclass, field
 
-from gridsignal.mesh.cards import AgentKind, CardStatus, Health
+from gridsignal.mesh.cards import AgentCard, AgentKind, CardStatus, Health
 from gridsignal.mesh.messages import MessageBus, MessageKind
 from gridsignal.mesh.registry import AgentRegistry
 
@@ -36,6 +36,16 @@ BACKUP_PREMIUM_USD_PER_KW = 0.040
 # A degraded agent is allowed to bid, but it prices itself out of the cheap tier.
 DEGRADED_PREMIUM_USD_PER_KW = 0.020
 MIN_BID_KW = 0.05
+
+
+def reserve_floor_kwh(card: AgentCard) -> float:
+    """Energy in ``kwh_available`` that is still the member's and may not be bid.
+
+    A card built from the Control Room's fleet state declares the member reserve it
+    already held back, so nothing more is withheld here; only a card that declares
+    none gets this coordinator's flat floor. Either way the reserve is held once.
+    """
+    return 0.0 if "reserve_kwh" in card.capabilities else BACKUP_RESERVE_KWH
 
 
 class ApprovalRequired(RuntimeError):
@@ -183,7 +193,7 @@ class Coordinator:
                 # Another tenant's battery: never bid, awarded or reassigned here,
                 # even when it is healthy and sitting on spare kW.
                 continue
-            spare_kwh = max(card.capability("kwh_available") - BACKUP_RESERVE_KWH, 0.0)
+            spare_kwh = max(card.capability("kwh_available") - reserve_floor_kwh(card), 0.0)
             # Round the bid *down*: rounding to the nearest milliwatt would let a bid
             # dip a fraction of a kWh into the homeowner's reserve.
             room_kw = spare_kwh / max(call.hours, 1e-6)

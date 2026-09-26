@@ -28,7 +28,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | Jev is one input, not the system: signature → rules → Jev → human | `src/gridsignal/jev/policy.py`, `tests/test_jev.py` |
 | Staged firmware rollout as an orchestrated job: lab → 1% → 10% → 50% → 100% rings, three health gates per ring, automatic halt and rollback, no advance during a grid event or an islanded home, human approval past 10% | `src/gridsignal/rollout.py`, `scenarios/rollout_*.yaml`, `tests/test_rollout.py`, screen: **Agent Mesh → Rollout** |
 | Install wave: signed installer commissioning, probation state, zero awards to unverified or probationary units, existing commitments untouched | `src/gridsignal/install.py`, `scenarios/install_wave.yaml`, `tests/test_install.py`, screen: **Agent Mesh → Install wave** |
-| Held-out chaos drills written after the rules and prompts were frozen: baseline rules 0/4, Jev 1/4; after tuning on held-out rules 4/4, Jev 1/4; zero backup-reserve violations throughout | `scenarios/holdout/*.yaml`, `src/gridsignal/drills.py`, `python -m gridsignal.drills`, `tests/test_drills.py`, screen: **Agent Mesh → Held-out drills** |
+| Held-out chaos drills written after the rules and prompts were frozen: baseline rules 0/4, Jev 1/4; after tuning on held-out and re-scoring on the unified reserve, rules 4/4, Jev 2/4; zero backup-reserve violations throughout | `scenarios/holdout/*.yaml`, `src/gridsignal/drills.py`, `python -m gridsignal.drills`, `tests/test_drills.py`, screen: **Agent Mesh → Held-out drills** |
 
 ## Fit to Track — 30
 

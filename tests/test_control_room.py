@@ -1,9 +1,12 @@
+from datetime import timedelta
+
 import pytest
 
 from gridsignal.control_room import ControlRoomEngine
-from gridsignal.control_room.engine import ApprovalError
+from gridsignal.control_room.engine import MIN_DISPATCH_HOURS, ApprovalError
 from gridsignal.control_room.models import DeviceStatus, IncidentStatus, Role, Severity, TaskStatus
 from gridsignal.fleet import FOCUS_DEVICE_ID, build_fleet
+from gridsignal.home import reserve_kwh
 from gridsignal.prices import energy_value_usd
 
 
@@ -213,3 +216,63 @@ def test_unknown_priority_zone_falls_back_to_sharing_by_headroom():
     baseline = {d.device_id: d.assigned_kw for d in eng.devices}
     eng.set_priority_zone("LZ_NOWHERE")
     assert {d.device_id: d.assigned_kw for d in eng.devices} == baseline
+
+
+# ------------------------------------------------------- headroom units and reserve
+
+
+def test_headroom_takes_the_binding_limit_in_kw():
+    """Both terms are kW: the inverter, and the energy above reserve over hours left."""
+    eng = ControlRoomEngine()
+    device = eng.device(FOCUS_DEVICE_ID)
+    hours = max(eng.remaining_hours(), MIN_DISPATCH_HOURS)
+    reserve = reserve_kwh(device, eng.reserve_fraction)
+
+    # Full: headroom is whichever of the two kW limits is smaller.
+    device.state_of_charge = 1.0
+    full = min(device.power_kw, (device.capacity_kwh - reserve) / hours)
+    assert eng.discharge_headroom_kw(device) == pytest.approx(full, abs=0.01)
+
+    # Nearly empty: the energy above reserve binds, and it is strictly smaller.
+    device.state_of_charge = (reserve + 1.0) / device.capacity_kwh
+    energy_limit = max(0.0, device.available_kwh - reserve) / hours
+    assert energy_limit < device.power_kw
+    assert eng.discharge_headroom_kw(device) == pytest.approx(energy_limit, abs=0.01)
+
+    # At the reserve floor there is nothing to offer at all.
+    device.state_of_charge = reserve / device.capacity_kwh
+    assert eng.discharge_headroom_kw(device) == 0.0
+
+
+def test_a_shorter_window_raises_headroom_up_to_the_inverter_only():
+    """Same stored energy over fewer hours is more kW — but never past the inverter."""
+    eng = ControlRoomEngine()
+    device = eng.device(FOCUS_DEVICE_ID)
+    device.state_of_charge = 0.55
+    long_window = eng.discharge_headroom_kw(device)
+
+    eng._clock = eng.grid_event.ends_at - timedelta(minutes=30)
+    short_window = eng.discharge_headroom_kw(device)
+
+    assert short_window > long_window
+    assert short_window <= device.power_kw + 1e-9
+
+
+def test_a_full_event_at_the_dispatched_plan_never_eats_the_reserve():
+    """Run the committed plan for the whole window and check the floor holds."""
+    eng = ControlRoomEngine()
+    eng.trigger_device_failure()
+    eng.approve_recovery()
+    hours = max(eng.remaining_hours(), MIN_DISPATCH_HOURS)
+
+    violations = []
+    for device in eng.mine:
+        if device.assigned_kw <= 0:
+            continue
+        # Discharged energy is what the grid gets plus what the house takes.
+        discharged_kwh = (device.assigned_kw + device.home_load_kw) * hours
+        left = device.available_kwh - reserve_kwh(device, eng.reserve_fraction) - discharged_kwh
+        if left < -1e-6:
+            violations.append((device.device_id, round(left, 3)))
+    assert not violations, violations
+    assert sum(d.assigned_kw for d in eng.mine) > 0  # the check had something to bite on

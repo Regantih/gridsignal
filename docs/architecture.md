@@ -1,5 +1,27 @@
 # Architecture
 
+## One fleet state
+
+There is one source of truth for fleet state: `ControlRoomEngine` in
+`src/gridsignal/control_room/engine.py`. It owns every `Device` — state of charge, status,
+controller, home load and committed kW — and it is the only thing that changes them.
+
+The agent mesh is **derived** from that state and never writes back to it:
+
+- `mesh/build.py::card_for()` projects a `Device` into a signed AgentFacts card at one instant.
+  A card advertises `kw_available` / `kwh_available` computed from the same numbers the Control
+  Room dispatches on, **net of the member's backup reserve** — `home.reserve_kwh()`, the same
+  function the Control Room holds back in `discharge_headroom_kw()` — and net of the kW already
+  committed to the event. It also declares `reserve_kwh`, so the coordinator can see the reserve
+  was already held and does not hold a second, different floor of its own
+  (`negotiation.reserve_floor_kwh()`).
+- The coordinator bids, awards and approves against cards only. An award becomes a fleet change
+  only when it is applied through the Control Room's dispatch path, so kW cannot be committed
+  twice or spent out of the reserve by one engine without the other seeing it.
+
+The consequence to remember when reading the numbers: raising the reserve floor in the Control
+Room immediately shrinks what the mesh can bid, and both views agree on the same kW.
+
 ## Control Room (simulated fleet, real prices)
 
 `fleet.py` builds a seeded 48-device fleet. `prices.py` loads the cached ERCOT settlement-price

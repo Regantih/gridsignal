@@ -1,13 +1,21 @@
 """Turn the simulated fleet into a mesh of agents: batteries, gateways, zones.
 
+The Control Room engine owns fleet state; the mesh is derived from it. Every card here
+is a projection of a :class:`Device` at one instant, and the mesh never writes a device
+back — awards are applied through the Control Room's dispatch path. See
+``docs/architecture.md`` ("One fleet state").
+
 Each device publishes what it could still do *on top of* what it already promised to
-the grid event, so a bid is always spare capacity, never a re-sale of committed kW.
+the grid event and to its own home, so a bid is always spare capacity: never a re-sale
+of committed kW, and never the member's backup reserve, which is netted out here with
+the same :func:`gridsignal.home.reserve_kwh` the Control Room holds back.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 
+from gridsignal import home
 from gridsignal.control_room.models import Device, DeviceStatus
 from gridsignal.fleet import GATEWAY_RING_SIZE
 from gridsignal.mesh.cards import AgentCard, AgentKind, Health, battery_card
@@ -39,31 +47,46 @@ def zone_id(zone: str) -> str:
     return f"ZONE-{zone}"
 
 
-def spare_kw(device: Device, hours: float) -> float:
+def spare_kw(device: Device, hours: float, reserve_fraction: float | None = None) -> float:
     """Exportable power beyond the current commitment, after the home is served."""
     if not device.is_dispatchable or not device.is_operator_controlled:
         return 0.0
     trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
-    energy_limit = spare_kwh(device, hours) / max(hours, 1e-6)
-    power_limit = device.power_kw * trust - device.home_load_kw
-    return round(max(min(power_limit, energy_limit) - device.assigned_kw, 0.0), 3)
+    # The energy limit already nets off what this device promised the event, so the
+    # commitment comes out of the inverter limit only — subtracting it from both would
+    # hide spare kW twice over.
+    energy_limit = spare_kwh(device, hours, reserve_fraction) / max(hours, 1e-6)
+    power_limit = device.power_kw * trust - device.home_load_kw - device.assigned_kw
+    return round(max(min(power_limit, energy_limit), 0.0), 3)
 
 
-def spare_kwh(device: Device, hours: float) -> float:
-    """Stored energy promised neither to the event nor to the home over the window."""
+def spare_kwh(device: Device, hours: float, reserve_fraction: float | None = None) -> float:
+    """Stored energy promised neither to the event, nor the home, nor the reserve.
+
+    The member's backup reserve is the same figure the Control Room holds back, so a
+    bid can never reach into it whatever the fleet's reserve policy is set to.
+    """
     if not device.is_dispatchable or not device.is_operator_controlled:
         return 0.0
+    fraction = home.DEFAULT_RESERVE_FRACTION if reserve_fraction is None else reserve_fraction
     used = (device.assigned_kw + device.home_load_kw) * hours
-    return round(max(device.available_kwh - used, 0.0), 3)
+    reserve = home.reserve_kwh(device, fraction)
+    return round(max(device.available_kwh - used - reserve, 0.0), 3)
 
 
-def card_for(device: Device, hours: float) -> AgentCard:
+def card_for(device: Device, hours: float, reserve_fraction: float | None = None) -> AgentCard:
+    """Project one device into the card its agent publishes.
+
+    ``reserve_fraction`` is the fleet's current reserve policy, so a Control Room that
+    raises the floor before a storm immediately shrinks what the mesh may bid.
+    """
+    fraction = home.DEFAULT_RESERVE_FRACTION if reserve_fraction is None else reserve_fraction
     soc = device.state_of_charge if device.is_dispatchable else 0.0
     card = battery_card(
         agent_id=device.device_id,
         zone=device.zone,
-        kw_available=spare_kw(device, hours),
-        kwh_available=spare_kwh(device, hours),
+        kw_available=spare_kw(device, hours, fraction),
+        kwh_available=spare_kwh(device, hours, fraction),
         health=HEALTH_OF[device.status],
         controller=device.controller.value,
     )
@@ -74,9 +97,14 @@ def card_for(device: Device, hours: float) -> AgentCard:
         capabilities={
             **card.capabilities,
             "soc": round(soc, 4),
+            # Declared so a coordinator can see the member reserve is already netted
+            # out of kwh_available and need not guess at a flat floor of its own.
+            "reserve_kwh": (
+                home.reserve_kwh(device, fraction) if device.is_operator_controlled else 0.0
+            ),
             # The pre-agreed local rule, signed into the card: how much this battery
             # deploys by itself if frequency crosses the trigger.
-            "ffr_kw": round(FFR_SHARE * spare_kw(device, hours), 3),
+            "ffr_kw": round(FFR_SHARE * spare_kw(device, hours, fraction), 3),
             "ffr_trigger_hz": FFR_TRIGGER_HZ,
         },
         health=card.health,
@@ -90,12 +118,13 @@ def register_fleet(
     devices: list[Device],
     hours: float,
     bus: MessageBus | None = None,
+    reserve_fraction: float | None = None,
 ) -> None:
     """Register one agent per battery, per gateway ring and per load zone."""
     gateway_kw: dict[str, float] = defaultdict(float)
     zone_kw: dict[str, float] = defaultdict(float)
     for device in devices:
-        card = registry.sign(card_for(device, hours))
+        card = registry.sign(card_for(device, hours, reserve_fraction))
         registry.register(card)
         gateway_kw[gateway_id(device.device_id)] += card.capability("kw_available")
         zone_kw[device.zone] += card.capability("kw_available")
