@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from gridsignal import holdout, insight, pipeline
+from gridsignal import holdout, insight, judgment_report, member, pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
 from gridsignal.fleet import FOCUS_DEVICE_ID
@@ -61,6 +61,44 @@ def control_room_beat(fleet_size: int = DEMO_FLEET) -> Beat:
     )
 
 
+def member_beat(fleet_size: int = DEMO_FLEET) -> Beat:
+    """The same event from the kitchen: hours of backup kept, and what the home earned."""
+    eng = ControlRoomEngine(price_trace=load_scenario("scarcity"), fleet_size=fleet_size)
+    eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    eng.approve_recovery()
+    neighbour = member.member_summary(eng, "BAT-001")
+    affected = member.member_summary(eng, FOCUS_DEVICE_ID)
+    return Beat(
+        "Beat 2 — Member App: the home the fleet is standing on",
+        (
+            f"neighbour BAT-001, dispatching: {neighbour.backup_hours:,.1f} h of backup kept "
+            f"({neighbour.backup_kwh:,.1f} kWh held above the reserve), home taking "
+            f"{neighbour.home_load_kw:,.1f} kW before {neighbour.export_kw:,.1f} kW is exported, "
+            f"${neighbour.earned_usd:,.2f} earned",
+            f"affected home {FOCUS_DEVICE_ID}: {affected.headline}",
+        ),
+    )
+
+
+def judgment_beat() -> Beat:
+    """Who decides: the deterministic layer, with the model as a second opinion."""
+    report_ = judgment_report.build()
+    rules = report_.blind[judgment_report.RULES]
+    jev = report_.blind[judgment_report.JEV]
+    cal = report_.calibration
+    moved = round((cal.after - cal.before) * cal.holdout)
+    return Beat(
+        "Beat 3 — who decides: rules and vetoes, with the model as a second opinion",
+        (
+            f"blind safety pack, committed before it was scored: rules fallback "
+            f"{rules.correct} of {rules.total}, Jev {jev.correct} of {jev.total}",
+            f"calibration on a simulated override log: tuning did not meaningfully improve "
+            f"held-out agreement, {cal.before:.0%} to {cal.after:.0%}, {moved:+d} episode of "
+            f"{cal.holdout}",
+        ),
+    )
+
+
 def mesh_beat() -> Beat:
     """The dishonest agent and the build that lies about its own health."""
     run = run_file(LYING_AGENT)
@@ -70,7 +108,7 @@ def mesh_beat() -> Beat:
     r = rollout.metrics
     rings = " -> ".join(name if share == 0.0 else f"{share:.0%}" for name, share in RING_SHARES)
     return Beat(
-        "Beat 2 — Agent Mesh: the lying agent and the bad build",
+        "Beat 4 — Agent Mesh: the lying agent and the bad build",
         (
             f"rollout rings: {rings} of the fleet, human approval required above "
             f"{APPROVAL_ABOVE_SHARE:.0%}",
@@ -91,7 +129,7 @@ def signals_beat() -> Beat:
     corrected = holdout.summarize(holdout.evaluate())
     first_scored = holdout.summarize(holdout.evaluate(same_interval_price=True))
     return Beat(
-        "Beat 3 — Grid Signals: the insight and the held-out days",
+        "Beat 5 — Grid Signals: the insight and the held-out days",
         (
             f"insight: on the {view.scarcity_days} bundled scarcity days the day-ahead curve "
             f"exposed only {view.scarcity_visible_share:.0%} of the capturable value; "
@@ -157,7 +195,14 @@ def canonical() -> dict[str, str]:
 
 
 def beats() -> list[Beat]:
-    return [control_room_beat(), mesh_beat(), signals_beat(), docs_beat()]
+    return [
+        control_room_beat(),
+        member_beat(),
+        judgment_beat(),
+        mesh_beat(),
+        signals_beat(),
+        docs_beat(),
+    ]
 
 
 def report() -> str:

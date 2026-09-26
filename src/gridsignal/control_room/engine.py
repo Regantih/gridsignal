@@ -513,6 +513,7 @@ class ControlRoomEngine:
         holds back for members. Nothing is applied.
         """
         before_fraction = self.reserve_fraction
+        before_assigned = {d.device_id: d.assigned_kw for d in self.mine}
         before_kw = self.snapshot().committed_kw
         before_hours = self._mean_backup_hours(before_fraction)
         self.reserve_fraction = fraction
@@ -521,7 +522,11 @@ class ControlRoomEngine:
             after_hours = self._mean_backup_hours(fraction)
         finally:
             self.reserve_fraction = before_fraction
-            self._allocate_dispatch()
+            # Restoring the exact plan, not recomputing it: a recovery reassigns
+            # device by device, so a fresh share would answer a question nobody
+            # asked and move every member's kW.
+            for device in self.mine:
+                device.assigned_kw = before_assigned[device.device_id]
         hours = self.remaining_hours()
         price = self.remaining_price_mwh()
         given_up = round(max(before_kw - after_kw, 0.0), 2)

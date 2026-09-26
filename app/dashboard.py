@@ -24,6 +24,7 @@ from gridsignal import (
     ingest,
     insight,
     install,
+    judgment_report,
     member,
     pipeline,
     replay,
@@ -631,6 +632,11 @@ def render_why() -> None:
                         f"<div class='gs-body'>{claim.detail}</div>", unsafe_allow_html=True
                     )
                     st.code(claim.command, language="bash")
+                    if claim.live:
+                        caption(
+                            "Timed on this machine while the page loaded, so absolute "
+                            "times move between machines; the ratio is what to read."
+                        )
     st.divider()
     st.subheader("The limits")
     for limit in page.limits:
@@ -990,6 +996,15 @@ ACTION_COLOR = {
 }
 
 
+@st.cache_data(show_spinner=False)
+def blind_pack() -> tuple[int, int, int]:
+    """Blind score of the pre-committed safety pack: rules correct, Jev correct, questions."""
+    report = judgment_report.build()
+    rules = report.blind[judgment_report.RULES]
+    jev = report.blind[judgment_report.JEV]
+    return rules.correct, jev.correct, rules.total
+
+
 def render_principles(verdict: Verdict) -> None:
     """The six principles behind this decision, and which of them decided it."""
     badges = " ".join(
@@ -1009,6 +1024,13 @@ def render_principles(verdict: Verdict) -> None:
         unsafe_allow_html=True,
     )
     st.dataframe(pd.DataFrame(principle_rows(verdict)), hide_index=True, use_container_width=True)
+    rules_correct, jev_correct, questions = blind_pack()
+    caption(
+        f"The rules and the hard vetoes decide; the model is a second opinion that escalates "
+        f"when it disagrees, and it can never approve. On the safety pack committed before it "
+        f"was scored the rules fallback answered {rules_correct} of {questions} and Jev "
+        f"{jev_correct} of {questions} (`python -m gridsignal.judgment_report`)."
+    )
 
 
 def render_jev(eng: ControlRoomEngine, incident: Incident) -> None:

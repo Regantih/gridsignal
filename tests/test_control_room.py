@@ -7,7 +7,7 @@ from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.engine import MIN_DISPATCH_HOURS, ApprovalError
 from gridsignal.control_room.models import DeviceStatus, IncidentStatus, Role, Severity, TaskStatus
 from gridsignal.fleet import FOCUS_DEVICE_ID, build_fleet
-from gridsignal.home import reserve_kwh
+from gridsignal.home import DEFAULT_RESERVE_FRACTION, reserve_kwh
 from gridsignal.prices import energy_value_usd
 
 
@@ -277,6 +277,24 @@ def test_a_full_event_at_the_dispatched_plan_never_eats_the_reserve():
             violations.append((device.device_id, round(left, 3)))
     assert not violations, violations
     assert sum(d.assigned_kw for d in eng.mine) > 0  # the check had something to bite on
+
+
+def test_asking_what_a_higher_reserve_would_cost_does_not_move_a_single_award():
+    """The Control Room prices that question on every rerun; it must change nothing.
+
+    After a recovery the plan is device-by-device, so recomputing a fresh share
+    silently moved each member's exported kW and their earnings with it.
+    """
+    eng = ControlRoomEngine()
+    eng.trigger_device_failure()
+    eng.approve_recovery()
+    before = {d.device_id: d.assigned_kw for d in eng.mine}
+
+    outcome = eng.reserve_outcome(0.5)
+
+    assert outcome.committed_kw_after < outcome.committed_kw_before
+    assert {d.device_id: d.assigned_kw for d in eng.mine} == before
+    assert eng.reserve_fraction == pytest.approx(DEFAULT_RESERVE_FRACTION)
 
 
 # ------------------------------------------------------- idle capacity in a high-price window

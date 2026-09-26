@@ -906,14 +906,14 @@ python -m playwright install chromium
 python scripts/capture_demo.py          # writes docs/media/*.png, demo.webm and demo.mp4
 ```
 
-It starts the dashboard on a free port, walks Control Room → trigger → approve → Agent Mesh →
-Grid Signals → Member App, screenshots each step and records the session. No credentials, no
-network. The committed output is in [`docs/media/`](docs/media): the eight stills and
+It starts the dashboard on a free port and walks the scenes of [`docs/DEMO.md`](docs/DEMO.md) in
+order — Control Room → trigger → approve → Member App → Agent Mesh → Grid Signals → Why →
+reset — screenshotting each step and recording the session. No credentials, no network. The committed output is in [`docs/media/`](docs/media): the eight stills and
 [`demo.mp4`](docs/media/demo.mp4).
 
 | Control Room, BAT-042 down | Agent Mesh | Grid Signals insight |
 |---|---|---|
-| ![Control Room incident](docs/media/02-control-room-incident.png) | ![Agent Mesh](docs/media/04-agent-mesh.png) | ![Grid Signals](docs/media/05-grid-signals-insight.png) |
+| ![Control Room incident](docs/media/02-control-room-incident.png) | ![Agent Mesh](docs/media/05-agent-mesh.png) | ![Grid Signals](docs/media/06-grid-signals-insight.png) |
 
 ## No-crash sweep
 

@@ -128,9 +128,13 @@ def choose(page: Page, label: str) -> None:
 
 
 def walk(page: Page, base: str) -> None:
+    """The scenes of docs/DEMO.md, in the order the script tells them."""
     page.goto(base, wait_until="load")
     sidebar = page.get_by_test_id("stSidebar")
 
+    settle(page, "Fleet map")
+    choose(page, "Scarcity day")
+    choose(page, "10,000 devices")
     shot(page, "01-control-room-stable", "Fleet map")
 
     sidebar.get_by_role("button", name="Trigger BAT-042 Failure").click()
@@ -139,24 +143,24 @@ def walk(page: Page, base: str) -> None:
     page.get_by_role("button", name="Approve Recovery Plan").click()
     shot(page, "03-control-room-recovered", "Recovery complete")
 
+    choose(page, "Member App")
+    settle(page, "Base Power —")
+    home = page.get_by_test_id("stSelectbox").filter(has_text="Home").first
+    home.get_by_role("combobox").click()
+    page.get_by_role("option", name="BAT-001", exact=True).first.click()
+    shot(page, "04-member-app", "Base Power —")
+
     choose(page, "Agent Mesh")
-    shot(page, "04-agent-mesh", "Agent registry")
+    shot(page, "05-agent-mesh", "Agent registry")
 
     choose(page, "Grid Signals")
-    shot(page, "05-grid-signals-insight", "Backtest: GridSignal")
+    shot(page, "06-grid-signals-insight", "Backtest: GridSignal")
 
-    choose(page, "Member App")
-    shot(page, "06-member-app", "Base Power —")
+    choose(page, "Why")
+    shot(page, "07-why", "The problem")
 
     choose(page, "Control Room")
     settle(page, "Fleet map")
-    choose(page, "Scarcity day")
-    choose(page, "10,000 devices")
-    sidebar.get_by_role("button", name="Trigger BAT-042 Failure").click()
-    settle(page, "Human approval required")
-    page.get_by_role("button", name="Approve Recovery Plan").click()
-    shot(page, "07-scale-scarcity", "Recovery complete")
-
     sidebar.get_by_role("button", name="Reset Demo").click()
     shot(page, "08-reset", "Delivering")
 

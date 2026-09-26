@@ -79,6 +79,41 @@ def test_demo_script_is_timed_and_fits_under_four_forty_five() -> None:
     assert seconds[-1] < SCRIPT_LIMIT_S, f"the script starts its last beat at {seconds[-1]}s"
 
 
+def test_demo_script_lands_in_the_four_thirty_to_four_fifty_five_window() -> None:
+    """The stated run time is a rehearsal target, not a guess: it has to be in the window."""
+    text = (DOCS / "DEMO.md").read_text()
+    ends = re.search(r"Ends at (\d+):(\d\d)\.", text)
+    assert ends, "the script does not say when it ends"
+    total = int(ends.group(1)) * 60 + int(ends.group(2))
+    assert 270 <= total <= 295, f"the script ends at {total}s, outside 4:30-4:55"
+    stamps = re.findall(r"\*\*(\d+):(\d\d)\*\*", text)
+    last = int(stamps[-1][0]) * 60 + int(stamps[-1][1])
+    assert last < total, "the last scene starts after the script ends"
+
+
+RUBRIC_LINES = {
+    "Technical Execution / Completeness",
+    "Technical Execution / Depth",
+    "Fit to Track / Problem",
+    "Fit to Track / Why",
+    "Value / Insight",
+    "Value / Usability",
+    "Innovation / Creativity",
+    "Innovation / Performance",
+}
+
+
+def test_every_demo_scene_names_a_rubric_line_and_a_file_that_exists() -> None:
+    """A judge scoring from the video should see what each scene is evidence for."""
+    root = DOCS.parent
+    for row in _script_rows((DOCS / "DEMO.md").read_text()):
+        mapping = row.rstrip("| ").rsplit("|", 1)[-1].strip()
+        line, _, path = mapping.partition("—")
+        assert line.strip() in RUBRIC_LINES, row
+        target = root / path.strip().strip("`")
+        assert target.exists(), f"{target} does not exist"
+
+
 def test_demo_script_is_under_six_hundred_spoken_words() -> None:
     words = _spoken((DOCS / "DEMO.md").read_text()).split()
     assert len(words) < SPOKEN_WORD_LIMIT, f"the script speaks {len(words)} words"
@@ -135,10 +170,18 @@ CLAIMS: tuple[tuple[str, str], ...] = (
 CHECKED_DOCS = ("README.md", "docs/WRITEUP.md", "docs/SUBMISSION.md", "docs/JUDGING_MAP.md")
 
 
+@pytest.fixture(scope="module")
+def canonical() -> dict[str, str]:
+    """The one command's answers, run once for the whole file rather than per claim."""
+    return demo_numbers.canonical()
+
+
 @pytest.mark.parametrize("pattern,claim", CLAIMS)
-def test_headline_numbers_in_every_doc_match_the_one_command(pattern: str, claim: str) -> None:
+def test_headline_numbers_in_every_doc_match_the_one_command(
+    pattern: str, claim: str, canonical: dict[str, str]
+) -> None:
     """README, WRITEUP, SUBMISSION and JUDGING_MAP quote one value per claim."""
-    expected = demo_numbers.canonical()[claim].rstrip("%")
+    expected = canonical[claim].rstrip("%")
     found = 0
     for name in CHECKED_DOCS:
         text = (DOCS.parent / name).read_text()

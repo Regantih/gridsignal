@@ -13,7 +13,7 @@ before the take — otherwise the first click spends ten seconds on a spinner:
 
 ```bash
 streamlit run app/dashboard.py
-# then, in the browser, once each: Grid Signals, Agent Mesh (run `lying_agent` and the
+# then, in the browser, once each: Why, Grid Signals, Agent Mesh (run `lying_agent` and the
 # rollout panel's bad build), Member App, and back to Control Room.
 # sidebar: Scarcity day / 10,000 devices, then click Reset Demo.
 ```
@@ -25,39 +25,38 @@ script:
 python -m gridsignal.demo_numbers
 ```
 
-## The script — three beats, 4:40
+## The script — one story, 4:50
 
-Start on **Control Room**, sidebar set to **Scarcity day / 10,000 devices**, demo reset.
+One evening on a real ERCOT scarcity day: the fleet is committed, a ring of homes goes dark, the
+orchestration recovers the commitment, a person signs it, and every member keeps their backup.
+Start on **Control Room**, sidebar set to **Scarcity day / 10,000 devices**, demo reset. Each
+scene is one click from the last.
 
-| Time | Screen | Say and do |
-|---|---|---|
-| **0:00** | Control Room, stable | "Base Power runs thousands of home batteries as one power plant, and most of the money is in a handful of hours a year. This is a simulation of that fleet: 10,000 batteries, 8,000 of them ours to dispatch, 36,000 kW committed to a real ERCOT scarcity evening. It never touches a real device." |
-| **0:25** | Control Room → failure | Click **Trigger BAT-042 Failure**. "One gateway ring goes quiet: 166 homes, 573 kW gone mid-event. Coverage drops to 98%, and the incident prices it — $4,812 at risk on this evening's settled prices. It diagnosed, priced and planned a recovery across the remaining headroom, and then it stopped, because nothing moves without a person." |
-| **0:55** | Control Room → approval | Click **Approve Recovery Plan**. "A named human approves. The lost kW are reassigned across healthy batteries that still hold every member's backup reserve, coverage returns to 100%, and $4,751 of that $4,812 is recovered. One incident, not 332 alarms — the operator workflow groups them, and reads the append-only trail back as one timeline: detect, diagnose, approve, reassign, recover, dollars. And above the button, the six principles an operator weighs — member backup, market rules, deliverability, then reversibility, money and doubt — each with a probability and the one that decided this call, calibrated on simulated overrides, not on real operators." |
-| **1:30** | Agent Mesh → `lying_agent` | "Same orchestration as a negotiation. Every battery, gateway and zone holds an HMAC-signed capability card." Run the scenario. "One agent edits its card after signing to claim capacity it does not have. The signature check rejects it, the honest bidders cover all 67 kW, and the award still waits for a human — 1 approval, 0 auto-approvals. Jev's confidence never cleared the gate, and the rules fallback answers with zero confidence, so nothing here can approve itself." |
-| **2:10** | Agent Mesh → Rollout panel | Switch the Rollout panel to **bad build**. "A fleet is also a deployment target. Rings go lab, 1%, 10%, 50%, 100%, each gated on heartbeat, charge and discharge response, and backup reserve held — and nothing promotes during a grid event or above 10% without a human. This build fails silently on hot devices and keeps its heartbeat, so the heartbeat gate passes it. The response gate halts it in the canary: across 10,000 devices, 100 homes touched, 3 affected, all 100 rolled back, 420 simulated seconds to detect." |
-| **2:55** | Grid Signals → insight card | "What the public data hides. On the 3 real ERCOT scarcity days bundled here, the day-ahead curve exposed only 47% of the value a battery could have captured. The $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. And 19 of 1,440 intervals printed 5x their day-ahead hour — every one of them on a scarcity day." |
-| **3:35** | Grid Signals → held-out days | "So we scored the policy on 7 days it never saw, once. It beats the naive schedule on 6 of 7: mean $0.44, median $0.26, worst day $0.00 — it sits out rather than lose money. The first scoring let each interval see its own settled price, which no operator has; corrected to the last settled print, mean uplift is $0.44 against $0.45, and both are on screen." |
-| **4:15** | Close | Click **Reset Demo**. "Deterministic, offline, no API key: one command reproduces every number you just heard. A device failed, the fleet's commitment survived, every member kept their backup — and a person owned the decision." |
+| Time | Screen and click | Say | Rubric line and file |
+|---|---|---|---|
+| **0:00** | Control Room, stable | "Base Power runs thousands of home batteries as one power plant, and most of the money arrives in a handful of hours a year. This is a simulation of that fleet on a real ERCOT scarcity evening: 10,000 batteries, 8,000 of them ours to dispatch, 36,000 kW promised to the grid. It never touches a real device." | Fit to Track / Problem — `src/gridsignal/control_room/engine.py` |
+| **0:30** | Click **Trigger BAT-042 Failure** | "A gateway ring goes quiet: 166 homes, 573 kW gone mid-event. The fleet prices the hole in its own commitment — $4,812 at risk on this evening's settled prices — and it plans a recovery across the headroom it still has. Then it stops, because nothing moves without a person." | Technical Execution / Depth — `src/gridsignal/control_room/engine.py` |
+| **1:05** | Control Room → **Operator workflow** | "One incident, not a wall of pages: 332 raw alarms from those homes group into 1 incident on a timeline — detect, diagnose, approve, reassign, recover, dollars — and every hand-override needs a reason that lands in an append-only trail." | Value / Usability — `src/gridsignal/control_room/workflow.py` |
+| **1:40** | Control Room → principles panel | "Above the button are the six principles an operator weighs: member backup, market rules and deliverability are hard vetoes, then reversibility, money and doubt. The rules and the vetoes decide. The model is a second opinion that can escalate but never approve — on a safety pack committed before it was scored, the rules fallback answered 21 of 24 and Jev 17 of 24." | Technical Execution / Depth — `src/gridsignal/jev/judgment.py` |
+| **2:10** | Click **Approve Recovery Plan** | "A named human approves. The lost kW are reassigned across healthy batteries that each still hold their member's backup reserve, coverage returns to 100%, and $4,751 of that $4,812 is recovered." | Fit to Track / Why — `src/gridsignal/control_room/engine.py` |
+| **2:35** | Sidebar **View → Member App**, home **BAT-001** | "This is one of the homes that carried it, and nothing here is about the grid. The house takes 1.7 kW before a single kW is exported, 5.5 kW goes out, the member earns $28.07 — and 9.4 hours of backup are still in the wall. The home that failed sees one sentence: your battery is reporting to us again." | Value / Insight — `src/gridsignal/member.py` |
+| **3:05** | **View → Agent Mesh**, run `lying_agent` | "The recovery is a negotiation, not a broadcast. Every battery and gateway holds a signed capability card. One agent edits its card after signing to claim capacity it does not have, the signature check rejects it, honest bidders cover all 67 kW, and the award still waits for a human: 1 approval, 0 auto-approvals." | Innovation / Creativity — `src/gridsignal/mesh/` |
+| **3:35** | Rollout panel → **bad build** | "A fleet is a deployment target too. This build fails on hot devices and keeps its heartbeat, so it passes the heartbeat gate — the response gate halts it in the canary: across 10,000 devices, 100 homes touched, 3 affected, all rolled back, 420 simulated seconds to detect." | Technical Execution / Completeness — `src/gridsignal/rollout.py` |
+| **4:00** | **View → Grid Signals** | "Why this is worth orchestrating: on the bundled scarcity days the day-ahead curve exposed only 47% of the capturable value, and the $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. Scored once on 7 days the policy never saw, it beats the naive schedule on 6 of 7 — mean $0.44, median $0.26." | Value / Insight — `src/gridsignal/holdout.py` |
+| **4:25** | **View → Why**, then close | "Every number on this page was recomputed from the code as it loaded, limits included. A ring of homes failed, the commitment survived, every member kept their backup, and a person owned the decision — deterministic, offline, no API key." | Fit to Track / Why — `src/gridsignal/why.py` |
 
-## If a judge asks "why does this exist?"
-
-Switch the sidebar **View** to **Why**. One screen states the problem, the approach, the
-evidence and the limits, with every figure recomputed from the code as the page loads and the
-command that reproduces each one printed next to it. The same page in the terminal:
-
-```bash
-python -m gridsignal.why
-```
-
-It is deliberately outside the timed script: it is the page to leave on screen during
-questions, not a beat to read aloud.
+Ends at 4:50. Speed and scale are deliberately not spoken: the fleet-scale timings, the speedup
+ratio and the caveat that absolute times are machine-dependent live in
+[`docs/PERFORMANCE.md`](PERFORMANCE.md).
 
 ## What is cut from the five-minute version
 
-The Member App, home-first dispatch, the storm reserve policy, the held-out chaos drills
-(`python -m gridsignal.drills`) and the congestion map are all in the app and in the README;
-they are left out of the script to keep it to one story. The chaos-scenario picker lists the
+Home-first dispatch in detail, the storm reserve policy, mutual aid, the congestion map, the
+ancillary co-optimization, the deliverability check and the held-out chaos drills
+(`python -m gridsignal.drills`) are all in the app and in the README; they are left out of the
+script to keep it to one story. The **Why** page is the one to leave on screen for questions:
+it states the problem, the approach, the evidence and the limits with every figure recomputed
+as the page loads (`python -m gridsignal.why`). The chaos-scenario picker lists the
 files in `scenarios/`; the held-out drills in `scenarios/holdout/` are deliberately kept out of
 it and run from the CLI, so the script never asks for a scenario the picker does not have.
 

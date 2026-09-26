@@ -12,7 +12,10 @@ ERCOT prices. Nothing here is a statement about Base's real fleet or its real nu
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import wraps
+from typing import TypeVar
 
 from gridsignal import (
     ancillary,
@@ -42,6 +45,28 @@ PERF_REPEATS = 3
 ANCILLARY_UNIT = ancillary.BASE_CORE
 
 
+T = TypeVar("T")
+
+
+def _once_per_fleet_size(build_it: Callable[[int], T]) -> Callable[..., T]:
+    """Compute a part of the page once per fleet size per process.
+
+    Each part replays a scarcity day, rescores held-out days or times the mesh:
+    seconds of work that must not run again while a judge clicks around, and a
+    live timing that must not differ between the screen and the command that
+    reproduces it.
+    """
+    cache: dict[int, T] = {}
+
+    @wraps(build_it)
+    def wrapper(fleet_size: int = DEMO_FLEET) -> T:
+        if fleet_size not in cache:
+            cache[fleet_size] = build_it(fleet_size)
+        return cache[fleet_size]
+
+    return wrapper
+
+
 def _signed_usd(amount: float) -> str:
     """Money with the sign in front of the dollar sign, the way the app prints it."""
 
@@ -56,6 +81,9 @@ class Claim:
     value: str
     detail: str
     command: str
+    #: True when the number is measured on the machine showing the page, so it moves
+    #: between runs. Everything else is deterministic and must match to the digit.
+    live: bool = False
 
 
 @dataclass(frozen=True)
@@ -86,6 +114,7 @@ def _stale_grouping(fleet_size: int) -> tuple[int, int]:
     return report.alarms, report.incidents
 
 
+@_once_per_fleet_size
 def problem_section(fleet_size: int = DEMO_FLEET) -> Section:
     """What goes wrong in a distributed fleet that a single battery never shows."""
     run = replay.run(fleet_size=fleet_size)
@@ -124,6 +153,7 @@ def problem_section(fleet_size: int = DEMO_FLEET) -> Section:
     )
 
 
+@_once_per_fleet_size
 def approach_section(fleet_size: int = DEMO_FLEET) -> Section:
     """How the product answers it, with the number that shows the rule is real."""
     eng = ControlRoomEngine(price_trace=load_scenario("scarcity"), fleet_size=fleet_size)
@@ -171,6 +201,7 @@ def approach_section(fleet_size: int = DEMO_FLEET) -> Section:
     )
 
 
+@_once_per_fleet_size
 def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
     """What was measured, including the results that did not flatter the product."""
     home_first = holdout.summarize(holdout.evaluate())
@@ -246,11 +277,13 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
                 f"Absolute times are machine-dependent; the 10,000 and 100,000-agent "
                 f"runs are in docs/PERFORMANCE.md.",
                 "python -m gridsignal.perf --before",
+                live=True,
             ),
         ),
     )
 
 
+@_once_per_fleet_size
 def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
     """What this build does not show. Computed too, so the caveats cannot drift."""
     home_first = holdout.summarize(holdout.evaluate())
@@ -285,7 +318,9 @@ def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
     return tuple(out)
 
 
+@_once_per_fleet_size
 def build(fleet_size: int = DEMO_FLEET) -> WhyPage:
+    """The whole page: every figure recomputed from the module that produces it."""
     return WhyPage(
         problem=problem_section(fleet_size),
         approach=approach_section(fleet_size),

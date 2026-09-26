@@ -255,8 +255,15 @@ def test_calibration_never_loses_agreement_on_the_half_it_was_fitted_on() -> Non
 # --------------------------------------------------- the report, offline and keyless
 
 
-def test_report_scores_both_layers_against_the_committed_answer_key() -> None:
-    report = judgment_report.build()
+@pytest.fixture(scope="module")
+def report() -> judgment_report.Report:
+    """One scored run of the blind pack, shared by the tests that only read it."""
+    return judgment_report.build()
+
+
+def test_report_scores_both_layers_against_the_committed_answer_key(
+    report: judgment_report.Report,
+) -> None:
     labels = report.labels
     assert {d.drill for d in report.drills} == set(labels.answers)
     for score in report.blind.values():
@@ -264,8 +271,9 @@ def test_report_scores_both_layers_against_the_committed_answer_key() -> None:
         assert 0 <= score.correct <= score.total
 
 
-def test_every_disagreement_is_settled_by_the_answer_key() -> None:
-    report = judgment_report.build()
+def test_every_disagreement_is_settled_by_the_answer_key(
+    report: judgment_report.Report,
+) -> None:
     for row in report.disagreements:
         assert row.rules != row.jev
         assert row.truth is labels_answer(report, row)
@@ -283,8 +291,9 @@ def test_the_report_is_deterministic_and_reproducible() -> None:
     )
 
 
-def test_calibration_is_reported_on_a_held_out_half_and_labelled_simulated() -> None:
-    report = judgment_report.build()
+def test_calibration_is_reported_on_a_held_out_half_and_labelled_simulated(
+    report: judgment_report.Report,
+) -> None:
     cal = report.calibration
     assert cal.train + cal.holdout == cal.episodes
     assert 0.0 <= cal.before <= 1.0 and 0.0 <= cal.after <= 1.0
@@ -293,8 +302,9 @@ def test_calibration_is_reported_on_a_held_out_half_and_labelled_simulated() -> 
     assert "Held-out half" in text
 
 
-def test_the_saved_calibration_is_the_one_the_control_room_judges_with(tmp_path) -> None:  # type: ignore[no-untyped-def]
-    report = judgment_report.build()
+def test_the_saved_calibration_is_the_one_the_control_room_judges_with(  # type: ignore[no-untyped-def]
+    tmp_path, report: judgment_report.Report
+) -> None:
     path = judgment_report.save_calibration(report, path=tmp_path / "judgment_calibration.json")
     assert judgment.tuned_calibration(path=path) == report.calibration.calibration
     assert judgment.tuned_calibration(path=tmp_path / "missing.json") == PACK.calibration

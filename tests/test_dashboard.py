@@ -18,12 +18,36 @@ import dashboard  # noqa: E402
 APP = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
 
 
+#: Every view, rendered once for the whole module. Each render is a full app run, so
+#: tests that only read a screen share one instead of paying for it again.
+VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why")
+
+
 @pytest.fixture(scope="module")
-def grid_signals() -> AppTest:
-    app = AppTest.from_file(APP, default_timeout=180)
+def rendered_views() -> dict[str, AppTest]:
+    views = {}
+    for view in VIEWS:
+        app = AppTest.from_file(APP, default_timeout=600)
+        app.run()
+        app.session_state["view"] = view
+        app.run()
+        assert not app.exception, (view, app.exception)
+        views[view] = app
+    return views
+
+
+@pytest.fixture(scope="module")
+def grid_signals(rendered_views: dict[str, AppTest]) -> AppTest:
+    return rendered_views["Grid Signals"]
+
+
+def fresh(view: str | None = None, timeout: int = 180) -> AppTest:
+    """An app of its own, for a test that clicks something and changes fleet state."""
+    app = AppTest.from_file(APP, default_timeout=timeout)
     app.run()
-    app.session_state["view"] = "Grid Signals"
-    app.run()
+    if view is not None:
+        app.session_state["view"] = view
+        app.run()
     assert not app.exception, app.exception
     return app
 
@@ -52,21 +76,16 @@ def test_grid_signals_shows_the_wear_gate_per_battery_type(grid_signals: AppTest
     assert "equivalent full cycles" in text
 
 
-def test_every_view_renders() -> None:
-    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why"):
-        app = AppTest.from_file(APP, default_timeout=180)
-        app.run()
-        app.session_state["view"] = view
-        app.run()
+def test_every_view_renders(rendered_views: dict[str, AppTest]) -> None:
+    assert set(rendered_views) == set(VIEWS)
+    for view, app in rendered_views.items():
         assert not app.exception, (view, app.exception)
 
 
-def test_the_why_page_shows_the_numbers_the_code_computes_and_says_where_it_stops() -> None:
-    app = AppTest.from_file(APP, default_timeout=600)
-    app.run()
-    app.session_state["view"] = "Why"
-    app.run()
-    assert not app.exception, app.exception
+def test_the_why_page_shows_the_numbers_the_code_computes_and_says_where_it_stops(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    app = rendered_views["Why"]
 
     text = markdown_text(app)
     headings = " ".join(h.value for h in app.subheader)
@@ -74,6 +93,8 @@ def test_the_why_page_shows_the_numbers_the_code_computes_and_says_where_it_stop
     for section in page.sections:
         assert section.title in headings
         for claim in section.claims:
+            # Including the live benchmark: the page is built once per process, so
+            # the screen and this call read the same measurement.
             assert claim.value in text, claim.label
     for limit in page.limits:
         assert limit in text
@@ -84,13 +105,10 @@ def test_the_why_page_shows_the_numbers_the_code_computes_and_says_where_it_stop
             assert claim.command in commands
 
 
-def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
-    app.session_state["view"] = "Agent Mesh"
-    app.run()
-    assert not app.exception, app.exception
-
+def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    app = rendered_views["Agent Mesh"]
     frames = [df.value for df in app.dataframe]
     registry = next(f for f in frames if "card" in f.columns)
     log = next(f for f in frames if "kind" in f.columns and "card" not in f.columns)
@@ -103,12 +121,7 @@ def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
 
 
 def test_agent_mesh_awards_execute_only_after_the_operator_clicks_approve() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
-    app.session_state["view"] = "Agent Mesh"
-    app.run()
-    assert not app.exception, app.exception
-
+    app = fresh("Agent Mesh")
     approve = next(b for b in app.button if b.label == "Approve award set")
     approve.click().run()
     app.session_state["mesh_kinds"] = []  # show every message kind, including the new ones
@@ -125,13 +138,10 @@ def test_agent_mesh_awards_execute_only_after_the_operator_clicks_approve() -> N
     assert "M. Alvarez (Fleet Operator)" in approved and "scripted" not in approved
 
 
-def test_agent_mesh_shows_jev_answers_and_the_rules_comparison() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
-    app.session_state["view"] = "Agent Mesh"
-    app.run()
-    assert not app.exception, app.exception
-
+def test_agent_mesh_shows_jev_answers_and_the_rules_comparison(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    app = rendered_views["Agent Mesh"]
     frames = [df.value for df in app.dataframe]
     answers = next(f for f in frames if "confidence" in f.columns)
     assert {"question", "answer", "probabilities", "latency (ms)"} <= set(answers.columns)
@@ -146,8 +156,7 @@ def test_agent_mesh_shows_jev_answers_and_the_rules_comparison() -> None:
 
 
 def test_incident_panel_shows_the_jev_read_out() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
+    app = fresh()
     trigger = next(b for b in app.button if "Trigger" in b.label)
     trigger.click().run()
     assert not app.exception, app.exception
@@ -157,10 +166,7 @@ def test_incident_panel_shows_the_jev_read_out() -> None:
 
 
 def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
-    assert not app.exception, app.exception
-
+    app = fresh()
     captions = " ".join(c.value for c in app.caption)
     assert "wear floor" in captions
 
@@ -176,9 +182,7 @@ def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
 
 
 def test_the_banner_states_delivered_against_promised_and_what_is_at_risk() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
-    assert not app.exception, app.exception
+    app = fresh()
     covered = " ".join(e.value for e in app.success)
     assert "Delivering" in covered and "kW at risk" in covered
 
@@ -222,8 +226,7 @@ def test_the_fleet_map_renders_without_internet_tiles() -> None:
 
 
 def test_the_member_app_does_not_claim_protection_while_contact_is_lost() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
+    app = fresh()
     trigger = next(b for b in app.button if "Trigger" in b.label)
     trigger.click().run()
     app.session_state["view"] = "Member App"
@@ -239,8 +242,7 @@ def test_the_member_app_does_not_claim_protection_while_contact_is_lost() -> Non
 
 
 def test_control_room_shows_the_timeline_and_logs_an_override_with_its_reason() -> None:
-    app = AppTest.from_file(APP, default_timeout=180)
-    app.run()
+    app = fresh()
     next(b for b in app.button if "Trigger" in b.label).click().run()
     next(b for b in app.button if "Approve Recovery" in b.label).click().run()
     assert not app.exception, app.exception
@@ -276,19 +278,6 @@ VALUE_FORMATS = (
     r"[\d,]+ / [\d,]+",  # a pair the label names in the same order
     r"[\d,]+(?:\.\d+)?",
 )
-
-
-@pytest.fixture(scope="module")
-def rendered_views() -> dict[str, AppTest]:
-    views = {}
-    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why"):
-        app = AppTest.from_file(APP, default_timeout=600)
-        app.run()
-        app.session_state["view"] = view
-        app.run()
-        assert not app.exception, (view, app.exception)
-        views[view] = app
-    return views
 
 
 def test_every_metric_value_uses_one_of_the_agreed_number_formats(

@@ -108,5 +108,10 @@ def test_the_command_prints_the_same_page_the_screen_shows(capsys) -> None:  # t
             assert claim.value in printed
 
 
+def test_the_page_is_built_once_per_process_so_the_timing_cannot_drift() -> None:
+    """Rebuilding it re-times the mesh: slow on camera, and two different answers."""
+    assert why.build(fleet_size=48) is why.build(fleet_size=48)
+
+
 def _claim(section: why.Section, needle: str) -> why.Claim:
     return next(c for c in section.claims if needle.lower() in c.label.lower())
