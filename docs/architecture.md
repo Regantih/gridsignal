@@ -25,3 +25,29 @@ approval gate, quarantine and reassignment — and appends every transition to a
 6. Backtest: dollars captured vs. a naive schedule, scored once on `data/holdout/` with the
    parameters fitted on `data/tuning/` plus the two scenario days.
 7. Dashboard: member view plus an operator view for Base.
+
+## Agent mesh (`src/gridsignal/mesh/`)
+
+The orchestration layer as a set of agents rather than one controller. Inspired by MIT Project
+NANDA / NANDA Town (https://nandatown.projectnanda.org, https://github.com/projnanda); the code
+here is an original implementation of those ideas and vendors nothing from them.
+
+1. `build.py` turns every device into a battery agent and adds one gateway agent per firmware
+   ring and one agent per load zone. A card advertises only *spare* capacity, so a bid can never
+   resell kW already promised to the grid event.
+2. `cards.py` defines the AgentFacts-style card (id, kind, zone, capabilities, health, last
+   heartbeat) and signs a canonical JSON body with HMAC-SHA256. `registry.py` generates the key at
+   startup, so a card edited after signing no longer verifies.
+3. `registry.py` is the in-memory directory: register, publish updated capabilities, discover by
+   capability / kind / zone, and expire agents that stop sending heartbeats. Rejected, stale and
+   offline agents are visible but never discovered, so they cannot win work.
+4. `negotiation.py` runs the contract net. `call_for_capacity()` announces the gap, `collect_bids()`
+   gathers spare kW priced by wear plus a premium that grows as the homeowner's backup reserve
+   thins, `propose()` picks the cheapest covering set (or the best partial cover plus an
+   escalation), and `approve(call_id, approver)` is the only path that commits anything. The award
+   ledger makes repeat triggers and double approvals no-ops.
+5. `scenarios.py` + `simulate.py` replay YAML chaos scenarios deterministically and write a JSONL
+   trace of every message, ending in a metrics record (time to cover, percent covered, messages,
+   dollars at risk and recovered).
+6. `llm.py` is an optional LLM bid ranker behind a flag; disabled by default, and it falls back to
+   the deterministic ranking when no provider is configured.

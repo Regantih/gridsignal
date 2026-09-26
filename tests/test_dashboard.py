@@ -39,9 +39,25 @@ def test_headline_carries_the_one_line_caveat(grid_signals: AppTest) -> None:
 
 
 def test_every_view_renders() -> None:
-    for view in ("Control Room", "Member App", "Grid Signals"):
+    for view in ("Control Room", "Member App", "Grid Signals", "Agent Mesh"):
         app = AppTest.from_file(APP, default_timeout=180)
         app.run()
         app.session_state["view"] = view
         app.run()
         assert not app.exception, (view, app.exception)
+
+
+def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    app.session_state["view"] = "Agent Mesh"
+    app.run()
+    assert not app.exception, app.exception
+
+    frames = [df.value for df in app.dataframe]
+    registry, log = frames[0], frames[1]
+    assert {"agent", "kind", "health", "last heartbeat (s)", "card"} <= set(registry.columns)
+    assert set(registry["card"]) <= {"verified", "stale", "rejected"}
+    assert {"call_for_capacity", "award_proposed", "approval"} <= set(log["kind"])
+    assert [s.label for s in app.selectbox] == ["Replay"]
+    assert "Simulation only" in " ".join(m.value for m in app.markdown)

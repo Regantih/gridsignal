@@ -55,6 +55,31 @@ The separation is deliberate: no incident IDs, no kW targets and no approval con
 to the member. Backup hours assume a 1.2 kW essential household load and earnings assume a 60%
 member revenue share; both are labelled assumptions, not a Base Power tariff.
 
+## The same event, run as an agent mesh
+
+The **Agent Mesh** view replays the same orchestration as a negotiation between agents rather
+than a single controller. Every battery, gateway ring and load zone holds a signed capability
+card; when capacity is lost a Coordinator broadcasts a call for capacity, healthy agents bid
+their spare kW at a price reflecting wear and the homeowner's backup reserve, and the cheapest
+covering set is *proposed* to a named human. Chaos scenarios live in `scenarios/*.yaml` and run
+deterministically:
+
+```bash
+python -m gridsignal.simulate scenarios/zone_outage.yaml
+```
+
+The interesting failures are the dishonest and the absent: a card edited after signing fails
+verification and is rejected, an agent that stops sending heartbeats goes stale, and a bidder
+that wins an award and then goes quiet has its kW returned to the gap so a second (also
+human-approved) round can cover it. When the remaining headroom genuinely cannot cover the
+commitment — `scenarios/fleet_wide_scarcity.yaml` — the mesh commits the partial cover and
+escalates the rest to a person instead of reporting success.
+
+The design is inspired by MIT Project NANDA and NANDA Town
+([nandatown.projectnanda.org](https://nandatown.projectnanda.org),
+[github.com/projnanda](https://github.com/projnanda)); the implementation here is original and
+vendors no NANDA code.
+
 ## Safety boundaries
 
 - **No real-world effect.** No device commands, no utility or market integration, no credentials
@@ -69,6 +94,10 @@ member revenue share; both are labelled assumptions, not a Base Power tariff.
 - **Auditable.** Detection, recommendation, human approval, quarantine, reassignment and recovery
   are all recorded append-only, with the approver's name on the approval entry.
 - **Clearly labelled.** The simulation banner and the sidebar safety note are always on screen.
+- **The agent mesh is advisory too.** `Coordinator.propose()` only produces a plan; awarded kW is
+  committed by `approve(call_id, approver)` and nowhere else, `execute()` raises
+  `ApprovalRequired` without a recorded approval, and repeat triggers or double approvals return
+  the award already on file instead of committing twice. No LLM and no API key is involved.
 
 ## How this meets the Orchestration track
 
@@ -109,4 +138,7 @@ restored at the fleet level, and a person owns the decision.
 8. **(1:20)** Switch the sidebar to **Scarcity day** and **10,000 devices**, then trigger and
    approve again. "Same failure, real ERCOT scarcity prices, Base-scale fleet: nearly nine
    thousand dollars riding on one approval — and the reallocation still solves in milliseconds."
-9. **(1:30)** Click **Reset Demo**. "Fully replayable, deterministic, and simulation-only."
+9. **(1:30)** Switch to **Agent Mesh**, pick `zone_outage`. "Same orchestration as a mesh: a
+   thousand signed agents, a call for capacity, bids priced against the homeowner's backup, one
+   human approval — and where the headroom runs out, it covers what it can and escalates."
+10. **(1:40)** Click **Reset Demo**. "Fully replayable, deterministic, and simulation-only."

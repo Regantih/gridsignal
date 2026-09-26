@@ -9,6 +9,8 @@ dependencies = [
   "streamlit>=1.35",
   "plotly>=5.20",
   "python-dotenv>=1.0",
+  # Chaos scenarios for the agent mesh are declared in YAML.
+  "pyyaml>=6.0",
   # Timezone database for machines without system tzdata (slim containers, Windows).
   "tzdata>=2024.1",
 ]

@@ -14,3 +14,4 @@ data/processed/*
 !data/processed/*_sample_dam.json
 .streamlit/secrets.toml
 .DS_Store
+data/traces/

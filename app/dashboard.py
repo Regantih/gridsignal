@@ -21,6 +21,8 @@ from gridsignal.control_room.models import (
     TaskStatus,
 )
 from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID
+from gridsignal.mesh.cards import CardStatus
+from gridsignal.mesh.scenarios import available_scenarios as available_chaos_scenarios
 from gridsignal.prices import (
     DEFAULT_SCENARIO,
     available_scenarios,
@@ -28,6 +30,7 @@ from gridsignal.prices import (
     load_scenario,
 )
 from gridsignal.signals import Signal
+from gridsignal.simulate import RunResult, run_file
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
 
@@ -78,7 +81,12 @@ CSS = """
 MAP_MARKERS = 400
 GRID_TILES = 48
 
-VIEWS = ("Control Room", "Member App", "Grid Signals")
+VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh")
+CARD_COLOR = {
+    CardStatus.VERIFIED: "#16a34a",
+    CardStatus.STALE: "#f59e0b",
+    CardStatus.REJECTED: "#dc2626",
+}
 SIGNAL_COLOR = {
     Signal.CHARGE.value: "#38bdf8",
     Signal.HOLD.value: "#6b7280",
@@ -838,9 +846,131 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     )
 
 
+@st.cache_data(show_spinner=False)
+def chaos_run(path: str) -> RunResult:
+    """Replay one YAML chaos scenario; deterministic, so caching is safe."""
+    return run_file(path)
+
+
+def render_registry(result: RunResult) -> None:
+    """Who is in the mesh, what they claim they can do, and whether we believe them."""
+    statuses = result.registry.statuses()
+    rows = [
+        {
+            "agent": agent_id,
+            "kind": card.kind.value,
+            "zone": card.zone,
+            "kW available": round(card.capabilities.get("kw_available", 0.0), 2),
+            "kWh available": round(card.capabilities.get("kwh_available", 0.0), 2),
+            "state of charge": round(card.capabilities.get("soc", 0.0), 2),
+            "health": card.health.value,
+            "last heartbeat (s)": card.last_heartbeat_s,
+            "card": statuses[agent_id].value,
+        }
+        for agent_id, card in ((a, result.registry.card(a)) for a in result.registry.agent_ids())
+    ]
+    frame = pd.DataFrame(rows)
+    rank = {CardStatus.REJECTED.value: 0, CardStatus.STALE.value: 1, CardStatus.VERIFIED.value: 2}
+    frame = frame.sort_values(
+        by=["card", "agent"], key=lambda s: s.map(rank) if s.name == "card" else s
+    )
+    st.dataframe(frame, hide_index=True, use_container_width=True, height=360)
+    st.caption(
+        "Every card is signed with an HMAC key the registry generates at startup. "
+        "A card whose signature does not verify is rejected; an agent that stops "
+        "sending heartbeats goes stale. Neither can win an award."
+    )
+
+
+def render_mesh_log(result: RunResult) -> None:
+    """The negotiation as it happened: calls, bids, the award and the human approval."""
+    frame = pd.DataFrame(
+        [
+            {
+                "t (s)": m.t_s,
+                "kind": m.kind.value,
+                "from": m.sender,
+                "to": m.recipient,
+                "message": m.summary,
+            }
+            for m in result.bus.messages
+        ]
+    )
+    kinds = sorted(frame["kind"].unique().tolist())
+    chosen = st.multiselect("Message types", kinds, default=kinds, key="mesh_kinds")
+    st.dataframe(
+        frame[frame["kind"].isin(chosen)] if chosen else frame,
+        hide_index=True,
+        use_container_width=True,
+        height=420,
+    )
+
+
+def render_agent_mesh() -> None:
+    """Agent Mesh: signed capability cards and contract-net bidding, human-gated."""
+    files = available_chaos_scenarios()
+    if not files:
+        st.warning("No scenarios found in scenarios/.")
+        return
+    with st.sidebar:
+        st.header("Chaos scenario")
+        choice = st.selectbox(
+            "Replay", files, format_func=lambda p: p.stem.replace("_", " "), key="mesh_scenario"
+        )
+        st.caption(
+            "Same run as `python -m gridsignal.simulate "
+            f"scenarios/{choice.name}`, replayed from its JSONL trace."
+        )
+    result = chaos_run(str(choice))
+    metrics, scenario = result.metrics, result.scenario
+
+    st.subheader(scenario.name)
+    st.caption(scenario.description.strip())
+    a, b, c, d, e = st.columns(5)
+    a.metric("Agents in mesh", f"{metrics.agents:,}")
+    b.metric("Capacity covered", f"{metrics.covered_pct:.0f}%", f"{metrics.covered_kw:,.1f} kW")
+    c.metric("Time to cover", f"{metrics.time_to_cover_s}s")
+    d.metric("Messages", f"{metrics.messages:,}")
+    e.metric(
+        "Dollars recovered",
+        f"${metrics.dollars_recovered:,.2f}",
+        f"of ${metrics.dollars_at_risk:,.2f} at risk",
+    )
+
+    badges = " ".join(
+        [
+            pill(f"{metrics.rejected_cards} rejected cards", CARD_COLOR[CardStatus.REJECTED]),
+            pill(f"{metrics.stale_agents} stale agents", CARD_COLOR[CardStatus.STALE]),
+            pill(f"{metrics.rounds} negotiation rounds", "#38bdf8"),
+            pill(
+                "escalated to a human" if metrics.escalated else "fully covered",
+                "#dc2626" if metrics.escalated else CARD_COLOR[CardStatus.VERIFIED],
+            ),
+        ]
+    )
+    st.markdown(f"<div class='gs-card'>{badges}</div>", unsafe_allow_html=True)
+    st.markdown(
+        "<div class='gs-sim'>Simulation only. Awards are proposals: nothing is "
+        "committed until a named human approves, and no real battery is ever "
+        "contacted.</div>",
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns([3, 4], gap="large")
+    with left:
+        st.subheader("Agent registry")
+        render_registry(result)
+    with right:
+        st.subheader("Message log")
+        render_mesh_log(result)
+
+
 def main() -> None:
     render_header()
     render_scenario_controls()
+    if st.session_state.get("view", VIEWS[0]) == "Agent Mesh":
+        render_agent_mesh()
+        return
     if st.session_state.get("view", VIEWS[0]) == "Grid Signals":
         render_grid_signals(
             st.session_state.get("scenario", DEFAULT_SCENARIO),

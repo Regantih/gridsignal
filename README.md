@@ -75,7 +75,7 @@ ruff format --check .
 
 ## Using the dashboard
 
-The sidebar **View** switch picks between the three pages:
+The sidebar **View** switch picks between the four pages:
 
 ### Control Room
 
@@ -124,6 +124,51 @@ python -m gridsignal.holdout          # the held-out scorecard
 
 Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEMO.md`](docs/DEMO.md).
 
+### Agent Mesh
+
+The orchestration layer, run as a mesh of agents instead of a single controller. Every battery,
+gateway ring and load zone registers an **AgentFacts-style capability card** (id, kW and kWh
+available, state of charge, zone, health, last heartbeat) signed with an HMAC key the registry
+generates at startup. When capacity is lost, a **Coordinator** broadcasts a call for capacity,
+healthy agents bid their spare kW at a price that reflects battery wear and how much of the
+homeowner's backup reserve they would be giving up, and the coordinator awards the cheapest set
+that covers the gap — as a *proposal*. Nothing is committed until a named human approves, and a
+repeat trigger or a double-click on approve returns the award already on file rather than
+committing the capacity twice. When the remaining headroom cannot cover the commitment the mesh
+covers what it can and escalates the rest to a person.
+
+The view shows the registry with each card marked **verified / stale / rejected** (a card edited
+after signing fails verification; an agent that stops sending heartbeats goes stale, and neither
+can win an award), the full message log of calls, bids, awards, approvals and escalations, and a
+picker that replays any bundled chaos scenario.
+
+Scenarios are YAML, in the spirit of NANDA Town's agent-town runs, and replay deterministically:
+
+```bash
+python -m gridsignal.simulate scenarios/zone_outage.yaml   # writes data/traces/zone_outage.jsonl
+python -m gridsignal.simulate --all
+```
+
+| Scenario | What it injects | Result |
+|---|---|---|
+| `scenarios/single_device.yaml` | BAT-042 goes dark, 48 agents | 100% covered after one human approval |
+| `scenarios/zone_outage.yaml` | whole LZ_HOUSTON gateway outage, 1,000 agents | partial cover, remainder escalated |
+| `scenarios/lying_agent.yaml` | gateway ring outage + an agent that edits its card to claim 500 kW + silent telemetry | forged card rejected, silent agents stale, gap covered by the rest |
+| `scenarios/silent_bidder.yaml` | two devices fail, then a winning bidder stops answering | its kW returns to the gap and a second round runs, also human-approved |
+| `scenarios/fleet_wide_scarcity.yaml` | four zones lost during the scarcity event | more than the fleet can cover: partial commit and escalation |
+
+Each run writes a JSONL trace (one message per line) and reports time to cover, percent of the
+commitment covered, messages sent, and dollars at risk versus recovered. Everything is arithmetic
+on the seeded fleet: no LLM, no API key, no network. An optional LLM coordinator
+(`src/gridsignal/mesh/llm.py`) can rank bids behind an explicit flag; it is **off by default** and
+falls back to the deterministic ranking when no provider is wired up.
+
+**Inspiration and attribution.** The agent-card, registry and agent-town-scenario ideas are
+inspired by MIT Project NANDA — [nandatown.projectnanda.org](https://nandatown.projectnanda.org)
+and [github.com/projnanda](https://github.com/projnanda). No NANDA code is vendored, copied or
+depended on here; the registry, the signing scheme, the contract-net protocol and the scenario
+format in this repo are original implementations of those ideas against this simulated fleet.
+
 ## Tech Stack and Architecture
 
 - Python 3.11, Streamlit, Plotly, pandas
@@ -170,6 +215,14 @@ flowchart LR
 | `src/gridsignal/dam.py` | Plans the day from the ERCOT day-ahead curve and applies the real-time deviation rules on top; the frozen parameters live here |
 | `src/gridsignal/backtest.py` | Battery settlement ledger (SoC, cashflow) for the signals and for a naive fixed schedule |
 | `src/gridsignal/pipeline.py` | `run(scenario)` wiring detect → forecast → signals → backtest, plus a CLI |
+| `src/gridsignal/mesh/cards.py` | AgentFacts-style capability cards and their HMAC signatures |
+| `src/gridsignal/mesh/registry.py` | In-memory registry: register, publish, discover by capability, reject bad signatures, expire silent agents |
+| `src/gridsignal/mesh/messages.py` | Append-only message bus and the JSONL trace format |
+| `src/gridsignal/mesh/build.py` | Turns the simulated fleet into battery, gateway and zone agents publishing spare capacity |
+| `src/gridsignal/mesh/negotiation.py` | Contract net: call for capacity, bidding, cheapest-cover awards, the human gate, idempotent commitments |
+| `src/gridsignal/mesh/scenarios.py` | YAML chaos scenarios: seed, agent counts, failure injections, duration |
+| `src/gridsignal/mesh/llm.py` | Optional LLM bid ranker behind a flag, disabled by default |
+| `src/gridsignal/simulate.py` | `python -m gridsignal.simulate <scenario>`: deterministic chaos run, metrics and JSONL trace |
 | `src/gridsignal/member.py` | Member-facing summary for one home: backup hours, earned/protected dollars, plain-English notice |
 | `src/gridsignal/holdout.py` | Replays the frozen policy over the bundled held-out days and scores it against the naive schedule |
 | `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
@@ -182,6 +235,9 @@ flowchart LR
 | `tests/test_scale.py` | Gateway-ring scaling, scarcity pricing, and a 10,000-device detect-plus-reallocate benchmark |
 | `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_signals.py`, `tests/test_backtest.py`, `tests/test_pipeline.py` | The analytics pipeline: spike detection, look-ahead safety, dispatch policy, settlement math, end-to-end run |
 | `tests/test_holdout.py` | Split integrity: ≥5 real held-out days with provenance, tuning and held-out dates disjoint, frozen parameters, losing days kept in the totals |
+| `tests/test_mesh.py` | Signature rejection, staleness, capability discovery, bid pricing and selection, the approval gate, idempotency, partial cover plus escalation |
+| `tests/test_simulate.py` | Scenario coverage of every failure mode, deterministic replay, JSONL traces, the CLI, and a 10,000-agent negotiation benchmark |
+| `tests/test_dashboard.py` | Every view renders; the Grid Signals headline never shows the scenario day alone; the Agent Mesh registry and log |
 | `tests/test_dam.py` | Day-ahead plan shape, hour-to-interval alignment, each deviation rule, no-lookahead, DAM provenance |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
@@ -290,6 +346,9 @@ real Base Power device or fleet.
   cached copies that keep the demo reproducible and offline.
 - Scaling is a device multiplier on one seeded template, not a model of real per-home diversity,
   and the fleet map thins healthy markers above 400 devices.
+- The agent mesh runs in simulated seconds inside one process: there is no transport, no real
+  cryptographic identity beyond a shared HMAC key, and agents do not defect strategically — a
+  "lying" agent lies about its capabilities, not about delivery it actually made.
 - Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
   exposure change minute to minute rather than as a single window average.
 
