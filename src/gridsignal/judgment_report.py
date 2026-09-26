@@ -309,6 +309,22 @@ def build(directory: Path = FIXTURE_DIR, drills: list[Path] | None = None) -> Re
     )
 
 
+def calibration_reading(cal: CalibrationResult) -> str:
+    """One sentence saying what the tuning did, computed from the run itself.
+
+    Written here and quoted everywhere else (Why page, demo numbers, README, judging
+    map) so the wording can never say one thing while the command prints another.
+    """
+    moved = round((cal.after - cal.before) * cal.holdout)
+    return (
+        f"Held-out agreement {cal.before:.0%} to {cal.after:.0%} ({moved:+d} of "
+        f"{cal.holdout} episodes), fitted half {cal.train_before:.0%} to "
+        f"{cal.train_after:.0%}. That is one simulated operator on {cal.episodes} "
+        f"episodes: weak evidence that the weights transfer, and no evidence at all "
+        f"about real operators."
+    )
+
+
 _CACHED: dict[str, Report] = {}
 _CACHE_LOCK = threading.Lock()
 
@@ -397,6 +413,8 @@ def markdown(report: Report) -> str:
     lines.append("| --- | --- | --- |")
     lines.append(f"| as committed | {cal.train_before:.0%} | {cal.before:.0%} |")
     lines.append(f"| after tuning | {cal.train_after:.0%} | {cal.after:.0%} |")
+    lines.append("")
+    lines.append(calibration_reading(cal))
     lines.append("")
     weights = ", ".join(
         f"{PACK.by_id(k).title.lower()} {v:.2f}" for k, v in sorted(cal.calibration.weights.items())

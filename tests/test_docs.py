@@ -168,6 +168,23 @@ CLAIMS: tuple[tuple[str, str], ...] = (
         r"|a scarcity day\'s capturable|the value a battery could have captured)",
         "scarcity_visible_share",
     ),
+    # The scenario day is uplift over the naive schedule, so the gross side is checked too
+    # and neither can be quoted without the other drifting.
+    (r"\$([\d,]+\.\d\d) of export revenue", "scenario_battery_revenue_usd"),
+    (r"\$([\d,]+\.\d\d) for the naive schedule", "scenario_battery_naive_usd"),
+    (r"\$([\d,]+\.\d\d) per\s+battery of uplift", "scenario_battery_uplift_usd"),
+    (r"\$([\d,]+)/day gross", "scenario_fleet_revenue_usd"),
+    # The judgment model's calibration, in prose and in the README's table. The wording
+    # and the figures both come from `python -m gridsignal.judgment_report`.
+    (r"fitted half moves (\d+)% to \d+%", "calibration_fitted_before"),
+    (r"fitted half moves \d+% to (\d+)%", "calibration_fitted_after"),
+    (r"held-out agreement moves (\d+)% to \d+%", "calibration_holdout_before"),
+    (r"held-out agreement moves \d+% to (\d+)%", "calibration_holdout_after"),
+    (r"\+(\d+) of 48 episodes", "calibration_episodes_moved"),
+    (r"\| as committed \| (\d+)% \| \d+% \|", "calibration_fitted_before"),
+    (r"\| as committed \| \d+% \| (\d+)% \|", "calibration_holdout_before"),
+    (r"\| after tuning \| (\d+)% \| \d+% \|", "calibration_fitted_after"),
+    (r"\| after tuning \| \d+% \| (\d+)% \|", "calibration_holdout_after"),
 )
 
 #: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the

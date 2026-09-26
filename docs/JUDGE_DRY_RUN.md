@@ -65,7 +65,8 @@ so the numbers argue that the *mechanism* is right, not that the magnitudes are.
 **For.** The Why view states problem, approach, evidence and limits on one screen with every
 figure recomputed from the module that produces it and the reproducing command printed beside
 it; `python -m gridsignal.why` prints the same page. The limits are on that screen rather than
-buried: tuning did not meaningfully improve held-out agreement (+1 episode of 48), the
+buried: held-out agreement moves 71% to 83% after tuning, +6 of 48 episodes of one
+simulated operator and so weak evidence that the weights transfer; the
 unrestricted ancillary comparison offers 51% of ERCOT's published Reg Down plan so its
 price-taker assumption fails, and seven held-out days is a small sample.
 

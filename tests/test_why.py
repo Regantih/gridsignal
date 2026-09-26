@@ -89,13 +89,15 @@ def test_the_model_is_presented_as_a_second_opinion_that_loses_to_the_rules() ->
     assert rules.correct >= jev.correct, "if that ever flips, rewrite the claim"
 
 
-def test_the_limits_say_the_tuning_did_not_move_the_held_out_half() -> None:
+def test_the_limits_report_the_tuning_exactly_as_the_command_computes_it() -> None:
+    """One sentence, written once, so the page cannot read better than the run."""
     cal = judgment_report.build().calibration
     moved = round((cal.after - cal.before) * cal.holdout)
     limits = "\n".join(why.limits(fleet_size=48))
-    assert "did not meaningfully improve held-out agreement" in limits
-    assert f"{moved:+d} episode of {cal.holdout}" in limits
-    assert "overfitting" in limits
+    assert judgment_report.calibration_reading(cal) in limits
+    assert f"{cal.before:.0%} to {cal.after:.0%}" in limits
+    assert f"({moved:+d} of {cal.holdout} episodes)" in limits
+    assert "no evidence at all about real operators" in limits
 
 
 def test_the_limits_keep_the_simulation_and_price_taker_caveats() -> None:

@@ -434,6 +434,14 @@ schedule on 7 of 7 days it was never tuned on (see
 [Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
 representative day in the set; the held-out average is the honest claim.
 
+That scenario-day figure is **uplift, not revenue**. The baseline is the **naive schedule** —
+charge overnight, discharge in the evening on the clock — run over the same modelled 40 kWh /
+20 kW battery, the same day and the same settlement prices. Per battery on 2023-09-06:
+**$127.17 of export revenue** against **$16.46 for the naive schedule**, leaving **$110.71 per
+battery of uplift**, so $1,271,700/day gross and $1,107,100/day uplift across 10,000 simulated
+batteries. Both come from `python -m gridsignal.demo_numbers`; the same pair is printed on the
+Grid Signals tile.
+
 Same numbers from the CLI:
 
 ```bash
@@ -658,11 +666,14 @@ shape) on half the operating conditions, and is scored on the half it never saw:
 
 | Agreement with the simulated operator | Fitted half | Held-out half |
 | --- | --- | --- |
-| as committed | 58% | 71% |
-| after tuning | 77% | 73% |
+| as committed | 90% | 71% |
+| after tuning | 94% | 83% |
 
-Read that honestly: the fit gains 19 points, the held-out half gains 2. The tuned weights
-(`ask a human` 0.45, `reversible` 0.60, `certainty for money` 0.15, act bar 0.70) are written to
+Read that honestly: held-out agreement moves 71% to 83%, which is **+6 of 48 episodes**, and the
+fitted half moves 90% to 94%. It is one simulated operator on 96 episodes — weak evidence that the
+weights transfer and no evidence at all about real operators. The tuned weights
+(`ask a human` 0.30, `certainty for money` 0.30, `reversible` 0.15, act bar 0.70, notify bar 0.60)
+are written to
 `data/judgment_calibration.json` and are what the Control Room judges with; with that file absent
 the product behaves exactly as committed. Jev answers replay from `data/jev_fixtures/judgment_*.json`,
 so the report and the whole suite run with no key and no network.

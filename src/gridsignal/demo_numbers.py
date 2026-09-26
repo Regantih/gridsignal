@@ -86,15 +86,12 @@ def judgment_beat() -> Beat:
     rules = report_.blind[judgment_report.RULES]
     jev = report_.blind[judgment_report.JEV]
     cal = report_.calibration
-    moved = round((cal.after - cal.before) * cal.holdout)
     return Beat(
         "Beat 3 — who decides: rules and vetoes, with the model as a second opinion",
         (
             f"blind safety pack, committed before it was scored: rules (Jev offline) "
             f"{rules.correct} of {rules.total}, Jev {jev.correct} of {jev.total}",
-            f"calibration on a simulated override log: tuning did not meaningfully improve "
-            f"held-out agreement, {cal.before:.0%} to {cal.after:.0%}, {moved:+d} episode of "
-            f"{cal.holdout}",
+            "calibration on a simulated override log: " + judgment_report.calibration_reading(cal),
         ),
     )
 
@@ -156,8 +153,13 @@ def docs_beat(fleet_size: int = DEMO_FLEET) -> Beat:
     return Beat(
         "Headline numbers quoted in README, WRITEUP, SUBMISSION and JUDGING_MAP",
         (
-            f"scenario day: ${scenario.fleet_usd(fleet_size):,.0f}/day across {fleet_size:,} "
+            f"scenario day, uplift over the naive clock schedule: "
+            f"${scenario.fleet_usd(fleet_size):,.0f}/day across {fleet_size:,} "
             f"batteries on the bundled scarcity day, ${scenario.uplift_usd:,.2f} per battery",
+            f"scenario day, gross: ${scenario.signal_usd:,.2f} of export revenue per battery "
+            f"against ${scenario.naive_usd:,.2f} for the naive schedule "
+            f"(${scenario.signal_usd * fleet_size:,.0f} of export revenue across "
+            f"{fleet_size:,} batteries)",
             f"held out, home-first (the product, and the canonical held-out claim): "
             f"{home_first.days_won} of {home_first.days} days, mean "
             f"${home_first.mean_uplift_usd:,.2f}, median ${home_first.median_uplift_usd:,.2f}",
@@ -181,10 +183,20 @@ def canonical() -> dict[str, str]:
     home_first = holdout.summarize(holdout.evaluate())
     grid_only = holdout.summarize(holdout.evaluate(serve_home=False))
     view = insight.summarize(insight.analyze())
+    cal = judgment_report.build().calibration
     return {
+        "calibration_fitted_before": f"{cal.train_before:.0%}",
+        "calibration_fitted_after": f"{cal.train_after:.0%}",
+        "calibration_holdout_before": f"{cal.before:.0%}",
+        "calibration_holdout_after": f"{cal.after:.0%}",
+        "calibration_episodes_moved": str(round((cal.after - cal.before) * cal.holdout)),
         "dollars_at_risk": f"{incident.dollars_at_risk:,.0f}",
         "dollars_recovered": f"{incident.dollars_recovered:,.0f}",
         "scenario_fleet_usd": f"{scenario.fleet_usd(DEMO_FLEET):,.0f}",
+        "scenario_battery_uplift_usd": f"{scenario.uplift_usd:,.2f}",
+        "scenario_battery_revenue_usd": f"{scenario.signal_usd:,.2f}",
+        "scenario_battery_naive_usd": f"{scenario.naive_usd:,.2f}",
+        "scenario_fleet_revenue_usd": f"{scenario.signal_usd * DEMO_FLEET:,.0f}",
         "holdout_days_won": str(home_first.days_won),
         "holdout_mean_usd": f"{home_first.mean_uplift_usd:,.2f}",
         "holdout_median_usd": f"{home_first.median_uplift_usd:,.2f}",

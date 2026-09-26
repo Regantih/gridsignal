@@ -2138,11 +2138,14 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
     """
     out = holdout.summarize(holdout_run())
     scenario_card = (
-        "<div class='gs-kicker'>This scenario day, if the fleet followed the signals</div>"
+        "<div class='gs-kicker'>This scenario day, uplift over the naive clock schedule</div>"
         f"<div style='font-size:3.1rem;font-weight:700;color:#4ade80;line-height:1.2'>"
         f"${summary.fleet_usd(fleet_size):,.0f}</div>"
         f"<div class='gs-body'>on {date} across {fleet_size:,} simulated batteries "
-        f"— ${summary.uplift_usd:,.2f} per battery per day</div>"
+        f"— ${summary.uplift_usd:,.2f} per battery per day. Uplift, not revenue: "
+        f"${summary.signal_usd:,.2f} of export revenue per battery against "
+        f"${summary.naive_usd:,.2f} for the naive schedule (charge overnight, discharge in "
+        f"the evening on the clock), same battery, same day, same prices.</div>"
     )
     if out.days:
         holdout_card = (

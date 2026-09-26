@@ -311,7 +311,6 @@ def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
     home_first = holdout.summarize(holdout.evaluate())
     judgment = judgment_report.build()
     cal = judgment.calibration
-    moved = round((cal.after - cal.before) * cal.holdout)
     flag = ancillary.procurement_flag()
     wear = degradation.WEAR_MODELS[0]
     out = [
@@ -320,10 +319,8 @@ def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
         f"batteries are not {fleet_size:,} real ones.",
         f"The held-out result rests on {home_first.days} days. That is enough to keep "
         f"the policy honest and not enough to call it a forecast of annual revenue.",
-        f"Tuning the judgment model on a simulated override log did not meaningfully "
-        f"improve held-out agreement: {cal.before:.0%} to {cal.after:.0%}, {moved:+d} "
-        f"episode of {cal.holdout}. The fitted half moved {cal.train_before:.0%} to "
-        f"{cal.train_after:.0%}, which is overfitting, not learning.",
+        "Tuning the judgment model happens on a simulated override log. "
+        + judgment_report.calibration_reading(cal),
         f"Wear cost is this repository's assumption — "
         f"${wear.wear_usd_per_mwh:,.0f}/MWh for a {wear.label} — not vendor data.",
         "Nothing here contacts a real device, a real utility or a real ERCOT system, "
