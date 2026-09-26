@@ -1,4 +1,5 @@
 """Pull ERCOT prices, load and generation and store them as Parquet."""
+
 from pathlib import Path
 
 import pandas as pd

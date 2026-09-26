@@ -1,4 +1,5 @@
 """Detect price spikes, scarcity windows and zone spreads."""
+
 import pandas as pd
 
 

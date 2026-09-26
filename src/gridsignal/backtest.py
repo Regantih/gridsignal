@@ -1,4 +1,5 @@
 """Estimate dollars captured by following the signals versus a naive schedule."""
+
 import pandas as pd
 
 
