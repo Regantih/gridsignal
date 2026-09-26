@@ -2,10 +2,17 @@
 
 Every other benchmark in this repository is in-process compute. This one is not: the
 coordinator runs in one OS process and the battery agents in others, and the only thing
-they share is a TCP connection on ``127.0.0.1``. One socket per agent, newline-delimited
-JSON frames, and the capability card each agent bids with is HMAC-signed in the agent
-process and verified in the coordinator process, so a forged card is refused across the
-wire rather than inside one interpreter.
+they share is a TCP connection on ``127.0.0.1``. Newline-delimited JSON frames, and the
+capability card each agent bids with is HMAC-signed in the agent process and verified in
+the coordinator process, so a forged card is refused across the wire rather than inside
+one interpreter.
+
+Agents are multiplexed over a small number of connections: every frame names the agent it
+is for, so one socket carries hundreds of them and 10,000 agents need tens of file
+descriptors rather than 10,000. A laptop whose ``ulimit -n`` is 256 runs the same
+benchmark as a server; the limit is read at startup, raised as far as the hard limit
+allows, and if it is still tight the run says so in one line and uses fewer sockets
+instead of failing.
 
 What is measured, per agent, is the whole round trip an operator waits on::
 
@@ -28,8 +35,8 @@ internet path here: these numbers are the software's own overhead under a real s
 a real process boundary, and a field deployment would add everything this repository does
 not model.
 
-    python -m gridsignal.transport                       # 1,000 and 10,000 agents
-    python -m gridsignal.transport --agents 1000
+    python -m gridsignal.transport                       # 1,000 agents
+    python -m gridsignal.transport --full                # 1,000 and 10,000 agents
     python -m gridsignal.transport --agents 1000 --drop 0.05
     python -m gridsignal.transport --agents 1000 --json transport.json
 """
@@ -41,6 +48,7 @@ import asyncio
 import json
 import multiprocessing as mp
 import random
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -51,8 +59,24 @@ from gridsignal.mesh.build import card_for
 from gridsignal.mesh.cards import AgentCard, AgentKind, Health, derived_signing_key
 from gridsignal.perf import percentile
 
-DEFAULT_SIZES: tuple[int, ...] = (1_000, 10_000)
+try:  # pragma: no cover - Windows has no resource module
+    import resource
+except ImportError:  # pragma: no cover
+    resource = None  # type: ignore[assignment]
+
+#: What ``getrlimit`` reports when there is no limit at all, or when there is no
+#: ``resource`` module to ask.
+NO_FD_LIMIT = resource.RLIM_INFINITY if resource is not None else -1
+
+DEFAULT_SIZES: tuple[int, ...] = (1_000,)
+FULL_SIZES: tuple[int, ...] = (1_000, 10_000)
 DEFAULT_WORKERS = 2
+#: Connections the benchmark wants, split across the worker processes. Sockets cost more
+#: than the frames they carry at this scale, so more of them is slower, not faster.
+WANTED_CONNECTIONS = 32
+#: File descriptors left for everything that is not a benchmark socket: stdio, the
+#: listener, the pipes back to the parent, whatever the interpreter has already opened.
+RESERVED_FDS = 64
 DEFAULT_SEED = 7
 #: Event window the call for capacity covers, in hours. Simulated.
 HOURS = 2.0
@@ -67,8 +91,43 @@ MAX_ATTEMPTS = 4
 ROUND_TIMEOUT_S = 180.0
 
 
+def raise_fd_limit() -> int:
+    """Ask for every file descriptor this box will give us; return the soft limit.
+
+    A default macOS shell offers 256, which is fewer than one socket per agent at any
+    interesting fleet size. The soft limit can always be raised to the hard limit without
+    privileges, so the benchmark does that first and plans against what it actually got.
+    """
+    if resource is None:  # pragma: no cover - Windows
+        return 0
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft != hard and (hard == resource.RLIM_INFINITY or soft < hard):
+        try:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (hard, hard))
+        except (ValueError, OSError):  # pragma: no cover - refused by the kernel
+            return soft
+        soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+    return soft
+
+
+def connection_plan(agents: int, workers: int, wanted: int = WANTED_CONNECTIONS) -> int:
+    """How many sockets this round may open, inside the file-descriptor limit.
+
+    The coordinator process holds one descriptor per connection, so its limit is the
+    binding one. Fewer connections than agents is not a degraded run: the protocol
+    addresses agents by id, so the same frames cross the same process boundary either way.
+    """
+    soft = raise_fd_limit()
+    room = wanted if soft in (0, NO_FD_LIMIT) else soft - RESERVED_FDS
+    return max(workers, min(agents, wanted, room))
+
+
 def _percent(part: float, whole: float) -> float:
     return round(100.0 * part / whole, 1) if whole else 0.0
+
+
+class TransportTooBig(RuntimeError):
+    """This box could not carry the round asked of it. Printed, never raised at a judge."""
 
 
 @dataclass(frozen=True)
@@ -121,6 +180,10 @@ class TransportResult:
         return _percent(self.completed, self.agents)
 
     @property
+    def agents_per_connection(self) -> float:
+        return round(self.agents / self.connections, 1) if self.connections else 0.0
+
+    @property
     def drop_pct_measured(self) -> float:
         return _percent(self.frames_dropped, self.frames_received + self.frames_dropped)
 
@@ -146,19 +209,21 @@ def _bid_kw(card: AgentCard) -> float:
     return round(min(card.capability("kw_available"), energy_limit), 3)
 
 
-async def _agent_session(
+async def _channel_session(
     host: str,
     port: int,
-    card: AgentCard,
-    key: bytes,
+    signed: dict[str, AgentCard],
     drop: float,
     rng: random.Random,
     stats: dict[str, int],
 ) -> None:
-    """One agent, one socket, for the length of one round."""
+    """One socket carrying many agents, for the length of one round.
+
+    Every frame in either direction names its agent, so the multiplexing is invisible to
+    the protocol: the coordinator still addresses, awards and retries one agent at a time.
+    """
     reader, writer = await asyncio.open_connection(host, port)
-    signed = card.signed(key)
-    await _send(writer, {"t": "hello", "id": card.agent_id}, stats)
+    await _send(writer, {"t": "hello", "ids": list(signed)}, stats)
     while True:
         line = await reader.readline()
         if not line:
@@ -168,30 +233,31 @@ async def _agent_session(
         kind = frame["t"]
         # Teardown is outside the measured protocol and is never dropped, so a lost
         # frame cannot strand an agent process after the round is scored.
-        if kind != "done" and drop and rng.random() < drop:
+        if kind == "done":
+            writer.close()
+            return
+        if drop and rng.random() < drop:
             stats["dropped"] += 1
             continue
+        card = signed[str(frame["id"])]
         if kind == "call":
             await _send(
                 writer,
                 {
                     "t": "bid",
-                    "id": signed.agent_id,
-                    "kw": _bid_kw(signed),
-                    "zone": signed.zone,
-                    "caps": signed.capabilities,
-                    "health": signed.health.value,
-                    "hb": signed.last_heartbeat_s,
-                    "controller": signed.controller,
-                    "sig": signed.signature,
+                    "id": card.agent_id,
+                    "kw": _bid_kw(card),
+                    "zone": card.zone,
+                    "caps": card.capabilities,
+                    "health": card.health.value,
+                    "hb": card.last_heartbeat_s,
+                    "controller": card.controller,
+                    "sig": card.signature,
                 },
                 stats,
             )
         elif kind in {"award", "none"}:
-            await _send(writer, {"t": "ack", "id": signed.agent_id}, stats)
-        elif kind == "done":
-            writer.close()
-            return
+            await _send(writer, {"t": "ack", "id": card.agent_id}, stats)
 
 
 async def _send(
@@ -203,9 +269,17 @@ async def _send(
 
 
 async def _run_agents(
-    host: str, port: int, seed: int, fleet_size: int, start: int, end: int, drop: float, forged: int
+    host: str,
+    port: int,
+    seed: int,
+    fleet_size: int,
+    start: int,
+    end: int,
+    drop: float,
+    forged: int,
+    channels: int,
 ) -> dict[str, int]:
-    """Open every agent's connection in this worker and keep them alive for the round.
+    """Sign this worker's agents and carry them over ``channels`` connections.
 
     ``forged`` agents sign with the wrong key: the coordinator must refuse their bids,
     which proves the signature is checked across the process boundary and not assumed.
@@ -214,17 +288,21 @@ async def _run_agents(
     wrong_key = derived_signing_key(seed + 1)
     stats = {"sent": 0, "received": 0, "dropped": 0}
     cards = _fleet_cards(seed, fleet_size, start, end)
+    signed = [
+        card.signed(wrong_key if index < forged else key) for index, card in enumerate(cards)
+    ]
+    edges = [round(len(signed) * i / channels) for i in range(channels + 1)]
     sessions = [
-        _agent_session(
+        _channel_session(
             host,
             port,
-            card,
-            wrong_key if index < forged else key,
+            {c.agent_id: c for c in signed[edges[i] : edges[i + 1]]},
             drop,
-            random.Random(seed * 1_000_003 + start + index),
+            random.Random(seed * 1_000_003 + start + i),
             stats,
         )
-        for index, card in enumerate(cards)
+        for i in range(channels)
+        if edges[i] < edges[i + 1]
     ]
     await asyncio.gather(*sessions)
     return stats
@@ -239,11 +317,15 @@ def _worker(
     end: int,
     drop: float,
     forged: int,
+    channels: int,
     back: Connection,
 ) -> None:  # pragma: no cover - runs in a child process
     """Entry point of one agent process."""
     try:
-        stats = asyncio.run(_run_agents(host, port, seed, fleet_size, start, end, drop, forged))
+        raise_fd_limit()
+        stats = asyncio.run(
+            _run_agents(host, port, seed, fleet_size, start, end, drop, forged, channels)
+        )
         back.send(stats)
     except Exception as error:  # noqa: BLE001 - reported to the parent, which fails the run
         back.send({"error": f"{type(error).__name__}: {error}"})
@@ -263,6 +345,8 @@ class _Round:
         self.drop = drop
         self.rng = random.Random(seed * 7_919)
         self.writers: dict[str, asyncio.StreamWriter] = {}
+        #: One entry per socket, however many agents it carries.
+        self.channels: list[asyncio.StreamWriter] = []
         self.bids: dict[str, float] = {}
         #: Every agent that answered the call, including those with nothing to offer.
         self.replied: set[str] = set()
@@ -281,7 +365,6 @@ class _Round:
     # -- wire
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
-        agent_id = ""
         try:
             while True:
                 line = await reader.readline()
@@ -296,24 +379,25 @@ class _Round:
                     self.dropped += 1
                     continue
                 if kind == "hello":
-                    agent_id = str(frame["id"])
-                    self.writers[agent_id] = writer
+                    self.channels.append(writer)
+                    for agent_id in frame["ids"]:
+                        self.writers[str(agent_id)] = writer
                     if len(self.writers) == self.expected:
                         self.connected.set()
                 elif kind == "bid":
-                    self._take_bid(agent_id, frame)
+                    self._take_bid(frame)
                 elif kind == "ack":
                     self._take_ack(str(frame["id"]))
         except (ConnectionResetError, asyncio.IncompleteReadError):  # pragma: no cover
             return
 
-    def _take_bid(self, connection_id: str, frame: dict[str, object]) -> None:
+    def _take_bid(self, frame: dict[str, object]) -> None:
         """Accept a bid only from a card whose signature verifies in this process.
 
-        The connection has answered either way, so a refused bid is not re-sent to: the
-        agent is heard from, it simply has nothing this coordinator can trust.
+        The agent has answered either way, so a refused bid is not re-sent to: it is
+        heard from, it simply has nothing this coordinator can trust.
         """
-        self.replied.add(connection_id)
+        self.replied.add(str(frame["id"]))
         card = AgentCard(
             agent_id=str(frame["id"]),
             kind=AgentKind.BATTERY,
@@ -341,13 +425,15 @@ class _Round:
         writer = self.writers.get(agent_id)
         if writer is None:  # pragma: no cover - only if an agent vanished
             return
-        writer.write((json.dumps(frame, separators=(",", ":")) + "\n").encode())
+        # One socket carries many agents, so every frame says which one it is for.
+        addressed = {**frame, "id": agent_id}
+        writer.write((json.dumps(addressed, separators=(",", ":")) + "\n").encode())
         self.sent += 1
 
     async def _broadcast(self, agent_ids: list[str], frame: dict[str, object]) -> None:
         for agent_id in agent_ids:
             await self._write(agent_id, frame)
-        await asyncio.gather(*(w.drain() for w in self.writers.values()))
+        await asyncio.gather(*(w.drain() for w in self.channels))
 
     # -- protocol
 
@@ -398,13 +484,16 @@ class _Round:
                     else {"t": "none", "id": agent_id}
                 )
                 await self._write(agent_id, frame)
-            await asyncio.gather(*(w.drain() for w in self.writers.values()))
+            await asyncio.gather(*(w.drain() for w in self.channels))
             await self._until(
                 lambda: len(self.acked) == len(self.writers),
                 time.perf_counter() + RETRY_AFTER_S,
             )
 
-        await self._broadcast(list(self.writers), {"t": "done"})
+        for channel in self.channels:
+            channel.write(b'{"t":"done"}\n')
+            self.sent += 1
+        await asyncio.gather(*(w.drain() for w in self.channels))
 
 
 async def _measure(
@@ -413,8 +502,10 @@ async def _measure(
     seed: int,
     drop: float,
     forged: int,
+    connections: int,
     host: str = "127.0.0.1",
 ) -> TransportResult:
+    channels = max(1, connections // workers)
     round_ = _Round(agents, seed, drop)
     server = await asyncio.start_server(round_.handle, host, 0)
     port = int(server.sockets[0].getsockname()[1])
@@ -437,6 +528,7 @@ async def _measure(
                 bounds[index + 1],
                 drop,
                 forged if index == 0 else 0,
+                min(channels, bounds[index + 1] - bounds[index]),
                 child,
             ),
             daemon=True,
@@ -450,6 +542,12 @@ async def _measure(
         try:
             await asyncio.wait_for(round_.connected.wait(), ROUND_TIMEOUT_S)
             await asyncio.wait_for(round_.run(agents * GAP_KW_PER_AGENT), ROUND_TIMEOUT_S)
+        except TimeoutError as expired:
+            raise TransportTooBig(
+                f"{agents:,} agents did not finish a round in {ROUND_TIMEOUT_S:.0f} s "
+                f"over {len(round_.channels)} sockets "
+                f"({len(round_.writers):,} of them connected)"
+            ) from expired
         finally:
             for proc in procs:
                 proc.join(timeout=30)
@@ -469,7 +567,7 @@ async def _measure(
     return TransportResult(
         agents=agents,
         worker_processes=workers,
-        connections=len(round_.writers),
+        connections=len(round_.channels),
         drop=drop,
         gap_kw=round(agents * GAP_KW_PER_AGENT, 2),
         covered_kw=round(sum(round_.awards.values()), 2),
@@ -492,16 +590,26 @@ def measure(
     seed: int = DEFAULT_SEED,
     drop: float = 0.0,
     forged: int = 0,
+    connections: int | None = None,
 ) -> TransportResult:
-    """Run one auction over loopback sockets between separate processes and time it."""
-    return asyncio.run(_measure(agents, workers, seed, drop, forged))
+    """Run one auction over loopback sockets between separate processes and time it.
+
+    ``connections`` defaults to whatever the file-descriptor limit allows, so this is
+    safe to call on a laptop with ``ulimit -n 256`` at any fleet size.
+    """
+    planned = connection_plan(agents, workers) if connections is None else connections
+    return asyncio.run(_measure(agents, workers, seed, drop, forged, planned))
 
 
 def lines(results: list[TransportResult]) -> list[str]:
+    soft = raise_fd_limit()
     out = [
         "Transport benchmark: coordinator and agents in separate processes",
-        "Local loopback (127.0.0.1), one TCP socket per agent, signed cards verified",
-        "across the process boundary. Not a WAN: no gateway, cellular or inverter time.",
+        "Local loopback (127.0.0.1), agents multiplexed over TCP sockets, signed cards",
+        "verified across the process boundary. Not a WAN: no gateway, cellular or",
+        "inverter time.",
+        f"File descriptor limit on this box: {soft:,} "
+        f"(soft, after asking for the hard limit).",
         "",
         f"{'agents':>8}  {'procs':>5}  {'drop':>5}  {'p50 ms':>8}  {'p95 ms':>8}  "
         f"{'max ms':>8}  {'frames/s':>10}  {'covered':>8}",
@@ -517,7 +625,8 @@ def lines(results: list[TransportResult]) -> list[str]:
     for result in results:
         out += [
             f"{result.agents:,} agents at {result.drop * 100:.0f}% drop:",
-            f"  {result.connections:,} sockets, {result.bids:,} verified bids, "
+            f"  {result.connections:,} sockets carrying "
+            f"{result.agents_per_connection:,.0f} agents each, {result.bids:,} verified bids, "
             f"{result.awards:,} awards, {result.completed:,} agents finished "
             f"({result.completed_pct:.0f}%)",
             f"  {result.frames:,} frames in {result.wall_s:,.2f} s "
@@ -548,14 +657,31 @@ def report(
     return "\n".join(lines([measure(size, workers, drop=drop) for size in sizes]))
 
 
+def _sizes_from(args: argparse.Namespace) -> list[int]:
+    if args.agents:
+        return list(args.agents)
+    return list(FULL_SIZES if args.full else DEFAULT_SIZES)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--agents",
         type=int,
         nargs="+",
-        default=list(DEFAULT_SIZES),
-        help="agent counts to measure (default: 1000 10000)",
+        default=None,
+        help="agent counts to measure (default: 1000)",
+    )
+    parser.add_argument(
+        "--full",
+        action="store_true",
+        help="also measure 10,000 agents, which takes minutes on a small box",
+    )
+    parser.add_argument(
+        "--connections",
+        type=int,
+        default=None,
+        help="sockets to multiplex the agents over (default: as many as the fd limit allows)",
     )
     parser.add_argument(
         "--workers", type=int, default=DEFAULT_WORKERS, help="agent processes (default: 2)"
@@ -576,9 +702,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", type=str, default=None, help="also write the raw numbers here")
     args = parser.parse_args(argv)
 
-    results = [
-        measure(agents, args.workers, args.seed, args.drop, args.forged) for agents in args.agents
-    ]
+    try:
+        results = [
+            measure(agents, args.workers, args.seed, args.drop, args.forged, args.connections)
+            for agents in _sizes_from(args)
+        ]
+    except TransportTooBig as too_big:
+        # A judge on a small laptop gets a sentence, not a traceback.
+        print(f"transport benchmark scaled down: {too_big}", file=sys.stderr)
+        print("Try a smaller --agents, or --workers 1 to leave this box more room.")
+        return 1
     print("\n".join(lines(results)))
     if args.json:
         with open(args.json, "w") as handle:

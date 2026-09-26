@@ -107,12 +107,21 @@ uploads `perf.json`, so a run's numbers can be compared with this page.
 
 Everything above is in-process compute. This section is not: the coordinator runs in one OS
 process and the agents in two more, and the only thing they share is a TCP connection on
-`127.0.0.1`. One socket per agent, newline-delimited JSON frames, and each capability card
-is HMAC-signed in the agent process and verified in the coordinator process, so a forged
-card is refused across the wire rather than inside one interpreter.
+`127.0.0.1`. Newline-delimited JSON frames, and each capability card is HMAC-signed in the
+agent process and verified in the coordinator process, so a forged card is refused across
+the wire rather than inside one interpreter.
+
+Agents are **multiplexed**: every frame names the agent it is for, so 32 sockets carry
+10,000 agents (312 each) instead of needing 10,000 file descriptors. The soft
+`RLIMIT_NOFILE` is raised to the hard limit at startup and the socket count is planned
+against whatever the box actually allows, so a laptop with `ulimit -n 256` runs the same
+benchmark as a server — fewer sockets if it must, a printed line if the round still cannot
+fit, never a traceback. `tests/test_transport.py` runs the benchmark in a child process
+with both `RLIMIT_NOFILE` limits lowered to 256 and asserts a clean 100% result.
 
 ```bash
-python -m gridsignal.transport                        # 1,000 and 10,000 agents
+python -m gridsignal.transport                        # 1,000 agents (the default)
+python -m gridsignal.transport --full                 # also 10,000 agents
 python -m gridsignal.transport --agents 1000 --drop 0.05
 python -m gridsignal.transport --agents 1000 --forged 5
 ```
@@ -120,20 +129,27 @@ python -m gridsignal.transport --agents 1000 --forged 5
 One sample is the whole round trip an operator waits on: call for capacity broadcast ->
 signed bid -> ranked award -> the agent's acknowledgement.
 
+Measured on a 2 vCPU Linux box with `ulimit -n 256` (the tight case), 32 sockets:
+
 | agents | drop | p50 ms | p95 ms | max ms | frames/s | re-sends | covered | finished |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| 1,000 | 0% | 65.5 | 67.5 | 67.7 | 7,453 | 0 | 100% | 1,000 of 1,000 |
-| 10,000 | 0% | 816.9 | 834.8 | 836.6 | 6,950 | 0 | 100% | 10,000 of 10,000 |
-| 1,000 | 5% | 1,579.0 | 2,339.3 | 3,856.7 | 2,045 | 218 | 100% | 999 of 1,000 |
-| 10,000 | 5% | 3,990.3 | 4,885.0 | 6,534.4 | 7,827 | 2,049 | 100% | 9,999 of 10,000 |
+| 1,000 | 0% | 27.9 | 28.9 | 29.0 | 18,431 | 0 | 100% | 1,000 of 1,000 |
+| 10,000 | 0% | 222.6 | 231.9 | 232.9 | 109,315 | 0 | 100% | 10,000 of 10,000 |
+| 1,000 | 5% | 1,536.6 | 2,291.3 | 3,046.1 | 1,760 | 195 | 100% | 999 of 1,000 |
+| 10,000 | 5% | 3,177.6 | 3,939.2 | 5,446.6 | 14,268 | 2,086 | 100% | 10,000 of 10,000 |
+
+Wall clock for the commands themselves on that box: **0.81 s** for the default 1,000-agent
+run and **1.48 s** for `--full` (1,000 and 10,000), both at `ulimit -n 256`.
 
 Read the ratios, not the milliseconds: they are this box (2 vCPU), and detect-to-award over
-loopback at 10,000 agents costs 816.9 ms against 25.9 ms for the same negotiation in one
-process, about 32x — the transport, not the ranking, is the bill.
+loopback at 10,000 agents costs 222.6 ms against 25.9 ms for the same negotiation in one
+process, about 9x — the transport, not the ranking, is the bill. Multiplexing is most of
+that gap: one socket per agent cost 816.9 ms at 10,000 and could not open at all under a
+laptop's descriptor limit.
 
 Under 5% loss, thrown-away frames are re-sent: the call still clears 100% at both sizes, and
-what it costs is the tail (p95 67.5 ms -> 2,339.3 ms at 1,000 agents). The honest failure is
-in the last column — one agent in each lossy run had four acknowledgements in a row dropped
+what it costs is the tail (p95 28.9 ms -> 2,291.3 ms at 1,000 agents). The honest failure is
+in the last column — one agent in the lossy 1,000-agent run had four acknowledgements dropped
 and was never confirmed, so the coordinator ends the round believing it is uncommitted. A
 field system needs a durable re-send queue, not four attempts.
 
@@ -146,5 +162,5 @@ these are the software's own costs under a real socket and a real process bounda
 - Everything outside that section is in-process messaging. No radio, no gateway, no inverter.
 - The product itself runs the mesh in one process, deliberately not parallelised:
   determinism and a replayable trace matter more here than another 2x.
-- Four re-send attempts, in memory. One agent in 10,000 goes unconfirmed at 5% loss.
+- Four re-send attempts, in memory. About one agent per lossy run goes unconfirmed.
 - Numbers move with the machine. Compare the ratios, or re-run the one command.

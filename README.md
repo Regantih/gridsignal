@@ -1052,9 +1052,12 @@ fixes, from one command (`python -m gridsignal.perf --before`) — is in
 
 The one benchmark that is not in-process lives there too: `python -m gridsignal.transport` runs
 the coordinator and the agents as **separate OS processes** talking over loopback TCP sockets
-with HMAC-signed cards verified across the boundary, and times detect-to-award at 1,000 and
-10,000 agents, with and without 5% packet loss. **Local loopback, not a WAN** — no gateway, no
-cellular link, no inverter.
+with HMAC-signed cards verified across the boundary, and times detect-to-award at 1,000 agents
+by default (`--full` adds 10,000), with and without 5% packet loss. Agents are multiplexed over
+32 sockets rather than one each, and the file-descriptor limit is raised at startup and planned
+against, so the default command finishes in **0.81 s** — and `--full` in **1.48 s** — on a
+2 vCPU box with `ulimit -n 256`. **Local loopback, not a WAN** — no gateway, no cellular link,
+no inverter.
 
 Every row below is **in-process compute on in-memory simulated state**: no network, no message bus, no
 device round trips. They measure how long the orchestration maths takes, not how fast a real

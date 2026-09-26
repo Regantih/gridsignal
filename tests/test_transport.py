@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -10,6 +13,9 @@ import pytest
 from gridsignal import transport
 
 AGENTS = 60
+#: What a default macOS shell offers, and fewer than one descriptor per agent at any
+#: fleet size worth measuring.
+TIGHT_FDS = 256
 
 
 @pytest.fixture(scope="module")
@@ -20,9 +26,10 @@ def clean() -> transport.TransportResult:
 def test_every_agent_connects_from_another_process_and_is_timed(
     clean: transport.TransportResult,
 ) -> None:
-    """One socket per agent, opened by a child process, and one latency sample each."""
+    """Every agent is heard over a socket opened by a child process, and timed once."""
     assert clean.worker_processes == 2
-    assert clean.connections == AGENTS
+    assert 0 < clean.connections <= AGENTS
+    assert clean.agents_per_connection >= 1
     assert clean.completed == AGENTS
     assert len(clean.latencies_ms) == AGENTS
     assert clean.frames_sent > 0 and clean.frames_received > 0
@@ -78,11 +85,55 @@ def test_five_percent_packet_loss_costs_the_tail_but_still_clears(
     assert lossy.completed == AGENTS
 
 
+def test_the_fleet_is_multiplexed_so_the_sockets_do_not_grow_with_the_fleet() -> None:
+    """Four times the agents over the same four descriptors, and the call still clears."""
+    small = transport.measure(AGENTS, workers=2, connections=4)
+    big = transport.measure(AGENTS * 4, workers=2, connections=4)
+
+    assert small.connections == big.connections == 4
+    assert big.agents_per_connection == AGENTS
+    assert small.completed == AGENTS and big.completed == AGENTS * 4
+    assert small.coverage_pct == big.coverage_pct == pytest.approx(100.0)
+
+
+def test_the_plan_never_asks_for_more_sockets_than_the_fleet_or_the_limit() -> None:
+    """The descriptor budget, not the fleet size, decides how many sockets are opened."""
+    assert transport.raise_fd_limit() > 0
+    assert transport.connection_plan(10, workers=2) == 10
+    assert transport.connection_plan(10_000, workers=2) == transport.WANTED_CONNECTIONS
+    assert transport.connection_plan(10_000, workers=2, wanted=4) == 4
+
+
+@pytest.mark.slow
+def test_the_benchmark_runs_clean_under_a_laptop_file_descriptor_limit() -> None:
+    """A judge on a box with `ulimit -n 256` gets numbers, not an asyncio traceback.
+
+    The child lowers the hard limit too, so the startup call that raises the soft limit
+    to the hard one cannot undo the constraint this test is about.
+    """
+    script = textwrap.dedent(f"""
+        import resource
+        resource.setrlimit(resource.RLIMIT_NOFILE, ({TIGHT_FDS}, {TIGHT_FDS}))
+        from gridsignal import transport
+        assert transport.raise_fd_limit() == {TIGHT_FDS}
+        raise SystemExit(transport.main(["--agents", "2000", "--workers", "2"]))
+    """)
+    done = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, timeout=300
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "Traceback" not in done.stderr
+    assert "2,000 agents finished (100%)" in done.stdout
+    assert f"File descriptor limit on this box: {TIGHT_FDS}" in done.stdout
+
+
 def test_the_report_labels_the_benchmark_loopback_and_names_the_command() -> None:
     text = transport.report(sizes=(AGENTS,), workers=2)
 
     assert "Local loopback (127.0.0.1)" in text
     assert "Not a WAN" in text
+    assert "File descriptor limit on this box" in text
     assert "p50 ms" in text and "p95 ms" in text
     assert "python -m gridsignal.transport" in text
 

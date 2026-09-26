@@ -311,7 +311,9 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
                 "It survives a real transport, not just a function call",
                 f"p50 {wire.p50_ms:,.0f} ms, p95 {wire.p95_ms:,.0f} ms detect to award",
                 f"{wire.agents:,} agents in {wire.worker_processes} separate processes, "
-                f"one loopback TCP socket each, cards signed in the agent process and "
+                f"multiplexed over {wire.connections} loopback TCP sockets "
+                f"({wire.agents_per_connection:,.0f} agents each, so the fleet fits a "
+                f"laptop's file-descriptor limit), cards signed in the agent process and "
                 f"verified in the coordinator's: {wire.frames:,} frames at "
                 f"{wire.frames_per_s:,.0f}/s, {wire.coverage_pct:.0f}% of the call "
                 f"covered. Local loopback, not a WAN — no gateway, cellular or inverter "
