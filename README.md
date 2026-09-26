@@ -119,6 +119,11 @@ The sidebar **View** switch picks between the five pages:
 
 ### Control Room
 
+- **Advanced panels** (sidebar, **off by default**) — off, the screens show only the story
+  [`docs/DEMO.md`](docs/DEMO.md) narrates: overview, home-first, fleet map, price trace,
+  incident, approval, recovery and the audit trail. On, it adds the full-fleet replay, spare
+  capacity, the storm reserve policy, the congestion dispatch preference, mutual aid, the
+  portable-generator note, the install wave and the calibration line described below.
 - **Trigger BAT-042 Failure** (sidebar) — simulate the telemetry blackout.
 - **Approve Recovery Plan** (incident panel) — the human gate; nothing moves until it is clicked.
 - **Reset Demo** (sidebar) — replay the story without reloading the browser.

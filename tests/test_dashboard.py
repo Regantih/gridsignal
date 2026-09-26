@@ -183,6 +183,8 @@ def test_incident_panel_shows_one_verdict_that_cannot_contradict_the_button() ->
 
 def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
     app = fresh()
+    app.session_state["advanced"] = True  # spare capacity is not on the demo screen
+    app.run()
     captions = " ".join(c.value for c in app.caption)
     assert "wear floor" in captions
 
@@ -473,3 +475,54 @@ def test_a_ten_thousand_device_fault_answers_quickly_once_the_pack_is_warm() -> 
     assert incident.lost_kw > 0
     assert verdict.action is not None and not decision.gate_clear
     assert elapsed < 2.0, f"{elapsed:.2f}s"
+
+
+#: Panels the demo script does not narrate. They exist, but not on the default screen.
+ADVANCED_PANELS = (
+    "Full-fleet scarcity replay",
+    "Spare capacity",
+    "Storm reserve policy",
+    "Discharge first under congestion",
+)
+
+
+def test_the_default_control_room_hides_what_the_demo_does_not_narrate(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    app = rendered_views["Control Room"]
+    assert app.session_state["advanced"] is False
+    text = markdown_text(app) + " ".join(s.label for s in app.selectbox)
+    for panel in ADVANCED_PANELS:
+        assert panel not in text, f"{panel} is on the default Control Room"
+    assert "Fleet map" in [h.value for h in app.subheader]
+
+
+def test_the_advanced_toggle_brings_the_extra_panels_back() -> None:
+    app = fresh()
+    app.session_state["advanced"] = True
+    app.run()
+    assert not app.exception, app.exception
+    text = markdown_text(app) + " ".join(s.label for s in app.selectbox)
+    for panel in ADVANCED_PANELS:
+        assert panel in text, f"{panel} is missing with Advanced on"
+
+
+def test_the_member_app_keeps_mutual_aid_behind_advanced(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    assert "Neighbour mutual aid" not in markdown_text(rendered_views["Member App"])
+    app = fresh("Member App")
+    app.session_state["advanced"] = True
+    app.run()
+    assert "Neighbour mutual aid" in markdown_text(app)
+
+
+def test_the_agent_mesh_keeps_the_install_wave_behind_advanced(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    mesh = rendered_views["Agent Mesh"]
+    assert "Install wave" not in " ".join(h.value for h in mesh.subheader)
+    app = fresh("Agent Mesh")
+    app.session_state["advanced"] = True
+    app.run()
+    assert "Install wave" in " ".join(h.value for h in app.subheader)

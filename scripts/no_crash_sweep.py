@@ -258,6 +258,11 @@ def sweep_app(port: int) -> list[Result]:
         page.get_by_text("Fleet map", exact=False).first.wait_for(timeout=120_000)
         check(page, "view: Control Room (first load)")
 
+        # The demo screen is the default one; the extra panels only exist behind the toggle.
+        page.get_by_text("Advanced panels", exact=False).first.click()
+        page.get_by_text("Spare capacity", exact=False).first.wait_for(timeout=120_000)
+        check(page, "Control Room: advanced panels on")
+
         # Control Room: every price day against every fleet scale, then the whole loop.
         for day in radio(page, "ERCOT price day"):
             pick_radio(page, "ERCOT price day", day, f"Control Room: {day}")

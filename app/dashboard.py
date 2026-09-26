@@ -1078,12 +1078,19 @@ def render_principles(verdict: Verdict, decision: ApprovalDecision | None = None
         f"<div class='gs-body' style='margin-top:.5rem'><b>Why:</b> {verdict.reason}</div>"
         f"{gate}"
         f"<div class='gs-body' style='margin-top:.35rem'>Three hard vetoes, then three "
-        f"weighted principles; the certainty bar rises with the money at stake. Weights "
-        f"and bars are calibrated on <b>simulated</b> operator overrides, not on real "
-        f"Base operators.</div></div>",
+        f"weighted principles; the certainty bar rises with the money at stake."
+        + (
+            " Weights and bars are calibrated on <b>simulated</b> operator overrides, "
+            "not on real Base operators."
+            if advanced()
+            else ""
+        )
+        + "</div></div>",
         unsafe_allow_html=True,
     )
     st.dataframe(pd.DataFrame(principle_rows(verdict)), hide_index=True, use_container_width=True)
+    if not advanced():
+        return
     rules_correct, jev_correct, questions = blind_pack()
     caption(
         f"The rules and the hard vetoes decide; the model is a second opinion that escalates "
@@ -1349,7 +1356,18 @@ def render_scenario_controls() -> None:
             "A gateway firmware ring covers one device per 48, so the same failure takes "
             "out more of the fleet — and more revenue — as the fleet grows."
         )
+        st.toggle("Advanced panels", key="advanced", value=False)
+        caption(
+            "Off by default: the screens show the one story the demo narrates. On, it adds "
+            "the full-fleet replay, spare capacity, storm reserve, congestion preference, "
+            "mutual aid, the generator note, the install wave and the calibration line."
+        )
         st.divider()
+
+
+def advanced() -> bool:
+    """Whether the extra panels are on. Off by default so the demo path stays one story."""
+    return bool(st.session_state.get("advanced", False))
 
 
 @st.cache_data(show_spinner=False)
@@ -1802,13 +1820,14 @@ def render_member(eng: ControlRoomEngine) -> None:
             f"earnings assume a {member.MEMBER_REVENUE_SHARE:.0%} member revenue share "
             "— both are assumptions in this simulation, not a Base Power tariff."
         )
-        if view.generator_kwh > 0:
+        if view.generator_kwh > 0 and advanced():
             st.info(
                 f"Your portable generator adds about {view.generator_kwh:,.1f} kWh, worth "
                 f"another {view.generator_hours:.1f} hours if an outage runs long "
                 "(simulated, and only counted while it has fuel)."
             )
-        render_mutual_aid(eng)
+        if advanced():
+            render_mutual_aid(eng)
     with right:
         st.markdown("<div class='gs-kicker'>Your neighbourhood</div>", True)
         peers = member.neighbours(eng, device_id)
@@ -2664,7 +2683,8 @@ def render_rollout() -> None:
         "replayable JSONL trace."
     )
 
-    render_install_wave()
+    if advanced():
+        render_install_wave()
 
 
 def render_install_wave() -> None:
@@ -2816,8 +2836,9 @@ def main() -> None:
     st.divider()
     render_home_first(eng)
     st.divider()
-    render_fleet_replay()
-    st.divider()
+    if advanced():
+        render_fleet_replay()
+        st.divider()
     left, right = st.columns([3, 2], gap="large")
     with left:
         st.subheader("Fleet map")
@@ -2825,9 +2846,10 @@ def main() -> None:
         st.subheader("ERCOT price trace")
         render_prices(eng)
     with right:
-        render_surplus(eng)
-        render_reserve_policy(eng)
-        render_dispatch_priority(eng)
+        if advanced():
+            render_surplus(eng)
+            render_reserve_policy(eng)
+            render_dispatch_priority(eng)
         render_incident(eng)
     st.divider()
     render_workflow(eng)

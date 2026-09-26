@@ -54,11 +54,15 @@ ratio and the caveat that absolute times are machine-dependent live in
 Home-first dispatch in detail, the storm reserve policy, mutual aid, the congestion map, the
 ancillary co-optimization, the deliverability check and the held-out chaos drills
 (`python -m gridsignal.drills`) are all in the app and in the README; they are left out of the
-script to keep it to one story. The **Why** page is the one to leave on screen for questions:
-it states the problem, the approach, the evidence and the limits with every figure recomputed
-as the page loads (`python -m gridsignal.why`). The chaos-scenario picker lists the
-files in `scenarios/`; the held-out drills in `scenarios/holdout/` are deliberately kept out of
-it and run from the CLI, so the script never asks for a scenario the picker does not have.
+script to keep it to one story. The screen matches the script by default: the sidebar's
+**Advanced panels** toggle is off, so the full-fleet replay, spare capacity, storm reserve,
+congestion preference, mutual aid, the portable-generator note, the install wave and the
+calibration line are hidden until someone asks. Turn it on to answer a question, then off
+again. The **Why** page is the one to leave on screen for questions: it states the problem,
+the approach, the evidence and the limits with every figure recomputed as the page loads
+(`python -m gridsignal.why`). The chaos-scenario picker lists the files in `scenarios/`; the
+held-out drills in `scenarios/holdout/` are deliberately kept out of it and run from the CLI,
+so the script never asks for a scenario the picker does not have.
 
 ## Safety boundaries
 
