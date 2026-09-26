@@ -1227,7 +1227,8 @@ real Base Power device or fleet.
 | [`docs/WRITEUP.md`](docs/WRITEUP.md) | The 150–300 word write-up: problem, who it helps, solution, impact |
 | [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | Submission checklist, the same write-up, deploy and capture instructions |
 | [`docs/JUDGING_MAP.md`](docs/JUDGING_MAP.md) | Every judging sub-criterion mapped to the file, test or screen that proves it |
-| [`docs/DEMO.md`](docs/DEMO.md) | The timed 4:40 demo script, three beats |
+| [`docs/DEMO.md`](docs/DEMO.md) | The timed 4:50 demo script: one story, each scene mapped to a rubric line and a file |
+| [`docs/JUDGE_DRY_RUN.md`](docs/JUDGE_DRY_RUN.md) | An honest self-score against each rubric line, with the three weakest lines and what would fix them |
 | [`docs/ROSTER.md`](docs/ROSTER.md) | Team roster template |
 | [`docs/architecture.md`](docs/architecture.md) | Data-pipeline architecture notes |
 

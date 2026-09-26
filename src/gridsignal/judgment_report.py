@@ -247,10 +247,6 @@ class CalibrationResult:
     calibration: Calibration
     overridden: int
 
-    @property
-    def improvement(self) -> float:
-        return round(self.after - self.before, 4)
-
 
 def calibration_result(directory: Path = FIXTURE_DIR) -> CalibrationResult:
     log = overrides.episodes()

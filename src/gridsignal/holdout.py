@@ -160,7 +160,6 @@ class HoldoutSummary:
     mean_uplift_usd: float
     median_uplift_usd: float
     worst_uplift_usd: float
-    best_uplift_usd: float
 
     def fleet_usd(self, devices: int) -> float:
         """Mean daily uplift scaled to a fleet."""
@@ -176,7 +175,6 @@ def summarize(results: list[DayResult]) -> HoldoutSummary:
         mean_uplift_usd=round(float(uplifts.mean()), 2) if len(uplifts) else 0.0,
         median_uplift_usd=round(float(uplifts.median()), 2) if len(uplifts) else 0.0,
         worst_uplift_usd=round(float(uplifts.min()), 2) if len(uplifts) else 0.0,
-        best_uplift_usd=round(float(uplifts.max()), 2) if len(uplifts) else 0.0,
     )
 
 

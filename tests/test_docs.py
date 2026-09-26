@@ -167,7 +167,13 @@ CLAIMS: tuple[tuple[str, str], ...] = (
 
 #: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the
 #: presenter speaks has to appear in the same command's output.
-CHECKED_DOCS = ("README.md", "docs/WRITEUP.md", "docs/SUBMISSION.md", "docs/JUDGING_MAP.md")
+CHECKED_DOCS = (
+    "README.md",
+    "docs/WRITEUP.md",
+    "docs/SUBMISSION.md",
+    "docs/JUDGING_MAP.md",
+    "docs/JUDGE_DRY_RUN.md",
+)
 
 
 @pytest.fixture(scope="module")

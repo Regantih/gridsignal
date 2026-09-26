@@ -109,7 +109,7 @@ def test_the_command_prints_the_same_page_the_screen_shows(capsys) -> None:  # t
 
 
 def test_the_page_is_built_once_per_process_so_the_timing_cannot_drift() -> None:
-    """Rebuilding it re-times the mesh: slow on camera, and two different answers."""
+    """Rebuilding would re-time the mesh: slow on camera, and two different answers."""
     assert why.build(fleet_size=48) is why.build(fleet_size=48)
 
 

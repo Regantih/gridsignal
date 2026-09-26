@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -157,10 +157,6 @@ class Pack:
             if principle.id == principle_id:
                 return principle
         raise KeyError(principle_id)
-
-    @property
-    def vetoes(self) -> tuple[Principle, ...]:
-        return tuple(p for p in self.principles if p.type is PrincipleType.VETO)
 
     @property
     def softs(self) -> tuple[Principle, ...]:
@@ -473,10 +469,6 @@ class Verdict:
     vetoed: tuple[str, ...]
     source: Source
 
-    @property
-    def needs_human(self) -> bool:
-        return self.action is Action.ASK_A_HUMAN
-
     def view(self, principle_id: str) -> PrincipleView:
         for row in self.breakdown:
             if row.principle.id == principle_id:
@@ -602,7 +594,3 @@ def _soft_reason(
         f"{lead}: every hard principle holds, and certainty {score:.0%} clears the "
         f"{bar:.0%} bar for ${situation.dollars:,.0f} at stake, carried by {named}."
     )
-
-
-def with_weights(calibration: Calibration, weights: Mapping[str, float]) -> Calibration:
-    return replace(calibration, weights={k: float(v) for k, v in weights.items()})
