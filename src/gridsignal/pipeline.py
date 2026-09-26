@@ -28,6 +28,7 @@ def run(
     scenario: str = DEFAULT_SCENARIO,
     z: float = 3.0,
     kwh: float = backtest.DEFAULT_KWH,
+    power_kw: float = backtest.DEFAULT_POWER_KW,
     serve_home: bool = True,
 ) -> PipelineResult:
     """Replay a bundled ERCOT day end to end. No network, no credentials.
@@ -39,7 +40,9 @@ def run(
     detections = detect.detect_spikes(trace.frame, z=z)
     spike_prob = forecast.forecast_spike_probability(forecast.build_features(detections))
     plan = dam.signals_for(detections, spike_prob, trace.dam)
-    ledger = backtest.value_captured(plan, trace.frame, kwh=kwh, serve_home=serve_home)
+    ledger = backtest.value_captured(
+        plan, trace.frame, kwh=kwh, power_kw=power_kw, serve_home=serve_home
+    )
     return PipelineResult(
         trace=trace,
         detections=detections,
@@ -55,10 +58,16 @@ def main() -> None:
     p.add_argument("--scenario", default=DEFAULT_SCENARIO, choices=sorted(SCENARIOS))
     p.add_argument("--z", type=float, default=3.0, help="spike detection threshold")
     p.add_argument("--kwh", type=float, default=backtest.DEFAULT_KWH, help="usable battery kWh")
+    p.add_argument(
+        "--power-kw",
+        type=float,
+        default=backtest.DEFAULT_POWER_KW,
+        help="inverter kW (default: the Base Core-style unit this product is modelled on)",
+    )
     p.add_argument("--devices", type=int, default=1, help="scale the uplift to a fleet")
     args = p.parse_args()
 
-    result = run(scenario=args.scenario, z=args.z, kwh=args.kwh)
+    result = run(scenario=args.scenario, z=args.z, kwh=args.kwh, power_kw=args.power_kw)
     s = result.summary
     print(
         f"{result.trace.location} {result.trace.date} ({args.scenario}): "

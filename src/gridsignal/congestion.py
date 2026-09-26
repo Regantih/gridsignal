@@ -85,7 +85,11 @@ INTERVALS_PER_HOUR = 4
 #: the basis it is being paid for is assumed gone, per dollar of mean positive basis.
 #: A deliberately blunt assumption, stated so it can be argued with.
 RELIEF_MW_PER_DOLLAR = 8.0
-BATTERY_KW = backtest.DEFAULT_POWER_KW
+#: The zone study stays on the legacy 13.5 kWh / 5 kW unit it was first measured on: it
+#: compares zone-timed against hub-timed dispatch, and the unit is held fixed so the
+#: basis, not the hardware, is what moves the dollars.
+BATTERY_KWH = backtest.LEGACY_KWH
+BATTERY_KW = backtest.LEGACY_POWER_KW
 
 
 def zone_path_for(date: str) -> Path:
@@ -265,10 +269,20 @@ def zone_day(basis: pd.DataFrame, date: str, location: str) -> ZoneDay:
     prices = day[["interval_start", "interval_end", "spp"]]
 
     timed = backtest.summarize(
-        backtest.value_captured(_plan(prices, day["spp"].astype(float)), prices)
+        backtest.value_captured(
+            _plan(prices, day["spp"].astype(float)),
+            prices,
+            kwh=BATTERY_KWH,
+            power_kw=BATTERY_KW,
+        )
     )
     blind = backtest.summarize(
-        backtest.value_captured(_plan(prices, day["hub_spp"].astype(float)), prices)
+        backtest.value_captured(
+            _plan(prices, day["hub_spp"].astype(float)),
+            prices,
+            kwh=BATTERY_KWH,
+            power_kw=BATTERY_KW,
+        )
     )
     return ZoneDay(
         date=date,

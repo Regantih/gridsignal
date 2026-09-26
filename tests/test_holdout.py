@@ -74,7 +74,8 @@ def test_scoring_uses_the_frozen_policy_constants() -> None:
     """A change to any threshold must move the held-out numbers, not be bypassed."""
     assert (detect.BASELINE_INTERVALS, detect.MIN_SPREAD_MWH) == (16, 2.0)
     assert (signals.CHARGE_MULTIPLE, signals.SPIKE_THRESHOLD) == (1.15, 0.5)
-    assert (backtest.DEFAULT_KWH, backtest.DEFAULT_POWER_KW) == (13.5, 5.0)
+    assert (backtest.DEFAULT_KWH, backtest.DEFAULT_POWER_KW) == (40.0, 20.0)
+    assert (backtest.LEGACY_KWH, backtest.LEGACY_POWER_KW) == (13.5, 5.0)
     assert (dam.CHARGE_HOURS, dam.EXPORT_HOURS, dam.MIN_SPREAD) == (5, 6, 1.4)
     assert (dam.DEVIATION_MULTIPLE, dam.CHARGE_CEILING, dam.EXPORT_FLOOR) == (5.0, 5.0, 0.8)
 
@@ -100,11 +101,12 @@ def test_losing_days_are_reported_not_hidden(results: list[holdout.DayResult]) -
     assert summary.days_won == sum(r.won for r in results)
     assert summary.worst_uplift_usd == min(r.uplift_usd for r in results)
     assert summary.total_uplift_usd == pytest.approx(sum(r.uplift_usd for r in results), abs=0.01)
-    # the frozen policy still fails to beat naive on some held-out days; keep them
-    assert summary.days_won < summary.days
-    assert summary.worst_uplift_usd <= 0
     # grid-only, before home load nets against export, it loses outright on a day
     assert holdout.summarize(holdout.evaluate(serve_home=False)).worst_uplift_usd < 0
+    # and the policy lost days outright until the house stopped draining the peak
+    drained = holdout.summarize(holdout.evaluate(hold_for_peak=False))
+    assert drained.days_won < drained.days
+    assert drained.worst_uplift_usd < 0
 
 
 def test_frame_columns_and_rows(results: list[holdout.DayResult]) -> None:
@@ -133,3 +135,41 @@ def test_cli_prints_every_day(capsys: pytest.CaptureFixture[str]) -> None:
     for result in holdout.evaluate():
         assert result.date in out
     assert "beat the naive schedule" in out
+
+
+def test_the_peak_hold_is_what_turns_the_worst_held_out_day_around() -> None:
+    """2024-05-08: the house used to empty the battery before the $4,981/MWh evening."""
+    trace = next(t for t in holdout.load_holdout() if t.date == "2024-05-08")
+    held = holdout.score_day(trace)
+    drained = holdout.score_day(trace, hold_for_peak=False)
+
+    assert drained.uplift_usd < 0 < held.uplift_usd
+    assert held.signal_usd > drained.signal_usd
+
+
+def test_the_legacy_unit_is_still_scoreable_as_a_comparison() -> None:
+    default = holdout.summarize(holdout.evaluate())
+    legacy = holdout.summarize(
+        holdout.evaluate(kwh=backtest.LEGACY_KWH, power_kw=backtest.LEGACY_POWER_KW)
+    )
+    assert default.median_uplift_usd > legacy.median_uplift_usd > 0
+    assert legacy.days_won == legacy.days
+
+
+def test_every_day_is_also_scored_against_a_do_nothing_battery(
+    results: list[holdout.DayResult],
+) -> None:
+    summary = holdout.summarize(results)
+    for r in results:
+        assert r.uplift_vs_nothing_usd == pytest.approx(r.signal_usd + r.member_savings_usd, 0.01)
+    assert summary.median_vs_nothing_usd > 0
+    assert summary.mean_vs_nothing_usd > 0
+
+
+def test_cli_names_the_unit_and_both_baselines(capsys: pytest.CaptureFixture[str]) -> None:
+    holdout.main()
+    out = capsys.readouterr().out
+    assert "Base Core-style 40 kWh / 20 kW" in out
+    assert "do-nothing battery" in out
+    assert "legacy 13.5 kWh / 5 kW" in out
+    assert "without the peak hold" in out

@@ -62,8 +62,8 @@ def test_foresight_buys_before_it_sells_and_respects_the_battery() -> None:
     export = plan.index[plan["signal"] == Signal.EXPORT.value]
     assert max(charge) < min(export)
     # 13.5 kWh through a 90% round trip at 1.25 kWh per interval: buy 12, sell 11.
-    assert len(charge) == round(backtest.DEFAULT_KWH / backtest.ROUND_TRIP_EFFICIENCY / 1.25)
-    assert len(export) == -(-backtest.DEFAULT_KWH // 1.25)
+    assert len(charge) == round(insight.STUDY_KWH / backtest.ROUND_TRIP_EFFICIENCY / 1.25)
+    assert len(export) == -(-insight.STUDY_KWH // 1.25)
 
 
 def test_a_flat_day_has_nothing_to_capture() -> None:
@@ -97,6 +97,13 @@ def test_scarcity_days_hide_more_of_their_value_than_ordinary_days(
     summary = insight.summarize(results)
     assert summary.scarcity_days >= 2
     assert summary.scarcity_visible_share < summary.ordinary_visible_share
+    # ...on the legacy unit the study is scored on. The bigger default unit rides more
+    # of the evening out of the day-ahead plan, so the gap does not survive it, and the
+    # CLI prints both rather than letting the published share drift with the hardware.
+    bigger = insight.summarize(
+        insight.analyze(kwh=backtest.DEFAULT_KWH, power_kw=backtest.DEFAULT_POWER_KW)
+    )
+    assert bigger.scarcity_visible_share > summary.scarcity_visible_share
     # The claim on the card: the missing money dwarfs an ordinary day's whole upside.
     assert summary.scarcity_blind_usd > 10 * summary.ordinary_day_usd
 

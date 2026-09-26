@@ -165,7 +165,7 @@ class Battery:
         return round(self.kwh * RESERVE_SHARE, 3)
 
 
-LEGACY = Battery("Legacy unit", backtest.DEFAULT_KWH, backtest.DEFAULT_POWER_KW)
+LEGACY = Battery("Legacy unit", backtest.LEGACY_KWH, backtest.LEGACY_POWER_KW)
 BASE_CORE = Battery("Base Core-style unit", 40.0, 20.0)
 FLEET_MIX: tuple[tuple[Battery, float], ...] = ((LEGACY, 0.6), (BASE_CORE, 0.4))
 

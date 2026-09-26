@@ -34,6 +34,13 @@ from gridsignal.signals import Signal
 
 INTERVALS_PER_HOUR = 4
 
+#: The visibility study is run on the legacy 13.5 kWh / 5 kW unit. Unit size changes the
+#: answer — a bigger battery rides more of a scarcity evening out of the day-ahead plan
+#: alone — so the CLI rescores the same days on the 40 kWh / 20 kW default as a comparison
+#: instead of quietly switching units under a published share.
+STUDY_KWH = backtest.LEGACY_KWH
+STUDY_POWER_KW = backtest.LEGACY_POWER_KW
+
 
 def bundled_traces() -> list[PriceTrace]:
     """Every real LZ_HOUSTON day in the repo: scenario, tuning and held-out."""
@@ -45,8 +52,8 @@ def bundled_traces() -> list[PriceTrace]:
 
 def foresight_plan(
     prices: pd.DataFrame,
-    kwh: float = backtest.DEFAULT_KWH,
-    power_kw: float = backtest.DEFAULT_POWER_KW,
+    kwh: float = STUDY_KWH,
+    power_kw: float = STUDY_POWER_KW,
     efficiency: float = backtest.ROUND_TRIP_EFFICIENCY,
 ) -> pd.DataFrame:
     """The best one-cycle day a battery could have had knowing the real-time prints.
@@ -126,11 +133,24 @@ class DayInsight:
         return round(self.divergent_intervals / self.intervals, 4) if self.intervals else 0.0
 
 
-def analyze_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayInsight:
+def analyze_day(
+    trace: PriceTrace,
+    kwh: float = STUDY_KWH,
+    power_kw: float = STUDY_POWER_KW,
+) -> DayInsight:
     """Score one bundled day. Requires a day-ahead curve alongside the real-time trace."""
     prices = trace.frame
-    da = backtest.summarize(backtest.value_captured(day_ahead_plan(trace), prices, kwh=kwh))
-    fore = backtest.summarize(backtest.value_captured(foresight_plan(prices), prices, kwh=kwh))
+    da = backtest.summarize(
+        backtest.value_captured(day_ahead_plan(trace), prices, kwh=kwh, power_kw=power_kw)
+    )
+    fore = backtest.summarize(
+        backtest.value_captured(
+            foresight_plan(prices, kwh=kwh, power_kw=power_kw),
+            prices,
+            kwh=kwh,
+            power_kw=power_kw,
+        )
+    )
 
     aligned = dam.align_to_intervals(dam.hourly_plan(trace.dam), prices["interval_start"])
     expected = aligned["dam_mwh"].clip(lower=0.01).to_numpy()
@@ -149,10 +169,18 @@ def analyze_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayInsi
     )
 
 
-def analyze(traces: list[PriceTrace] | None = None) -> list[DayInsight]:
+def analyze(
+    traces: list[PriceTrace] | None = None,
+    kwh: float = STUDY_KWH,
+    power_kw: float = STUDY_POWER_KW,
+) -> list[DayInsight]:
     """Every bundled day that has a day-ahead curve, oldest first."""
     traces = traces if traces is not None else bundled_traces()
-    return [analyze_day(t) for t in traces if t.dam is not None and not t.dam.empty]
+    return [
+        analyze_day(t, kwh=kwh, power_kw=power_kw)
+        for t in traces
+        if t.dam is not None and not t.dam.empty
+    ]
 
 
 @dataclass(frozen=True)
@@ -278,8 +306,22 @@ def main() -> None:
         )
     s = summarize(results)
     print()
+    print(f"Scored on the legacy {STUDY_KWH:,.1f} kWh / {STUDY_POWER_KW:,.0f} kW unit (simulated).")
     print(s.headline)
     print(s.subhead)
+
+    bigger = summarize(
+        analyze(kwh=backtest.DEFAULT_KWH, power_kw=backtest.DEFAULT_POWER_KW),
+    )
+    print(
+        f"\nComparison, same days on the {backtest.DEFAULT_KWH:,.0f} kWh / "
+        f"{backtest.DEFAULT_POWER_KW:,.0f} kW default unit: scarcity days "
+        f"{bigger.scarcity_visible_share:.0%} visible in advance against "
+        f"{bigger.ordinary_visible_share:.0%} on ordinary days — the gap the legacy unit "
+        f"shows ({s.scarcity_visible_share:.0%} against {s.ordinary_visible_share:.0%}) "
+        f"does not survive the bigger battery, which rides more of the evening out of the "
+        f"day-ahead plan alone."
+    )
     print(
         f"value-weighted across all {s.days} days the day-ahead curve held "
         f"{s.visible_share:.0%} of the capturable value "

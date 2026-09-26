@@ -157,7 +157,7 @@ CLAIMS: tuple[tuple[str, str], ...] = (
     (r"[Hh]ome-first[^|\n]{0,80}?mean \+?\$(\d+\.\d\d)", "holdout_mean_usd"),
     (r"[Hh]ome-first[^|\n]{0,110}?median \+?\$(\d+\.\d\d)", "holdout_median_usd"),
     (r"[Gg]rid-only[^|\n]{0,60}?(\d) of 7", "grid_only_days_won"),
-    (r"[Gg]rid-only[^|\n]{0,80}?mean \+?\$(\d+\.\d\d)", "grid_only_mean_usd"),
+    (r"[Gg]rid-only[^|\n]{0,80}?mean ([+\u2212-]?)\$(\d+\.\d\d)", "grid_only_mean_usd"),
     (
         r"[Oo]nly (\d+)% of (?:a battery\'s capturable value"
         r"|a scarcity day\'s capturable|the value a battery could have captured)",
@@ -191,7 +191,9 @@ def test_headline_numbers_in_every_doc_match_the_one_command(
     found = 0
     for name in CHECKED_DOCS:
         text = (DOCS.parent / name).read_text()
-        for quoted in re.findall(pattern, text):
+        for match in re.findall(pattern, text):
+            sign, number = match if isinstance(match, tuple) else ("", match)
+            quoted = ("-" if sign in "\u2212-" and sign else "") + number
             found += 1
             assert quoted == expected, (
                 f"{name} quotes {quoted!r} for {claim}, gridsignal.demo_numbers says {expected!r}"

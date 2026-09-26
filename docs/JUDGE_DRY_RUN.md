@@ -82,9 +82,9 @@ headline is a rare day inside ERCOT's ADER pilot rules (+$0.14 median) rather th
 the pilot rules cost 92% of the unrestricted value because Reg Down is the product an
 aggregation of home batteries may not sell.
 
-**Against.** The held-out uplift itself is small — 6 of 7 days, mean $0.44 and median $0.26 per
-battery per day — on seven days. That is enough to say the policy is not broken and not enough
-to size a business.
+**Against.** The held-out uplift is 7 of 7 days at mean $2.96 and median $1.94 per battery per
+day, but on seven days only, and two scarcity days carry most of the mean. That is enough to say
+the policy is not broken and not enough to size a business.
 
 ## Value — Usability — 7 / 10
 

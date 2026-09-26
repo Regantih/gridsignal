@@ -77,8 +77,8 @@ WEAR_MODELS: tuple[WearModel, ...] = (
     WearModel(
         unit_type=UnitType.LEGACY,
         label="legacy unit",
-        usable_kwh=backtest.DEFAULT_KWH,
-        power_kw=backtest.DEFAULT_POWER_KW,
+        usable_kwh=backtest.LEGACY_KWH,
+        power_kw=backtest.LEGACY_POWER_KW,
         replacement_usd_per_kwh=400.0,
         cycle_life=4_000,
     ),

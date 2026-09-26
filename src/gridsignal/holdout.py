@@ -69,17 +69,27 @@ class DayResult:
     uplift_usd: float
     #: Spot value of the energy the battery gave the house instead of exporting it.
     member_savings_usd: float = 0.0
+    #: Export plus bill avoided, which is what a battery that never moves forgoes.
+    household_usd: float = 0.0
+    naive_household_usd: float = 0.0
 
     @property
     def won(self) -> bool:
         return self.uplift_usd > 0
 
+    @property
+    def uplift_vs_nothing_usd(self) -> float:
+        """Against a do-nothing battery, which earns nothing and saves nothing."""
+        return self.household_usd
+
 
 def score_day(
     trace: PriceTrace,
     kwh: float = backtest.DEFAULT_KWH,
+    power_kw: float = backtest.DEFAULT_POWER_KW,
     serve_home: bool = True,
     same_interval_price: bool = False,
+    hold_for_peak: bool = True,
 ) -> DayResult:
     """Run detect -> forecast -> signals -> backtest on one day, thresholds untouched.
 
@@ -95,7 +105,14 @@ def score_day(
     prob = forecast.forecast_spike_probability(forecast.build_features(detections))
     plan = dam.signals_for(detections, prob, trace.dam, same_interval_price=same_interval_price)
     summary = backtest.summarize(
-        backtest.value_captured(plan, trace.frame, kwh=kwh, serve_home=serve_home)
+        backtest.value_captured(
+            plan,
+            trace.frame,
+            kwh=kwh,
+            power_kw=power_kw,
+            serve_home=serve_home,
+            hold_for_peak=hold_for_peak,
+        )
     )
     return DayResult(
         date=trace.date,
@@ -106,28 +123,46 @@ def score_day(
         naive_usd=summary.naive_usd,
         uplift_usd=summary.uplift_usd,
         member_savings_usd=summary.member_savings_usd,
+        household_usd=summary.household_usd,
+        naive_household_usd=summary.naive_household_usd,
     )
 
 
 def evaluate(
     kwh: float = backtest.DEFAULT_KWH,
+    power_kw: float = backtest.DEFAULT_POWER_KW,
     serve_home: bool = True,
     same_interval_price: bool = False,
+    hold_for_peak: bool = True,
 ) -> list[DayResult]:
     return [
-        score_day(trace, kwh=kwh, serve_home=serve_home, same_interval_price=same_interval_price)
+        score_day(
+            trace,
+            kwh=kwh,
+            power_kw=power_kw,
+            serve_home=serve_home,
+            same_interval_price=same_interval_price,
+            hold_for_peak=hold_for_peak,
+        )
         for trace in load_holdout()
     ]
 
 
 def evaluate_tuning(
     kwh: float = backtest.DEFAULT_KWH,
+    power_kw: float = backtest.DEFAULT_POWER_KW,
     serve_home: bool = True,
     same_interval_price: bool = False,
 ) -> list[DayResult]:
     """Same scoring on the tuning split, for the in-sample/out-of-sample comparison."""
     return [
-        score_day(trace, kwh=kwh, serve_home=serve_home, same_interval_price=same_interval_price)
+        score_day(
+            trace,
+            kwh=kwh,
+            power_kw=power_kw,
+            serve_home=serve_home,
+            same_interval_price=same_interval_price,
+        )
         for trace in load_tuning()
     ]
 
@@ -160,6 +195,9 @@ class HoldoutSummary:
     mean_uplift_usd: float
     median_uplift_usd: float
     worst_uplift_usd: float
+    #: Median household value — export plus bill avoided — against a battery that never moves.
+    median_vs_nothing_usd: float = 0.0
+    mean_vs_nothing_usd: float = 0.0
 
     def fleet_usd(self, devices: int) -> float:
         """Mean daily uplift scaled to a fleet."""
@@ -168,6 +206,7 @@ class HoldoutSummary:
 
 def summarize(results: list[DayResult]) -> HoldoutSummary:
     uplifts = pd.Series([r.uplift_usd for r in results], dtype=float)
+    household = pd.Series([r.household_usd for r in results], dtype=float)
     return HoldoutSummary(
         days=len(results),
         days_won=int((uplifts > 0).sum()),
@@ -175,6 +214,8 @@ def summarize(results: list[DayResult]) -> HoldoutSummary:
         mean_uplift_usd=round(float(uplifts.mean()), 2) if len(uplifts) else 0.0,
         median_uplift_usd=round(float(uplifts.median()), 2) if len(uplifts) else 0.0,
         worst_uplift_usd=round(float(uplifts.min()), 2) if len(uplifts) else 0.0,
+        median_vs_nothing_usd=round(float(household.median()), 2) if len(household) else 0.0,
+        mean_vs_nothing_usd=round(float(household.mean()), 2) if len(household) else 0.0,
     )
 
 
@@ -193,17 +234,39 @@ def main() -> None:
         return
 
     lookahead = evaluate(same_interval_price=True)
+    legacy = evaluate(kwh=backtest.LEGACY_KWH, power_kw=backtest.LEGACY_POWER_KW)
+    drained = evaluate(hold_for_peak=False)
+    print(
+        f"Default unit: Base Core-style {backtest.DEFAULT_KWH:,.0f} kWh / "
+        f"{backtest.DEFAULT_POWER_KW:,.0f} kW, home-first (household load is carried by the "
+        f"grid while storage is held for the day-ahead peak). Every battery is simulated.\n"
+    )
     print(
         f"{'date':<12}{'peak $/MWh':>12}{'signal $':>10}{'naive $':>10}"
-        f"{'uplift $':>10}{'as first scored $':>19}"
+        f"{'uplift $':>10}{'vs do-nothing $':>17}{'as first scored $':>19}"
     )
     for r, old in zip(results, lookahead, strict=True):
         print(
             f"{r.date:<12}{r.peak_mwh:>12,.2f}{r.signal_usd:>10,.2f}"
-            f"{r.naive_usd:>10,.2f}{r.uplift_usd:>10,.2f}{old.uplift_usd:>19,.2f}"
+            f"{r.naive_usd:>10,.2f}{r.uplift_usd:>10,.2f}"
+            f"{r.uplift_vs_nothing_usd:>17,.2f}{old.uplift_usd:>19,.2f}"
         )
-    print(f"\ncorrected (day-ahead and last settled print only): {headline(summarize(results))}")
+    summary = summarize(results)
+    print(f"\ncorrected (day-ahead and last settled print only): {headline(summary)}")
     print(f"as first scored (same-interval price):             {headline(summarize(lookahead))}")
+    print(
+        f"against a do-nothing battery (earns and saves nothing): median "
+        f"${summary.median_vs_nothing_usd:,.2f}, mean ${summary.mean_vs_nothing_usd:,.2f} "
+        f"per battery per day"
+    )
+    print(
+        f"legacy {backtest.LEGACY_KWH:,.1f} kWh / {backtest.LEGACY_POWER_KW:,.0f} kW "
+        f"comparison:                {headline(summarize(legacy))}"
+    )
+    print(
+        f"without the peak hold (house drains storage all afternoon): "
+        f"{headline(summarize(drained))}"
+    )
 
 
 if __name__ == "__main__":

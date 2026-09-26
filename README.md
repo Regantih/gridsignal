@@ -344,18 +344,23 @@ adds over that schedule:
 
 | Split | Battery | Gross $ | Wear $ | Net $ | Net, gated $ | Cycles | Gated | Saved |
 |---|---|---|---|---|---|---|---|---|
-| tuning | legacy | +0.09 | 0.08 | +0.01 | **+0.99** | 6.36 | 2.36 | 4.00 |
-| tuning | Base Core-style | +0.35 | 0.04 | +0.31 | **+1.64** | 6.12 | 2.12 | 4.00 |
-| held-out | legacy | +0.44 | 0.11 | +0.33 | **+1.48** | 7.55 | 2.00 | 5.55 |
-| held-out | Base Core-style | +0.70 | 0.05 | +0.65 | **+0.54** | 7.19 | 7.19 | 0.00 |
+| tuning | legacy | +0.36 | 0.00 | +0.36 | **+1.20** | 6.00 | 2.00 | 4.00 |
+| tuning | Base Core-style | +0.63 | 0.00 | +0.63 | **+1.87** | 6.00 | 2.00 | 4.00 |
+| held-out | legacy | +2.14 | 0.00 | +2.14 | **+2.86** | 7.00 | 2.00 | 5.00 |
+| held-out | Base Core-style | +2.96 | 0.00 | +2.96 | **+2.85** | 7.00 | 7.00 | 0.00 |
 
-The honest finding is the split itself: on the expensive pack the gate earns **+$1.15 per
-battery per day on held-out days and skips 5.55 of 7.55 equivalent full cycles**, because
-most days never had a spread worth grinding a $400/kWh pack for. On the cheaper Base
-Core-style pack the same floor almost never binds — it saves no cycles and costs $0.11 a
-day, since the few thin exports it withholds print higher than the day-ahead curve
-expected. Wear-gating is therefore a per-unit-type policy, not a fleet-wide one. Shown in
-**Grid Signals → Held-out days**. Tests: `tests/test_degradation.py`.
+The wear column is $0.00 because wear is charged on the throughput the policy adds *over
+the naive schedule*, and since home-first dispatch holds storage for the day-ahead peak
+both schedules now fill the pack once a day: the cycle count is the same, so the only
+honest wear charge is on the cycles the gate removes.
+
+The finding is the split itself: on the expensive pack the gate earns **+$0.72 per battery
+per day on held-out days and skips 5.00 of 7.00 equivalent full cycles**, because most days
+never had a spread worth grinding a $400/kWh pack for. On the cheaper Base Core-style pack
+the same floor never binds — it saves no cycles and costs $0.11 a day, since the few thin
+exports it withholds print higher than the day-ahead curve expected. Wear-gating is
+therefore a per-unit-type policy, not a fleet-wide one. Shown in **Grid Signals → Held-out
+days**. Tests: `tests/test_degradation.py`.
 
 #### Mixed fleet and control authority (simulated)
 
@@ -409,9 +414,9 @@ curve never priced, refuse to buy a spike, wait out a dud export). Signals are a
 is dispatched.
 
 The headline shows two numbers side by side and never the first one alone: the scenario day at
-the selected fleet scale ($125,300/day across 10,000 batteries on the 2023-09-06 scarcity day) and
-the **held-out record** — mean +$0.44, median +$0.26 per battery per day, beating the naive
-schedule on 6 of 7 days it was never tuned on (see
+the selected fleet scale ($1,107,100/day across 10,000 batteries on the 2023-09-06 scarcity day) and
+the **held-out record** — mean +$2.96, median +$1.94 per battery per day, beating the naive
+schedule on 7 of 7 days it was never tuned on (see
 [Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
 representative day in the set; the held-out average is the honest claim.
 
@@ -1093,26 +1098,41 @@ two most recent complete trade days from the daily report are used instead. The 
 (`scripts/fetch_tuning.py`) takes the 75th and 25th percentile of daily peak in each year, so the
 two splits can never share a date.
 
-All figures are **dollars per battery per day** on a 13.5 kWh / 5 kW battery (see Assumptions).
+All figures are **dollars per battery per day** on the default simulated unit — a Base Core-style
+**40 kWh / 20 kW** battery (sized from a public interview, not an official specification; see
+Assumptions). The legacy 13.5 kWh / 5 kW unit is kept as a comparison and prints from the same
+command.
 
-Since home-first dispatch landed, the battery serves its simulated house before it sells anything,
-so both columns below are reported: **grid-only** (the pure trading battery, the policy's original
-scorecard) and **home-first** (what the product actually does). Neither set of parameters was
-touched to produce the second column.
+**Home-first** is what the product does: the household is carried by the grid while storage is
+held for the day-ahead peak, and the battery only feeds the house when no later hour on the
+day-ahead curve pays more for that energy. **Grid-only** (the pure trading battery, the policy's
+original scorecard) is kept as a comparison. Neither set of parameters was touched.
 
-| Date | Peak $/MWh | Regime | Grid-only $ | Grid-only uplift | Home-first $ | Member savings $ | Home-first uplift |
-|---|---:|---|---:|---:|---:|---:|---:|
-| 2023-04-06 | 86.13 | ordinary | 0.21 | **+0.02** | 0.13 | 0.08 | **+0.19** |
-| 2024-05-08 | 4,981.40 | scarcity | 13.86 | **−2.27** | −0.20 | 0.63 | **+0.00** |
-| 2024-12-20 | 73.13 | ordinary | 0.28 | **+0.01** | 0.02 | 0.26 | **+0.36** |
-| 2025-04-07 | 3,860.63 | scarcity | 1.23 | **+2.20** | 0.31 | 0.50 | **+1.85** |
-| 2025-05-03 | 76.33 | ordinary | 0.58 | **+0.57** | −0.09 | 0.32 | **+0.31** |
-| 2026-09-23 | 97.76 | ordinary | 0.33 | **−0.13** | −0.44 | 0.76 | **+0.10** |
-| 2026-09-24 | 108.74 | ordinary | 0.71 | **+0.14** | −0.14 | 0.84 | **+0.26** |
+| Date | Peak $/MWh | Regime | Home-first $ | Member savings $ | Home-first uplift | vs do-nothing $ | Grid-only uplift | Legacy uplift |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| 2023-04-06 | 86.13 | ordinary | 0.58 | 0.00 | **+0.33** | 0.58 | +0.00 | +0.27 |
+| 2024-05-08 | 4,981.40 | scarcity | 24.05 | 0.00 | **+6.78** | 24.05 | −14.98 | +9.38 |
+| 2024-12-20 | 73.13 | ordinary | 0.76 | 0.12 | **+0.65** | 0.88 | +0.05 | +0.44 |
+| 2025-04-07 | 3,860.63 | scarcity | 3.25 | 0.18 | **+7.45** | 3.43 | +6.92 | +2.45 |
+| 2025-05-03 | 76.33 | ordinary | 1.41 | 0.23 | **+2.18** | 1.64 | +1.98 | +0.67 |
+| 2026-09-23 | 97.76 | ordinary | 1.58 | 0.00 | **+1.41** | 1.58 | +0.07 | +0.81 |
+| 2026-09-24 | 108.74 | ordinary | 2.44 | 0.00 | **+1.94** | 2.44 | +0.62 | +0.99 |
 
-**Grid-only: 5 of 7 days beat naive**, mean +$0.08, median +$0.02, worst −$2.27, best +$2.20.
-**Home-first: 6 of 7**, mean +$0.44, median +$0.26, worst $0.00, best +$1.85, with $0.48 a day of
-member savings on top.
+**Home-first: 7 of 7 days beat naive**, mean +$2.96, median +$1.94, worst +$0.33, best +$7.45.
+Against a **do-nothing battery** — one that never charges, never exports and never serves the
+house, so it earns nothing and saves nothing — the same days are worth median $1.64, mean $4.94.
+The legacy unit wins all 7 too, at mean +$2.14 and median +$0.81; grid-only wins 5 of 7 at mean
+−$0.76, because the naive schedule sells the whole 40 kWh into the 2024-05-08 spike while the
+causal policy reacts to it one interval late.
+
+#### The peak hold is the fix, and here is what it was worth
+
+Before this change the simulated house drew on storage all afternoon, so on 2024-05-08 the
+battery sat at 0 kWh by 16:00 and missed the $1,333–$4,981/MWh evening. Running the same policy
+with the hold switched off (`holdout.evaluate(hold_for_peak=False)`, kept so the bug stays
+measurable) scores **6 of 7 days, mean +$0.70, median +$0.58, worst −$5.37** — and 2024-05-08
+itself goes from **+$6.78 to −$5.37**, $24.05 of signal value down to $11.90. Test:
+`tests/test_holdout.py::test_the_peak_hold_is_what_turns_the_worst_held_out_day_around`.
 
 #### Corrected for same-interval lookahead
 
@@ -1126,27 +1146,23 @@ only (`same_interval_price=False`, the default in
 
 | Scoring | Days won | Mean $ | Median $ | Worst $ |
 |---|---|---:|---:|---:|
-| Corrected (day-ahead + last settled print), home-first | 6/7 | +0.44 | +0.26 | 0.00 |
-| As first scored (same-interval price), home-first | 6/7 | +0.45 | +0.26 | 0.00 |
-| Corrected, grid-only | 5/7 | +0.08 | +0.02 | −2.27 |
-| As first scored (same-interval price), grid-only | 6/7 | +0.62 | +0.10 | −0.27 |
+| Corrected (day-ahead + last settled print), home-first | 7/7 | +2.96 | +1.94 | +0.33 |
+| As first scored (same-interval price), home-first | 7/7 | +3.82 | +1.94 | +0.33 |
+| Corrected, grid-only | 5/7 | −0.76 | +0.07 | −14.98 |
+| As first scored (same-interval price), grid-only | 4/7 | +0.09 | +0.05 | −8.65 |
 
-Home-first barely moves, because the house absorbs the energy either way. The grid-only battery
-does not: it loses most of its edge and 2024-05-08 flips from +$1.71 to **−$2.27**, because a
-causal policy reacts to the $4,981/MWh spike one interval late while the naive schedule is
-already selling into it. That is the honest size of the effect, and it is why the corrected
-number is now the one quoted everywhere. Regression test:
+The correction costs the scarcity day, not the ordinary ones: the median is unchanged and the
+mean falls $3.82 → $2.96, because a causal policy reacts to the $4,981/MWh spike one interval
+late while the naive schedule is already selling into it. That is the honest size of the effect,
+and it is why the corrected number is the one quoted everywhere. Regression test:
 `tests/test_dam.py::test_an_intervals_own_print_cannot_change_its_own_decision`.
 
-**Home-first dispatch costs export revenue, and the honest place to see it is 2024-05-08.** The
-grid-only battery earns $17.84 on that scarcity day; the home-first battery earns −$0.20 of export
-revenue and $0.63 of avoided purchases — a collapse, because the household load drains the stored
-energy the trading battery would have sold into a $4,981/MWh spike. The uplift column holds up
-better than the revenue column (the naive schedule loses money against the same load), and the
-home-first median is actually higher, but the scarcity-day revenue is gone. That is the trade the
-product makes deliberately: the member keeps their energy and their backup, and the fleet sells
-only the surplus. The scenario-day backtest shows the same shape — on 2023-09-06 the scarcity
-backtest falls from $40.16 to $12.33 of export revenue plus $8.79 of member savings.
+**What home-first costs the member, honestly:** very little in avoided purchases. Member savings
+average **$0.08 a day**, because on nearly every interval grid energy is cheaper than the peak
+hour that kWh is being held for, so the battery feeds the house only when no later hour on the
+day-ahead curve pays more. The member's protection comes from the backup reserve, which is never
+sold, not from self-supply — and before the hold existed the house did drink the stored energy,
+at a cost of $12.15 of signal value on 2024-05-08 alone.
 
 The frozen-policy reproducibility test still scores grid-only
 (`holdout.score_day(trace, serve_home=False)`), so the original numbers remain checkable.
@@ -1155,9 +1171,8 @@ This is the result of anchoring the plan to the day-ahead curve. The previous re
 policy won 2 of 7 days (mean −$0.15, worst −$4.89) because it held charge waiting for spikes that
 never came; planning the windows from a price curve the operator genuinely has in advance removes
 most of that guesswork, and the real-time detector now only has to catch the divergence. Read it
-conservatively all the same: the median day is worth ten cents, one held-out day still loses, and
-most of the mean comes from two scarcity days — a fleet-level claim built on the scarcity day
-alone would be dishonest.
+conservatively all the same: two scarcity days carry most of the mean, so a fleet-level claim
+built on the scarcity day alone would be dishonest — the median day is worth $1.94.
 
 Reproduce with `python -m gridsignal.holdout`.
 
@@ -1172,8 +1187,9 @@ real Base Power device or fleet.
 
 | Assumption | Value | Where |
 |---|---|---|
-| Usable energy capacity | 13.5 kWh | `backtest.DEFAULT_KWH` |
-| Inverter power, charge and discharge | 5 kW (so 1.25 kWh per 15-minute interval) | `backtest.DEFAULT_POWER_KW` |
+| Usable energy capacity | 40 kWh (Base Core-style, per a public interview, **not an official spec**); the legacy 13.5 kWh unit is kept as a comparison | `backtest.DEFAULT_KWH`, `backtest.LEGACY_KWH` |
+| Inverter power, charge and discharge | 20 kW (so 5 kWh per 15-minute interval); legacy 5 kW | `backtest.DEFAULT_POWER_KW`, `backtest.LEGACY_POWER_KW` |
+| Household load during the day | carried by the grid while storage is held for the day-ahead peak; served from the battery only when no later hour pays more | `backtest.value_captured(hold_for_peak=True)` |
 | Round-trip efficiency | 90% | `backtest.ROUND_TRIP_EFFICIENCY` |
 | Naive baseline schedule | charge 01:00–05:00, export 17:00–21:00 | `backtest.NAIVE_CHARGE_HOURS`, `NAIVE_EXPORT_HOURS` |
 | Starting state of charge | empty at 00:00 | `backtest.value_captured` |
@@ -1205,10 +1221,11 @@ real Base Power device or fleet.
   not metered data, so the export split and member savings move with that assumption.
 - The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in
   the simulator: no partner utility, installer or member is represented, and nothing is dispatched.
-- **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive home-first,
-  but the median day is +$0.26 and the same policy run grid-only wins only 5 of 7 at +$0.08 a day
-  once same-interval lookahead is removed. Day-ahead anchoring fixed the previous generalisation
-  failure; it did not turn this into a revenue product.
+- **The out-of-sample edge is concentrated**: 7 of 7 held-out days beat naive home-first at a
+  median of +$1.94, but the two scarcity days carry most of the mean, and the same policy run
+  grid-only wins only 5 of 7 at −$0.76 a day once same-interval lookahead is removed. Day-ahead
+  anchoring and the peak hold fixed the previous generalisation failure; they did not turn this
+  into a revenue product.
 - The congestion read is 15 days of settlement prices: the zone-timed uplift is a re-timing
   study on one battery, and the placement sketch's saturation curve is an assumed linear
   relationship, not an estimated one. Neither is a forecast or a siting recommendation.

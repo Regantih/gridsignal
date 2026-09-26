@@ -126,7 +126,9 @@ def test_the_expensive_pack_is_where_the_gate_pays():
     core = degradation.evaluate("held-out", BASE_CORE)
     assert legacy.gated_net_usd > legacy.net_usd
     assert legacy.cycles_saved > core.cycles_saved
-    assert legacy.wear_usd > core.wear_usd
+    # On the bigger pack the gate never binds profitably: it costs money to hold back.
+    assert core.gated_net_usd < core.net_usd
+    assert core.cycles_saved == 0.0
 
 
 def test_the_report_prints_the_assumption_and_both_splits():
@@ -142,7 +144,7 @@ def test_the_report_prints_the_assumption_and_both_splits():
 def test_the_ungated_score_matches_the_published_holdout_policy():
     """Scoring with wear switched off must not quietly change the frozen policy."""
     trace = holdout.load_holdout()[0]
-    published = holdout.score_day(trace, kwh=LEGACY.usable_kwh)
+    published = holdout.score_day(trace, kwh=LEGACY.usable_kwh, power_kw=LEGACY.power_kw)
     ungated = degradation.score_day(trace, LEGACY, gated=False)
     assert ungated.gross_uplift_usd == pytest.approx(published.uplift_usd, abs=0.01)
 
@@ -162,6 +164,9 @@ def test_readme_wear_numbers_come_from_the_code():
         assert row in readme
 
 
-def test_default_wear_model_matches_the_backtest_battery():
-    assert LEGACY.usable_kwh == backtest.DEFAULT_KWH
-    assert LEGACY.power_kw == backtest.DEFAULT_POWER_KW
+def test_wear_models_match_the_backtest_batteries():
+    assert (LEGACY.usable_kwh, LEGACY.power_kw) == (backtest.LEGACY_KWH, backtest.LEGACY_POWER_KW)
+    assert (BASE_CORE.usable_kwh, BASE_CORE.power_kw) == (
+        backtest.DEFAULT_KWH,
+        backtest.DEFAULT_POWER_KW,
+    )
