@@ -70,6 +70,14 @@ def engine() -> ControlRoomEngine:
     return st.session_state.engine
 
 
+def usd(text: str) -> str:
+    """Escape dollar signs so Streamlit markdown does not read them as LaTeX.
+
+    Only needed outside raw-HTML blocks (e.g. `st.caption`).
+    """
+    return text.replace("$", "\\$")
+
+
 def pill(text: str, color: str) -> str:
     return f"<span class='gs-pill' style='background:{color}'>{text}</span>"
 
@@ -82,7 +90,8 @@ def render_header() -> None:
         st.caption("Distributed home-battery fleet orchestration — Texas (simulated)")
     with right:
         st.markdown(
-            "<div class='gs-sim'><b>SIMULATION ONLY.</b> Deterministic mock data. "
+            "<div class='gs-sim'><b>SIMULATION ONLY.</b> Deterministic mock fleet, priced with "
+            "a cached real ERCOT settlement-price trace. "
             "No real devices, utilities or ERCOT systems are contacted. "
             "<b>A human operator approves every recovery action</b> — nothing is "
             "dispatched automatically.</div>",
@@ -225,9 +234,11 @@ def render_prices(eng: ControlRoomEngine) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
     st.caption(
-        f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
-        f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
-        "Cached locally as Parquet so the demo runs offline; the fleet itself is simulated."
+        usd(
+            f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
+            f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
+            "Cached locally as Parquet so the demo runs offline; the fleet itself is simulated."
+        )
     )
 
 
