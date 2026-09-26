@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import secrets
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from enum import StrEnum
+
+#: Separators used when a card is serialised for signing. Control characters, so they
+#: cannot occur in an agent id, a zone, a controller or a capability name.
+RECORD_SEP = "\x1e"
+UNIT_SEP = "\x1f"
 
 
 class AgentKind(StrEnum):
@@ -67,23 +71,42 @@ class AgentCard:
     controller: str = "base"
     signature: str = ""
 
-    def body(self) -> dict[str, object]:
-        """Everything the signature covers."""
-        return {
-            "agent_id": self.agent_id,
-            "kind": self.kind.value,
-            "zone": self.zone,
-            "capabilities": {k: round(float(v), 4) for k, v in sorted(self.capabilities.items())},
-            "health": self.health.value,
-            "last_heartbeat_s": self.last_heartbeat_s,
-            "controller": self.controller,
-        }
-
     def canonical(self) -> str:
-        return json.dumps(self.body(), sort_keys=True, separators=(",", ":"))
+        """Exactly the bytes the signature covers: every field, in a fixed order.
+
+        Fields and capabilities are joined with unit and record separators, which
+        cannot appear in an agent id, a zone or a controller name, so no value can be
+        shifted into a neighbouring field without changing the signature. Capabilities
+        are sorted and fixed to four decimals so the same card always signs the same.
+        """
+        caps = UNIT_SEP.join(
+            f"{name}={float(value):.4f}" for name, value in sorted(self.capabilities.items())
+        )
+        return RECORD_SEP.join(
+            (
+                self.agent_id,
+                self.kind.value,
+                self.zone,
+                caps,
+                self.health.value,
+                str(self.last_heartbeat_s),
+                self.controller,
+            )
+        )
 
     def signed(self, key: bytes) -> AgentCard:
-        return replace(self, signature=sign(self, key))
+        # Field by field rather than dataclasses.replace: this runs once per card per
+        # heartbeat, which is millions of calls at 100,000 agents.
+        return AgentCard(
+            agent_id=self.agent_id,
+            kind=self.kind,
+            zone=self.zone,
+            capabilities=self.capabilities,
+            health=self.health,
+            last_heartbeat_s=self.last_heartbeat_s,
+            controller=self.controller,
+            signature=sign(self, key),
+        )
 
     def verifies(self, key: bytes) -> bool:
         return hmac.compare_digest(self.signature, sign(self, key))

@@ -153,6 +153,8 @@ class ControlRoomEngine:
         """Return the simulation to its stable starting state."""
         window_start, window_end, window_price = self.prices.peak_window(GRID_EVENT_HOURS)
         self._clock = window_start
+        self._hours_left_at: datetime | None = None
+        self._hours_left_cache = 0.0
         self.devices: list[Device] = build_fleet(self.seed, self.fleet_size)
         self._by_id = {d.device_id: d for d in self.devices}
         self.incidents: list[Incident] = []
@@ -239,6 +241,17 @@ class ControlRoomEngine:
         """Hours left in the grid event from the current simulated time."""
         return max((self.grid_event.ends_at - self._clock).total_seconds() / 3600.0, 0.0)
 
+    def _hours_left(self) -> float:
+        """The dispatch window, floored, cached per simulated clock reading.
+
+        Allocation asks for this once per device; at 100,000 devices the datetime
+        arithmetic alone is measurable, and it cannot change within one pass.
+        """
+        if self._hours_left_at != self._clock:
+            self._hours_left_cache = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
+            self._hours_left_at = self._clock
+        return self._hours_left_cache
+
     def remaining_price_mwh(self) -> float:
         """Average real settlement price across the rest of the event window."""
         return self.prices.window_price_mwh(self._clock, self.grid_event.ends_at)
@@ -260,7 +273,7 @@ class ControlRoomEngine:
             return 0.0
         # A degraded device is only trusted with half of its nameplate power.
         trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
-        hours_left = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
+        hours_left = self._hours_left()
         reserve_kwh = home.reserve_kwh(device, self.reserve_fraction)
         energy_kw = max(0.0, device.available_kwh - reserve_kwh) / hours_left
         return round(max(min(device.power_kw * trust, energy_kw), 0.0), 3)
@@ -273,14 +286,18 @@ class ControlRoomEngine:
         """
         return round(max(self.discharge_headroom_kw(device) - device.home_load_kw, 0.0), 3)
 
-    def _share(self, pool: list[Device], target: float) -> float:
-        """Split ``target`` kW across ``pool`` in proportion to headroom."""
-        total_headroom = sum(self._headroom_kw(d) for d in pool)
+    def _share(self, pool: list[Device], target: float, headroom: dict[str, float]) -> float:
+        """Split ``target`` kW across ``pool`` in proportion to headroom.
+
+        ``headroom`` is the exportable kW of each device measured before this pass, so
+        one allocation reads a device's headroom once however many pools it spans.
+        """
+        total_headroom = sum(headroom[d.device_id] for d in pool)
         if total_headroom <= 0 or target <= 0:
             return 0.0
         share = min(target, total_headroom)
         for device in pool:
-            device.assigned_kw = round(share * self._headroom_kw(device) / total_headroom, 2)
+            device.assigned_kw = round(share * headroom[device.device_id] / total_headroom, 2)
         return round(sum(d.assigned_kw for d in pool), 2)
 
     def _allocate_dispatch(self) -> float:
@@ -294,21 +311,22 @@ class ControlRoomEngine:
         for device in self.mine:
             device.assigned_kw = 0.0
 
-        pool = [d for d in self.mine if self._headroom_kw(d) > 0]
-        total_headroom = sum(self._headroom_kw(d) for d in pool)
+        headroom = {d.device_id: self._headroom_kw(d) for d in self.mine}
+        pool = [d for d in self.mine if headroom[d.device_id] > 0]
+        total_headroom = sum(headroom[d.device_id] for d in pool)
         if total_headroom <= 0:
             return 0.0
 
         target = min(self.grid_event.target_kw, total_headroom)
         first = [d for d in pool if d.zone == self.priority_zone]
         if not first:
-            return self._share(pool, target)
+            return self._share(pool, target, headroom)
 
-        committed = self._share(first, target)
+        committed = self._share(first, target, headroom)
         rest = [d for d in pool if d.zone != self.priority_zone]
         if not rest:
             return committed
-        return round(committed + self._share(rest, target - committed), 2)
+        return round(committed + self._share(rest, target - committed, headroom), 2)
 
     def set_priority_zone(self, zone: str | None) -> float:
         """Discharge one zone's batteries first, and reallocate the open commitment.

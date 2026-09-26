@@ -51,6 +51,10 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("deliverability report", ("-m", "gridsignal.deliverability_report")),
     ("degradation-aware dispatch", ("-m", "gridsignal.degradation")),
     (
+        "speed and scale report",
+        ("-m", "gridsignal.perf", "--sizes", "1000", "--repeats", "2", "--before"),
+    ),
+    (
         "rollout bad build",
         ("-m", "gridsignal.rollout", "scenarios/rollout_bad_build.yaml", "--no-trace"),
     ),

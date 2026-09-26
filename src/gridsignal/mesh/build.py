@@ -18,7 +18,7 @@ from collections import defaultdict
 from gridsignal import home
 from gridsignal.control_room.models import Device, DeviceStatus
 from gridsignal.fleet import GATEWAY_RING_SIZE
-from gridsignal.mesh.cards import AgentCard, AgentKind, Health, battery_card
+from gridsignal.mesh.cards import AgentCard, AgentKind, Health
 from gridsignal.mesh.messages import MessageBus, MessageKind
 from gridsignal.mesh.registry import AgentRegistry
 
@@ -91,20 +91,14 @@ def card_for(device: Device, hours: float, reserve_fraction: float | None = None
     """
     fraction = home.DEFAULT_RESERVE_FRACTION if reserve_fraction is None else reserve_fraction
     soc = device.state_of_charge if device.is_dispatchable else 0.0
-    card = battery_card(
-        agent_id=device.device_id,
-        zone=device.zone,
-        kw_available=spare_kw(device, hours, fraction),
-        kwh_available=spare_kwh(device, hours, fraction),
-        health=HEALTH_OF[device.status],
-        controller=device.controller.value,
-    )
+    kw = spare_kw(device, hours, fraction)
     return AgentCard(
-        agent_id=card.agent_id,
-        kind=card.kind,
-        zone=card.zone,
+        agent_id=device.device_id,
+        kind=AgentKind.BATTERY,
+        zone=device.zone,
         capabilities={
-            **card.capabilities,
+            "kw_available": kw,
+            "kwh_available": spare_kwh(device, hours, fraction),
             "soc": round(soc, 4),
             # Declared so a coordinator can see the member reserve is already netted
             # out of kwh_available and need not guess at a flat floor of its own.
@@ -116,12 +110,11 @@ def card_for(device: Device, hours: float, reserve_fraction: float | None = None
             "power_derate": power_derate(device),
             # The pre-agreed local rule, signed into the card: how much this battery
             # deploys by itself if frequency crosses the trigger.
-            "ffr_kw": round(FFR_SHARE * spare_kw(device, hours, fraction), 3),
+            "ffr_kw": round(FFR_SHARE * kw, 3),
             "ffr_trigger_hz": FFR_TRIGGER_HZ,
         },
-        health=card.health,
-        last_heartbeat_s=card.last_heartbeat_s,
-        controller=card.controller,
+        health=HEALTH_OF[device.status],
+        controller=device.controller.value,
     )
 
 

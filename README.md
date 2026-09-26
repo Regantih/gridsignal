@@ -770,7 +770,10 @@ fleet zone settles against `LZ_AEN` via `fleet.settlement_zone`.
 ## Benchmarks
 
 Measured on this machine (Python 3.11, single process, no GPU); reproduce with
-`pytest -q -s tests/test_scale.py tests/test_simulate.py`.
+`pytest -q -s tests/test_scale.py tests/test_simulate.py`. The full speed-and-scale report at
+10,000 **and 100,000** agents — p50, p95, throughput, memory, before and after the hot-path
+fixes, from one command (`python -m gridsignal.perf --before`) — is in
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
 
 Every row is **in-process compute on in-memory simulated state**: no network, no message bus, no
 device round trips. They measure how long the orchestration maths takes, not how fast a real
@@ -778,12 +781,13 @@ fleet would detect or respond in the field.
 
 | Benchmark (what is actually timed) | Scale | Result |
 |---|---|---|
-| Control Room: construct the fleet objects | 10,000 devices | ~104 ms |
+| Control Room: construct the fleet objects | 10,000 devices | ~100 ms |
 | Control Room: raise the incident from an in-memory snapshot (no telemetry wait) | 10,000 devices | ~1 ms |
-| Control Room: recompute the full allocation after an approval | 10,000 devices | ~33 ms |
-| Mesh: build and verify signed cards in the registry | 10,000 agents | ~242 ms |
-| Mesh: apply one heartbeat to every agent and re-evaluate staleness | 10,000 agents | ~106 ms |
-| Mesh: score and award one contract-net call in process (no messaging) | 10,000 agents, 5,913 bids | ~22 ms |
+| Control Room: recompute the full allocation after an approval | 10,000 devices | ~36 ms |
+| Mesh: build and verify signed cards in the registry | 10,000 agents | ~169 ms |
+| Mesh: apply one heartbeat to every agent and re-evaluate staleness | 10,000 agents | ~70 ms |
+| Whole pass (build, detect, recover, publish, heartbeat, negotiate), p50 | 100,000 agents | ~4.0 s, peak heap ~153 MiB (was ~7.3 s) |
+| Mesh: score and award one contract-net call in process (no messaging) | 10,000 agents, 8,000 bids | ~27 ms |
 | Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
 | Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
