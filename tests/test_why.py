@@ -10,8 +10,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
 from gridsignal import ancillary, deliverability_report, holdout, judgment_report, replay, why
 from gridsignal.jev import evaluate
+
+#: Every claim on the page is recomputed here: the slow half of the suite.
+pytestmark = pytest.mark.slow
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "src" / "gridsignal" / "why.py").read_text(encoding="utf-8")

@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.4"]
+dev = ["pytest>=8", "ruff>=0.4", "pytest-xdist>=3.6"]
 # Only needed for the live-ERCOT pipeline, not for the Control Room demo.
 ercot = ["gridstatus>=0.27", "scikit-learn>=1.4"]
 # Only needed for scripts/capture_demo.py, the scripted screen recording.
@@ -31,6 +31,15 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+# The heavy end of the suite: whole-fleet scenario sweeps, the AppTest renders and the
+# reports that recompute a study. CI runs them as their own parallel job, so neither half
+# has to wait for the other; `pytest` with no marker still runs everything.
+markers = ["slow: fleet-scale sweeps, app renders and full reports"]
+# Whole modules go to one worker, so the module-scoped fixtures that share a single
+# AppTest render and a single report across their tests are still built once.
+addopts = "--dist loadscope"
 
 [tool.ruff]
 line-length = 100

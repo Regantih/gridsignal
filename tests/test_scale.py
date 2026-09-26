@@ -9,6 +9,9 @@ from gridsignal.control_room.engine import TARGET_KW_PER_DEVICE
 from gridsignal.fleet import FOCUS_DEVICE_ID, GATEWAY_RING_SIZE, gateway_ring
 from gridsignal.prices import load_scenario
 
+#: Fleet-scale runs at 10,000 devices: the slow half of the suite.
+pytestmark = pytest.mark.slow
+
 # Generous enough to be stable on CI, tight enough to catch an accidental O(n^2).
 RUNTIME_BUDGET_S = 5.0
 

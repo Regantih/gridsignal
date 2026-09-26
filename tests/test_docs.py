@@ -17,6 +17,9 @@ from gridsignal.drills import available_drills
 from gridsignal.jev import evaluate
 from gridsignal.mesh.scenarios import available_scenarios
 
+#: Every checked document re-runs the command behind its numbers: the slow half.
+pytestmark = pytest.mark.slow
+
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 SECTIONS = ("Problem", "Who it helps", "Solution", "Impact")
 

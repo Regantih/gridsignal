@@ -21,6 +21,9 @@ from gridsignal.jev import incident as jev_incident
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import dashboard  # noqa: E402
 
+#: Whole-app renders: CI runs the slow half as its own parallel job.
+pytestmark = pytest.mark.slow
+
 APP = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
 
 

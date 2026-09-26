@@ -13,6 +13,9 @@ from gridsignal.fleet import FOCUS_DEVICE_ID
 from gridsignal.mesh.cards import AgentCard, AgentKind, Health, derived_signing_key
 from gridsignal.prices import load_scenario
 
+#: Fleet-scale benchmarks: the slow half of the suite.
+pytestmark = pytest.mark.slow
+
 GUARD_DEVICES = 2_000
 GUARD_REPEATS = 3
 #: One whole pass at 2,000 devices. Roughly 0.1 s here; a slow shared runner gets 6 s.

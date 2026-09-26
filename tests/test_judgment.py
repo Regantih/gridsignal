@@ -26,6 +26,9 @@ from gridsignal.jev.judgment import (
     situation_from_state,
 )
 
+#: Scores the whole committed pack twice: the slow half of the suite.
+pytestmark = pytest.mark.slow
+
 PRIORITY_ORDER = (
     "protect_backup",
     "market_rules",

@@ -108,10 +108,15 @@ python -m gridsignal.ingest --scarcity-year 2023       # highest-priced day of t
 ## Tests and formatting
 
 ```bash
-pytest -q          # failure -> incident -> approval -> recovery state flow
+pytest -q                 # failure -> incident -> approval -> recovery state flow
+pytest -q -n auto         # same tests, split across cores
+pytest -q -m "not slow"   # everything except fleet-scale sweeps, app renders and reports
 ruff check .
 ruff format --check .
 ```
+
+CI runs the two halves (`-m slow` and `-m "not slow"`), lint, the command-line sweep, the
+dashboard sweep and the benchmark as parallel jobs; coverage is the same as one serial run.
 
 ## Using the dashboard
 
