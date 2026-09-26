@@ -228,16 +228,26 @@ encoded in `ADER_PILOT` in `src/gridsignal/ancillary.py` and enforced per bid: 9
 across 10,000 simulated batteries is **9.0 kW each**, and Reg Up, Reg Down and RRS are simply not
 offered.
 
+Enforcement is not the bidder's own opinion of itself. Every offer — the hour's export as well as
+its capacity offer — is built, handed to the validator in `src/gridsignal/guardrails.py`, and only
+sent if it comes back clean; see [market guardrails](#market-guardrails-every-offer-is-validated-before-it-leaves)
+below for the rules and their sources.
+
 ```bash
 python -m gridsignal.ancillary       # real ERCOT AS clearing prices, simulated battery
 ```
 
 | 7 held-out days, per battery per day, **inside the ADER pilot rules** | Legacy 13.5 kWh / 5 kW | Base Core-style 40 kWh / 20 kW |
 |---|---:|---:|
-| Uplift over energy alone, **median day** | +$0.03 | **+$0.14** |
-| Uplift over energy alone, mean | +$0.03 | +$0.29 |
-| Ancillary capacity, 7 days | $0.24 | $2.03 |
+| Uplift over energy alone, **median day** | +$0.05 | **+$0.15** |
+| Uplift over energy alone, mean | +$2.21 | +$0.32 |
+| Ancillary capacity, 7 days | $19.43 | $2.22 |
 | Backup reserve violations | 0 | 0 |
+| Offers refused by a guardrail | 0 | 0 |
+
+The legacy unit's mean is larger than the Base Core-style unit's because a 5 kW inverter has far
+less energy revenue to give up: it withholds export in 5 hours to rent capacity instead, where the
+bigger unit never finds that trade worth taking.
 
 **Lead with the median: the mean is one day.** Per held-out day, Base Core-style unit, ECRS and
 Non-Spin only:
@@ -245,23 +255,25 @@ Non-Spin only:
 | Day | Uplift | ECRS | Non-Spin | Mean cleared price |
 |---|---:|---:|---:|---:|
 | 2023-04-06 | $0.03 | $0.00 | $0.04 | $0.98/MW-h |
-| **2024-05-08** | **$1.40** | **$1.28** | $0.11 | **$11.42/MW-h** |
+| **2024-05-08** | **$1.47** | **$1.10** | $0.38 | **$12.12/MW-h** |
 | 2024-12-20 | $0.02 | $0.00 | $0.01 | $0.71/MW-h |
-| 2025-04-07 | $0.14 | $0.13 | $0.00 | $4.80/MW-h |
-| 2025-05-03 | $0.20 | $0.04 | $0.16 | $3.96/MW-h |
-| 2026-09-23 | $0.14 | $0.00 | $0.12 | $1.66/MW-h |
-| 2026-09-24 | $0.10 | $0.00 | $0.10 | $1.39/MW-h |
+| 2025-04-07 | $0.18 | $0.17 | $0.00 | $4.80/MW-h |
+| 2025-05-03 | $0.26 | $0.09 | $0.17 | $5.17/MW-h |
+| 2026-09-23 | $0.15 | $0.00 | $0.13 | $1.66/MW-h |
+| 2026-09-24 | $0.11 | $0.00 | $0.10 | $1.39/MW-h |
 
-2024-05-08 — the day ECRS and Non-Spin cleared far above the rest — still carries **69%** of the
-held-out uplift under the pilot rules. Ancillary capacity is not a daily annuity for a home
-battery: it is a rare-day product, and a business case built on the mean is built on one May
-afternoon. On the 2023-09-06 scarcity day the Base Core-style unit earns $88.44 of energy plus
-$2.42 of pilot-eligible capacity.
+Inside the pilot rules a held-out day pays a median +$0.15 and a mean +$0.32 per battery, with
+2024-05-08 alone carrying 66% of the total — the day ECRS and Non-Spin cleared far above the
+rest. Ancillary capacity is not a daily annuity for a home battery: it is a rare-day
+product, and a business case built on the mean is built on one May afternoon. On the 2023-09-06
+scarcity day the Base Core-style unit earns $87.19 of energy plus $2.54 of pilot-eligible
+capacity.
 
-**Comparison only, not an offer.** Scoring the same days against all five products — which no
-aggregation of home batteries may do today — gives a median of $0.74 and a mean of $3.59 per
-battery per day, 88% of it **Reg Down**, money for having room to charge. The pilot rules cost
-$3.30/battery/day of that mean (**92%**): the product that pays is the one an ADER is not allowed
+**Comparison only, not an offer.** Scoring the same days
+against all five products gives a median of $0.82 and a mean of $3.70 per battery per day —
+which no aggregation of home batteries may do today — and 85% of it is **Reg Down**, money for
+having room to charge. The pilot rules cost
+$3.38/battery/day of that mean (**91%**): the product that pays is the one an ADER is not allowed
 to sell. That comparison also fails its own price-taker test at fleet scale — 10,000 × 20 kW is
 200 MW against the 392 MW of Reg Down ERCOT procured in the checked hour (51%) — and 200 MW is
 itself 40% of the 500 MW the pilot allows to be registered system-wide. The CLI prints every one
@@ -270,6 +282,52 @@ of these checks.
 Prices are real ERCOT day-ahead clearing prices; capacity payments only (deployment energy is not
 modelled), and every battery, load profile and award is simulated. Tests:
 `tests/test_ancillary.py`.
+
+#### Market guardrails: every offer is validated before it leaves
+
+A bidder that polices itself is not a guardrail. `src/gridsignal/guardrails.py` holds ERCOT's
+published limits as a list of rules, each carrying the document it is read off, and the
+co-optimizer cannot emit an offer that has not come back clean from `guardrails.check()`. A
+refused offer is dropped whole and counted — never trimmed to fit, because trimming would be a
+second bidder hidden inside the validator.
+
+| Guardrail | Rule | Source |
+|---|---|---|
+| Offer cap | No offer above the System-Wide Offer Cap: $5,000/MWh energy, $5,000/MW-h ancillary ($2,000 once the low cap is in force) | PUCT Subst. R. [25.509](https://ftp.puc.texas.gov/public/puct-info/agency/rulesnlaws/subrules/electric/25.509/25.509.pdf)(6), ERCOT Nodal Protocols §4.4.11 |
+| Energy floor | No energy offer below −$251/MWh, the Energy Offer Curve floor | Nodal Protocols §4.4.9.3.1, the floor [NPRR385](https://www.ercot.com/mktrules/issues/NPRR385) aligns to |
+| Pilot products | ECRS and Non-Spin only; Reg Up, Reg Down and RRS are not ADER products | [ADER Governing Document](https://www.ercot.com/mktrules/pilots/ader) Phase 3.3 §3, AS Qualification Procedure 3.0 |
+| Pilot volume | 100 MW each system-wide, no QSE above 90% of either | ADER Governing Document Phase 3.3 §3 |
+| Pilot premise | Aggregation ≥ 100 kW, each premise ≤ 1 MW | ADER Governing Document Phase 3.3 §2 |
+| Pilot registration | ≥ 100 kW registered to offer at all, ≤ 500 MW of ADER capacity across the whole pilot (this fleet: 200 MW) | ADER Governing Document Phase 3.3 §2 and §3 |
+| No double-sold kW | Energy plus every capacity offer on one battery in one hour stays inside the inverter | Nodal Protocols §4.4.7.2.2 (AS Offer Validation) |
+| Duration | The award is only offered if the pack can sustain it for the product's full hours above reserve | **modelled** — simplifies ERCOT's ESR qualification; the requirement itself is in the AS Qualification Procedure 3.0 |
+| Reserve | No energy or capacity offered out of the member's backup | **modelled** — this product's promise to the homeowner, not a market rule |
+
+The three rules this repo invented are labelled `modelled` in the code and in the CLI output, so
+none of them is ever cited as ERCOT's.
+
+```bash
+python -m gridsignal.guardrails      # the rules, their sources, and the proof they bite
+```
+
+Across the 7 bundled held-out days and both simulated battery types, **182 offers are built and
+0 refused** — the bidder is inside the rules. That is only worth believing because the same
+guardrails are shown to bite: a property sweep builds **200 random offer books (4,972 offers)**
+under deliberately hostile conditions (prices above the cap and below the floor, packs emptier
+than their reserve, products the pilot forbids) and **not one offer breaks a rule**, while the
+identical conditions with the clamp and the refusal removed produce **22,652 violations across
+five rules**. Tests: `tests/test_guardrails.py`, one invalid offer per guardrail plus the sweep.
+
+The validator never clamps. A price above the cap is refused and named, not quietly pulled down
+to $5,000 — a validator that corrects its caller is a second bidder in disguise, and the caller
+never learns it was wrong. `clamp_price()` exists for a bidder building its own prices, and the
+property sweep's hostile generator is one such caller.
+
+The backup reserve is enforced in the settlement, not just checked afterwards: anything that
+offers into a market settles through `backtest.value_captured(..., backup_kwh=...)`, so no export
+and no ordinary household load can take a pack below the member's promised energy. The standalone
+arbitrage studies keep `backup_kwh=0` — they are a study of the price signal, not a product, and
+say so.
 
 #### Deliverability proof before every award
 
@@ -1282,10 +1340,10 @@ real Base Power device or fleet.
   backtest is a price-taker single-day replay: no bidding, no degradation cost, and ancillary
   capacity scored in a separate ledger (`ancillary.py`) rather than inside the energy numbers.
 - **The ancillary uplift is small, concentrated in rare days, and capped by the pilot rules.**
-  Inside ERCOT's ADER pilot (ECRS and Non-Spin only, 90 MW per QSE per product) the held-out
-  median for a Base Core-style unit is +$0.14/battery/day and the mean +$0.29, with 2024-05-08
-  alone carrying 69% of it. The unrestricted +$3.59 mean is kept only as a labelled comparison;
-  it is 92% Reg Down, which an ADER may not offer, and at fleet scale it fails its own
+  Inside ERCOT's ADER pilot rules (ECRS and Non-Spin only, 90 MW per QSE per product) the
+  held-out median for a Base Core-style unit is +$0.15/battery/day and the mean +$0.32, with
+  2024-05-08 alone carrying 66% of it. The unrestricted +$3.70 mean is kept only as a labelled
+  comparison; it is 91% Reg Down, which an ADER may not offer, and at fleet scale it fails its own
   price-taker check (200 MW against 392 MW procured, 51%). Every check prints in
   `python -m gridsignal.ancillary`.
 - **Home load is synthetic.** The per-home profile is a shaped weekday curve hashed per device,

@@ -48,6 +48,7 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("replay at fleet scale", ("-m", "gridsignal.replay")),
     ("ancillary co-optimization", ("-m", "gridsignal.ancillary")),
+    ("market guardrails", ("-m", "gridsignal.guardrails")),
     ("deliverability report", ("-m", "gridsignal.deliverability_report")),
     ("degradation-aware dispatch", ("-m", "gridsignal.degradation")),
     (

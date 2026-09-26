@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
-from gridsignal import holdout, insight, judgment_report, member, pipeline
+from gridsignal import ancillary, holdout, insight, judgment_report, member, pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
 from gridsignal.fleet import FOCUS_DEVICE_ID
@@ -184,6 +184,8 @@ def canonical() -> dict[str, str]:
     grid_only = holdout.summarize(holdout.evaluate(serve_home=False))
     view = insight.summarize(insight.analyze())
     cal = judgment_report.build().calibration
+    pilot = ancillary.holdout_summary(ancillary.BASE_CORE)
+    unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
     return {
         "calibration_fitted_before": f"{cal.train_before:.0%}",
         "calibration_fitted_after": f"{cal.train_after:.0%}",
@@ -203,6 +205,11 @@ def canonical() -> dict[str, str]:
         "grid_only_days_won": str(grid_only.days_won),
         "grid_only_mean_usd": f"{grid_only.mean_uplift_usd:,.2f}",
         "scarcity_visible_share": f"{view.scarcity_visible_share:.0%}",
+        "ancillary_median_usd": f"{pilot.median_uplift_usd:,.2f}",
+        "ancillary_mean_usd": f"{pilot.mean_uplift_usd:,.2f}",
+        "ancillary_top_day_share": f"{pilot.top_day_share[1]:.0%}",
+        "unrestricted_median_usd": f"{unrestricted.median_uplift_usd:,.2f}",
+        "unrestricted_mean_usd": f"{unrestricted.mean_uplift_usd:,.2f}",
     }
 
 

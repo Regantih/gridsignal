@@ -71,6 +71,7 @@ def value_captured(
     efficiency: float = ROUND_TRIP_EFFICIENCY,
     serve_home: bool = False,
     hold_for_peak: bool = True,
+    backup_kwh: float = 0.0,
 ) -> pd.DataFrame:
     """Settle both strategies interval by interval and return the ledger.
 
@@ -91,6 +92,12 @@ def value_captured(
     reserve is read from the day-ahead curve, published the afternoon before, so the
     decision uses nothing the operator would not have had. ``hold_for_peak=False``
     restores the earlier behaviour, where the house drank the battery dry all afternoon.
+
+    ``backup_kwh`` is energy the member is promised for an outage: no export and no
+    ordinary home load may take the pack below it. The arbitrage studies leave it at
+    zero, which is what makes them a study of the price signal rather than a product;
+    anything that offers into a market passes the member's reserve here, and
+    :mod:`gridsignal.guardrails` refuses the offer if it did not.
     """
     frame = prices.reset_index(drop=True)[["interval_start", "interval_end", "spp"]].copy()
     plan = signals.reset_index(drop=True)
@@ -121,16 +128,18 @@ def value_captured(
         ):
             delta = 0.0
             home_kwh = 0.0
+            sellable = max(soc - backup_kwh, 0.0)
             if action != Signal.CHARGE.value:
-                spare = soc if (at_peak or strategy == "naive") else max(soc - reserve, 0.0)
-                home_kwh = min(load_kwh, spare, power_kw * span)
+                spare = sellable if (at_peak or strategy == "naive") else max(soc - reserve, 0.0)
+                home_kwh = min(load_kwh, spare, sellable, power_kw * span)
                 soc -= home_kwh
+                sellable -= home_kwh
             if action == Signal.CHARGE.value:
                 bought = min(power_kw * span, (kwh - soc) / efficiency)
                 soc += bought * efficiency
                 delta = -bought * price / 1000.0
             elif action == Signal.EXPORT.value:
-                sold = min(max(power_kw * span - home_kwh, 0.0), soc)
+                sold = min(max(power_kw * span - home_kwh, 0.0), sellable)
                 soc -= sold
                 delta = sold * price / 1000.0
             socs.append(round(soc, 3))

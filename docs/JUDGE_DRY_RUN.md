@@ -79,9 +79,9 @@ simulation of Base rather than from anything Base has said it needs.
 day's capturable value is visible in the day-ahead curve, $18.83 per battery exists only in
 real time, all 19 intervals that printed 5x their day-ahead hour fell on scarcity days, wear
 gating pays on a legacy pack and never binds on a Base Core-style one, and the ancillary
-headline is a rare day inside ERCOT's ADER pilot rules (+$0.14 median) rather than a rate —
-the pilot rules cost 92% of the unrestricted value because Reg Down is the product an
-aggregation of home batteries may not sell.
+headline is a rare day rather than a rate: inside the pilot rules a median +$0.15 per battery
+on a held-out day, and ERCOT's ADER pilot rules cost 91% of the unrestricted value
+because Reg Down is the product an aggregation of home batteries may not sell.
 
 **Against.** The held-out uplift is 7 of 7 days at mean $2.96 and median $1.94 per battery per
 day, but on seven days only, and two scarcity days carry most of the mean. That is enough to say

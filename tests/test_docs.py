@@ -185,6 +185,13 @@ CLAIMS: tuple[tuple[str, str], ...] = (
     (r"\| as committed \| \d+% \| (\d+)% \|", "calibration_holdout_before"),
     (r"\| after tuning \| (\d+)% \| \d+% \|", "calibration_fitted_after"),
     (r"\| after tuning \| \d+% \| (\d+)% \|", "calibration_holdout_after"),
+    # The ancillary split inside the ERCOT ADER pilot rules, and the labelled comparison
+    # against all five products. Both come from `python -m gridsignal.ancillary`.
+    (r"pilot rules[^|\n]{0,80}?median \**\+?\$(\d+\.\d\d)", "ancillary_median_usd"),
+    (r"pilot rules[^|\n]{0,110}?mean \**\+?\$(\d+\.\d\d)", "ancillary_mean_usd"),
+    (r"2024-05-08 alone carrying (\d+)%", "ancillary_top_day_share"),
+    (r"all five products[^|\n]{0,90}?median of \$(\d+\.\d\d)", "unrestricted_median_usd"),
+    (r"all five products[^|\n]{0,110}?mean of \$(\d+\.\d\d)", "unrestricted_mean_usd"),
 )
 
 #: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the

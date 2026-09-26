@@ -39,12 +39,13 @@ Simulation assumptions, documented because they set the numbers:
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
 
-from gridsignal import backtest, dam, detect, forecast, holdout, ingest
+from gridsignal import backtest, dam, detect, forecast, guardrails, holdout, ingest
 from gridsignal.paths import DATA_DIR
 from gridsignal.prices import AS_SUFFIX, PriceTrace, load_price_trace, load_scenario
 from gridsignal.signals import Signal
@@ -195,6 +196,10 @@ class DayValue:
     awards: tuple[HourAward, ...]
     held_hours: int
     reserve_violations: int
+    #: Offers built for this day, and how many the guardrails refused to let leave.
+    offers_checked: int = 0
+    offers_refused: int = 0
+    refusals: tuple[str, ...] = ()
     #: The rule set the offer was built under, so a number can never lose its caveat.
     rules: str = ADER_PILOT.name
 
@@ -262,8 +267,14 @@ def _plan(trace: PriceTrace) -> pd.DataFrame:
 
 
 def _settle(trace: PriceTrace, plan: pd.DataFrame, battery: Battery) -> pd.DataFrame:
+    """Settle the energy plan with the member's backup held back from both legs."""
     return backtest.value_captured(
-        plan, trace.frame, kwh=battery.kwh, power_kw=battery.power_kw, serve_home=True
+        plan,
+        trace.frame,
+        kwh=battery.kwh,
+        power_kw=battery.power_kw,
+        serve_home=True,
+        backup_kwh=battery.reserve_kwh,
     )
 
 
@@ -350,6 +361,9 @@ def _hour_rows(ledger: pd.DataFrame) -> pd.DataFrame:
     frame["hour"] = frame["interval_start"].dt.hour
     soc = frame["signal_soc_kwh"].astype(float)
     frame["moved_kwh"] = -soc.diff().fillna(soc.iloc[0])
+    # Stored energy going into each interval: the pack starts the day empty, so the
+    # first interval's opening state of charge is zero.
+    frame["soc_open_kwh"] = soc.shift(1, fill_value=0.0)
     frame["exporting"] = frame["signal_action"] == Signal.EXPORT.value
     return frame
 
@@ -367,6 +381,10 @@ def co_optimize(
     hourly awards and a count of reserve violations (which must always be zero).
     ``rules`` decides which products the aggregation may offer and how many kW of each
     it may register; ``devices`` is the fleet the per-QSE MW caps are shared across.
+
+    Nothing is awarded that :mod:`gridsignal.guardrails` has not passed: the hour's
+    export and its capacity offer are built, handed to the validator together, and only
+    what comes back is kept. Refusals are counted, never trimmed to fit.
     """
     if as_prices is None:
         as_prices = load_as_prices(_trace_path(trace))
@@ -378,9 +396,13 @@ def co_optimize(
     prices = as_prices.set_index(as_prices["interval_start"].dt.hour)
     energy_only_usd = round(float(energy_only["signal_usd"].sum()), 2)
 
+    limits = _limits(rules)
+    day_ahead = _day_ahead_price(trace)
     awards: list[HourAward] = []
+    refusals: list[str] = []
     energy_usd = 0.0
     violations = 0
+    checked = 0
 
     for hour, rows in ledger.groupby("hour", sort=True):
         hour_energy_usd = float(rows["signal_usd"].sum())
@@ -403,23 +425,63 @@ def co_optimize(
             prices.loc[hour], battery, sellable_kwh, headroom_kwh, idle_kw, rules, devices
         )
         energy_usd += hour_energy_usd
-        if not best:
-            continue
 
-        product, kw, price = best
-        if product.direction == "discharge" and kw * product.sustain_h > sellable_kwh + 1e-6:
-            violations += 1
-            continue
-        awards.append(
-            HourAward(
-                hour=int(hour),
-                product=product.key,
-                kw=round(kw, 3),
-                price_mw_h=round(price, 2),
-                usd=round(kw * price / 1000.0, 4),
-                held_for_capacity=int(hour) in held,
+        book: list[guardrails.Offer] = []
+        if exported_kw > 0:
+            book.append(
+                guardrails.Offer(
+                    device_id=battery.label,
+                    hour=int(hour),
+                    product=guardrails.ENERGY,
+                    kw=_floor_kw(exported_kw),
+                    price_mw_h=day_ahead.get(int(hour), 0.0),
+                    sustain_h=1.0,
+                    power_kw=battery.power_kw,
+                    # An export is backed by what the battery holds going into the hour;
+                    # a reserve award by the least it holds at any moment of it.
+                    soc_kwh=float(rows["soc_open_kwh"].iloc[0]),
+                    reserve_kwh=battery.reserve_kwh,
+                    room_kwh=headroom_kwh,
+                )
             )
-        )
+        if best:
+            product, kw, price = best
+            book.append(
+                guardrails.Offer(
+                    device_id=battery.label,
+                    hour=int(hour),
+                    product=product.key,
+                    kw=_floor_kw(kw),
+                    price_mw_h=price,
+                    sustain_h=product.sustain_h,
+                    power_kw=battery.power_kw,
+                    soc_kwh=float(soc.min()),
+                    reserve_kwh=battery.reserve_kwh,
+                    room_kwh=headroom_kwh,
+                    direction=product.direction,
+                )
+            )
+
+        checked += len(book)
+        if not book:
+            continue
+        sendable, refused = guardrails.clean(book, limits, devices)
+        refusals.extend(str(violation) for violation in refused)
+        violations += sum(1 for v in refused if v.rule in ("duration", "reserve"))
+
+        for offer in sendable:
+            if offer.product == guardrails.ENERGY:
+                continue
+            awards.append(
+                HourAward(
+                    hour=offer.hour,
+                    product=offer.product,
+                    kw=offer.kw,
+                    price_mw_h=round(offer.price_mw_h, 2),
+                    usd=round(offer.kw * offer.price_mw_h / 1000.0, 4),
+                    held_for_capacity=offer.hour in held,
+                )
+            )
 
     return DayValue(
         date=trace.date,
@@ -430,7 +492,39 @@ def co_optimize(
         awards=tuple(awards),
         held_hours=len(held),
         reserve_violations=violations,
+        offers_checked=checked,
+        offers_refused=len(refusals),
+        refusals=tuple(refusals),
         rules=rules.name,
+    )
+
+
+def _day_ahead_price(trace: PriceTrace) -> dict[int, float]:
+    """The day-ahead curve by hour: the price an export is offered at, published ahead.
+
+    Without a day-ahead frame the real-time settlement price stands in, which is what
+    the energy plan is settled against anyway.
+    """
+    frame = trace.dam if trace.dam is not None else trace.frame
+    hourly = frame.groupby(frame["interval_start"].dt.hour)["spp"].mean()
+    return {int(hour): float(price) for hour, price in hourly.items()}
+
+
+def _floor_kw(kw: float) -> float:
+    """Round an offer down to the watt. Rounding up offers capacity that is not there."""
+    return math.floor(kw * 1000.0) / 1000.0
+
+
+def _limits(rules: PilotRules) -> guardrails.PilotLimits:
+    """The same pilot document, in the shape the validator checks against."""
+    return guardrails.PilotLimits(
+        name=rules.name,
+        products=rules.products,
+        system_mw=dict(rules.system_mw),
+        qse_share=rules.qse_share,
+        min_aggregation_kw=rules.min_aggregation_kw,
+        max_premise_kw=rules.max_premise_kw,
+        registered_system_mw=rules.registered_system_mw,
     )
 
 
