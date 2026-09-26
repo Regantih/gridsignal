@@ -231,84 +231,7 @@
         "trust_BAT-045"
       ]
     },
-    "6a88d4e17752786381e4735a": {
-      "answers": {
-        "backup_risk": {
-          "choice": null,
-          "confidence": 0.51,
-          "kind": "score",
-          "probabilities": {
-            "0": 0.75,
-            "1": 0.17,
-            "2": 0.08
-          },
-          "question_id": "backup_risk",
-          "score": 0.33,
-          "yes": null
-        },
-        "root_cause": {
-          "choice": "telemetry_lag",
-          "confidence": 0.4,
-          "kind": "choice",
-          "probabilities": {
-            "device_fault": 0.03,
-            "gateway_outage": 0.2,
-            "grid_event": 0.04,
-            "spoofed_agent": 0.2,
-            "telemetry_lag": 0.53
-          },
-          "question_id": "root_cause",
-          "score": null,
-          "yes": null
-        },
-        "trust_BAT-012": {
-          "choice": null,
-          "confidence": 0.55,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.45,
-            "yes": 0.55
-          },
-          "question_id": "trust_BAT-012",
-          "score": null,
-          "yes": true
-        },
-        "trust_BAT-016": {
-          "choice": null,
-          "confidence": 0.63,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.37,
-            "yes": 0.63
-          },
-          "question_id": "trust_BAT-016",
-          "score": null,
-          "yes": true
-        },
-        "trust_BAT-036": {
-          "choice": null,
-          "confidence": 0.65,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.35,
-            "yes": 0.65
-          },
-          "question_id": "trust_BAT-036",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 282.1,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "backup_risk",
-        "root_cause",
-        "trust_BAT-012",
-        "trust_BAT-016",
-        "trust_BAT-036"
-      ]
-    },
-    "ff03456355da23b72608fadc": {
+    "9f95bdc60c1eac80716a3cec": {
       "answers": {
         "backup_risk": {
           "choice": null,
@@ -376,6 +299,83 @@
         }
       },
       "latency_ms": 339.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-012",
+        "trust_BAT-016",
+        "trust_BAT-036"
+      ]
+    },
+    "c576901e3073409c82c3ffd5": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.51,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.17,
+            "2": 0.08
+          },
+          "question_id": "backup_risk",
+          "score": 0.33,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "telemetry_lag",
+          "confidence": 0.4,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.03,
+            "gateway_outage": 0.2,
+            "grid_event": 0.04,
+            "spoofed_agent": 0.2,
+            "telemetry_lag": 0.53
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-012": {
+          "choice": null,
+          "confidence": 0.55,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.45,
+            "yes": 0.55
+          },
+          "question_id": "trust_BAT-012",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-016": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "trust_BAT-016",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-036": {
+          "choice": null,
+          "confidence": 0.65,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.35,
+            "yes": 0.65
+          },
+          "question_id": "trust_BAT-036",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 282.1,
       "model": "typesafe-ai/jev",
       "questions": [
         "backup_risk",

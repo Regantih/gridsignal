@@ -142,6 +142,11 @@ def mesh_beat() -> Beat:
     )
 
 
+def usd(amount: float) -> str:
+    """Dollars with the minus outside the sign, so ``$0.79`` reads as a number."""
+    return f"-${abs(amount):,.2f}" if amount < 0 else f"${amount:,.2f}"
+
+
 def signals_beat() -> Beat:
     """What the public data hides, and how the policy scores on days it never saw."""
     view = insight.summarize(insight.analyze())
@@ -156,12 +161,17 @@ def signals_beat() -> Beat:
             f"about {view.ordinary_days_equivalent} ordinary trading days; "
             f"{view.divergent_intervals} of {view.intervals:,} intervals printed 5x their "
             f"day-ahead hour",
-            f"held out ({corrected.days} days, scored once): {corrected.days_won} of "
-            f"{corrected.days} beat the naive schedule, mean "
-            f"${corrected.mean_uplift_usd:,.2f}, median ${corrected.median_uplift_usd:,.2f}, "
-            f"worst ${corrected.worst_uplift_usd:,.2f} per battery per day",
+            f"held out ({corrected.days} days, rescored after each policy revision): "
+            f"{corrected.days_won} of "
+            f"{corrected.days} beat the naive schedule (which holds for its own evening "
+            f"peak on the same rule), mean {usd(corrected.mean_uplift_usd)}, median "
+            f"{usd(corrected.median_uplift_usd)}, worst {usd(corrected.worst_uplift_usd)} "
+            f"per battery per day",
+            f"held out, against a do-nothing battery (never charges, never exports, never "
+            f"serves the house): median {usd(corrected.median_vs_nothing_usd)}, mean "
+            f"{usd(corrected.mean_vs_nothing_usd)} per battery per day",
             f"as first scored (same-interval price): {first_scored.days_won} of "
-            f"{first_scored.days} days, mean ${first_scored.mean_uplift_usd:,.2f} — the "
+            f"{first_scored.days} days, mean {usd(first_scored.mean_uplift_usd)} — the "
             "corrected run above decides each interval on the last settled print instead",
         ),
     )
@@ -184,9 +194,10 @@ def docs_beat(fleet_size: int = DEMO_FLEET) -> Beat:
             f"{fleet_size:,} batteries)",
             f"held out, home-first (the product, and the canonical held-out claim): "
             f"{home_first.days_won} of {home_first.days} days, mean "
-            f"${home_first.mean_uplift_usd:,.2f}, median ${home_first.median_uplift_usd:,.2f}",
+            f"{usd(home_first.mean_uplift_usd)}, median {usd(home_first.median_uplift_usd)}; "
+            f"against a do-nothing battery, median {usd(home_first.median_vs_nothing_usd)}",
             f"held out, grid-only (comparison only, not the product): {grid_only.days_won} of "
-            f"{grid_only.days} days, mean ${grid_only.mean_uplift_usd:,.2f}",
+            f"{grid_only.days} days, mean {usd(grid_only.mean_uplift_usd)}",
         ),
     )
 
@@ -236,6 +247,7 @@ def canonical() -> dict[str, str]:
         "holdout_days_won": str(home_first.days_won),
         "holdout_mean_usd": f"{home_first.mean_uplift_usd:,.2f}",
         "holdout_median_usd": f"{home_first.median_uplift_usd:,.2f}",
+        "holdout_vs_nothing_median_usd": f"{home_first.median_vs_nothing_usd:,.2f}",
         "grid_only_days_won": str(grid_only.days_won),
         "grid_only_mean_usd": f"{grid_only.mean_uplift_usd:,.2f}",
         "scarcity_visible_share": f"{view.scarcity_visible_share:.0%}",

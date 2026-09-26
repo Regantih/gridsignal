@@ -1,10 +1,11 @@
-"""Score the frozen signal policy on days it was never tuned on.
+"""Score the frozen signal policy on days no parameter was ever fitted on.
 
 The policy parameters in :mod:`gridsignal.dam` were fitted on the two bundled scenario
 days plus ``data/tuning/`` and nothing else. Anything in ``data/holdout/`` is a real
-LZ_HOUSTON day the policy has never seen; :func:`evaluate` replays it with the same
+LZ_HOUSTON day no parameter was fitted on; :func:`evaluate` replays it with the same
 frozen constants and reports what the signals earned against the naive schedule,
-losses included.
+losses included. Those days have been rescored at every policy revision and every
+rescore is published, so they are weaker evidence than a set scored once.
 """
 
 from __future__ import annotations

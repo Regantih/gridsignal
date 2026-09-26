@@ -304,8 +304,28 @@ class ControlRoomEngine:
         if total_headroom <= 0 or target <= 0:
             return 0.0
         share = min(target, total_headroom)
+
+        # Floor every battery to the cent, then hand the leftover cents to the largest
+        # remainders: rounding each share on its own leaves the fleet short of its own
+        # commitment (35,999.3 of 36,000 across 10,000 batteries), which reads on screen
+        # as an incident nobody caused.
+        remainders: list[tuple[float, str, Device]] = []
         for device in pool:
-            device.assigned_kw = round(share * headroom[device.device_id] / total_headroom, 2)
+            exact = share * headroom[device.device_id] / total_headroom
+            floored = math.floor(exact * 100) / 100
+            device.assigned_kw = floored
+            remainders.append((exact - floored, device.device_id, device))
+
+        cents = int(round((share - sum(d.assigned_kw for d in pool)) * 100))
+        remainders.sort(key=lambda item: (-item[0], item[1]))
+        for _, device_id, device in remainders:
+            if cents <= 0:
+                break
+            # Never round a battery above its own headroom: that cent is the member's.
+            if device.assigned_kw + 0.01 > headroom[device_id] + 1e-9:
+                continue
+            device.assigned_kw = round(device.assigned_kw + 0.01, 2)
+            cents -= 1
         return round(sum(d.assigned_kw for d in pool), 2)
 
     def _hold_partner_reserve(self) -> None:

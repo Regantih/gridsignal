@@ -362,10 +362,10 @@ scenario — `20% of LZ_HOUSTON offline at 17:00`, `gateway ring 3 dark`, `price
 `BAT-042 offline` — and a parser, not a model, turns it into a question the same control-room
 engine answers: who drops out, what it costs, who can cover it and what the plan is.
 
-On the simulated 10,000-device fleet, `20% of LZ_HOUSTON offline at 17:00` drops 1,777.7 kW
-across **400 devices in LZ_HOUSTON**, **$492.03 of exposure** over the remaining hours at cached
+On the simulated 10,000-device fleet, `20% of LZ_HOUSTON offline at 17:00` drops 1,777.8 kW
+across **400 devices in LZ_HOUSTON**, **$492.05 of exposure** over the remaining hours at cached
 ERCOT prices, all of it coverable by spare export headroom elsewhere; `price spike to $3,000`
-is reported as **9,424.9 kW uncommitted**, worth **$56,549.46 of upside** — upside, not
+is reported as **9,424.2 kW uncommitted**, worth **$56,545.50 of upside** — upside, not
 exposure, because nothing has failed. Every answer lands in about 25 ms on a 2 vCPU box
 (machine-dependent; the test budget is 2 s at 10,000 devices).
 
@@ -506,15 +506,19 @@ adds over that schedule:
 
 | Split | Battery | Gross $ | Wear $ | Net $ | Net, gated $ | Cycles | Gated | Saved |
 |---|---|---|---|---|---|---|---|---|
-| tuning | legacy | +0.36 | 0.00 | +0.36 | **+1.20** | 6.00 | 2.00 | 4.00 |
-| tuning | Base Core-style | +0.63 | 0.00 | +0.63 | **+1.87** | 6.00 | 2.00 | 4.00 |
-| held-out | legacy | +2.14 | 0.00 | +2.14 | **+2.86** | 7.00 | 2.00 | 5.00 |
-| held-out | Base Core-style | +2.96 | 0.00 | +2.96 | **+2.85** | 7.00 | 7.00 | 0.00 |
+| tuning | legacy | -0.04 | 0.00 | -0.04 | **+0.81** | 6.00 | 2.00 | 4.00 |
+| tuning | Base Core-style | -0.25 | 0.00 | -0.25 | **+0.99** | 6.00 | 2.00 | 4.00 |
+| held-out | legacy | -0.22 | 0.00 | -0.22 | **+0.50** | 7.00 | 2.00 | 5.00 |
+| held-out | Base Core-style | -0.79 | 0.00 | -0.79 | **-0.90** | 7.00 | 7.00 | 0.00 |
 
 The wear column is $0.00 because wear is charged on the throughput the policy adds *over
 the naive schedule*, and since home-first dispatch holds storage for the day-ahead peak
 both schedules now fill the pack once a day: the cycle count is the same, so the only
 honest wear charge is on the cycles the gate removes.
+
+These are dollars against a naive schedule that now holds for its own evening peak too, so
+the gross column is negative: the wear question is which dispatch is worth the cycles, and it
+is answered the same way either way.
 
 The finding is the split itself: on the expensive pack the gate earns **+$0.72 per battery
 per day on held-out days and skips 5.00 of 7.00 equivalent full cycles**, because most days
@@ -607,17 +611,17 @@ curve never priced, refuse to buy a spike, wait out a dud export). Signals are a
 is dispatched.
 
 The headline shows two numbers side by side and never the first one alone: the scenario day at
-the selected fleet scale ($1,107,100/day across 10,000 batteries on the 2023-09-06 scarcity day) and
-the **held-out record** — mean +$2.96, median +$1.94 per battery per day, beating the naive
-schedule on 7 of 7 days it was never tuned on (see
+the selected fleet scale ($638,900/day across 10,000 batteries on the 2023-09-06 scarcity day) and
+the **held-out record** — home-first, mean −$0.79, median +$0.13 per battery per day, beating the
+naive schedule on 5 of 7 held-out days (see
 [Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
 representative day in the set; the held-out average is the honest claim.
 
 That scenario-day figure is **uplift, not revenue**. The baseline is the **naive schedule** —
 charge overnight, discharge in the evening on the clock — run over the same modelled 40 kWh /
 20 kW battery, the same day and the same settlement prices. Per battery on 2023-09-06:
-**$127.17 of export revenue** against **$16.46 for the naive schedule**, leaving **$110.71 per
-battery of uplift**, so $1,271,700/day gross and $1,107,100/day uplift across 10,000 simulated
+**$127.17 of export revenue** against **$63.28 for the naive schedule**, leaving **$63.89 per
+battery of uplift**, so $1,271,700/day gross and $638,900/day uplift across 10,000 simulated
 batteries. Both come from `python -m gridsignal.demo_numbers`; the same pair is printed on the
 Grid Signals tile.
 
@@ -871,7 +875,7 @@ a simulator, not a reproduction of any real event and not a grid-control system.
 python -m gridsignal.drills   # rules-only vs Jev on scenarios/holdout/*.yaml
 ```
 
-#### Baseline: scored once, before anything was changed
+#### Baseline: the first scoring, before anything was changed
 
 | Decision layer | Root-cause accuracy on held-out drills |
 | --- | --- |
@@ -1334,29 +1338,38 @@ original scorecard) is kept as a comparison. Neither set of parameters was touch
 
 | Date | Peak $/MWh | Regime | Home-first $ | Member savings $ | Home-first uplift | vs do-nothing $ | Grid-only uplift | Legacy uplift |
 |---|---:|---|---:|---:|---:|---:|---:|---:|
-| 2023-04-06 | 86.13 | ordinary | 0.58 | 0.00 | **+0.33** | 0.58 | +0.00 | +0.27 |
-| 2024-05-08 | 4,981.40 | scarcity | 24.05 | 0.00 | **+6.78** | 24.05 | −14.98 | +9.38 |
-| 2024-12-20 | 73.13 | ordinary | 0.76 | 0.12 | **+0.65** | 0.88 | +0.05 | +0.44 |
-| 2025-04-07 | 3,860.63 | scarcity | 3.25 | 0.18 | **+7.45** | 3.43 | +6.92 | +2.45 |
-| 2025-05-03 | 76.33 | ordinary | 1.41 | 0.23 | **+2.18** | 1.64 | +1.98 | +0.67 |
-| 2026-09-23 | 97.76 | ordinary | 1.58 | 0.00 | **+1.41** | 1.58 | +0.07 | +0.81 |
-| 2026-09-24 | 108.74 | ordinary | 2.44 | 0.00 | **+1.94** | 2.44 | +0.62 | +0.99 |
+| 2023-04-06 | 86.13 | ordinary | 0.58 | 0.00 | **+0.00** | 0.58 | +0.00 | +0.02 |
+| 2024-05-08 | 4,981.40 | scarcity | 24.05 | 0.00 | **−14.98** | 24.05 | −14.98 | −3.94 |
+| 2024-12-20 | 73.13 | ordinary | 0.76 | 0.12 | **+0.13** | 0.88 | +0.05 | +0.10 |
+| 2025-04-07 | 3,860.63 | scarcity | 3.25 | 0.18 | **+6.74** | 3.43 | +6.92 | +1.88 |
+| 2025-05-03 | 76.33 | ordinary | 1.41 | 0.23 | **+1.74** | 1.64 | +1.98 | +0.35 |
+| 2026-09-23 | 97.76 | ordinary | 1.58 | 0.00 | **+0.07** | 1.58 | +0.07 | −0.10 |
+| 2026-09-24 | 108.74 | ordinary | 2.44 | 0.00 | **+0.77** | 2.44 | +0.62 | +0.17 |
 
-**Home-first: 7 of 7 days beat naive**, mean +$2.96, median +$1.94, worst +$0.33, best +$7.45.
-Against a **do-nothing battery** — one that never charges, never exports and never serves the
-house, so it earns nothing and saves nothing — the same days are worth median $1.64, mean $4.94.
-The legacy unit wins all 7 too, at mean +$2.14 and median +$0.81; grid-only wins 5 of 7 at mean
-−$0.76, because the naive schedule sells the whole 40 kWh into the 2024-05-08 spike while the
-causal policy reacts to it one interval late.
+**Home-first: 5 of 7 days beat naive**, mean −$0.79, median +$0.13, worst −$14.98, best +$6.74.
+The mean is negative because of one day: on 2024-05-08 the clock schedule, holding its charge
+for the same evening peak, sells the whole pack into the $4,981/MWh hour the causal policy only
+reacts to one interval late. Against a battery that **does nothing** — never charges, never
+exports, never serves the house — median $1.64 and mean $4.94 a day, which is the absolute
+number this repo leads with. The legacy unit also wins 5 of 7, at mean −$0.22 and median
++$0.10; grid-only wins 5 of 7 at mean −$0.76.
+
+The naive schedule gets the **same evening-peak hold as the policy** (`hold_for_peak` applies to
+both in [`src/gridsignal/backtest.py`](src/gridsignal/backtest.py)). It did not before, and that
+exemption was most of the uplift this repo used to publish: the hold is worth about $2.11 per
+battery per day to the signals and about $3.76 to the clock schedule, so a baseline barred from
+holding was being beaten by the rule and not by the signal.
 
 #### The peak hold is the fix, and here is what it was worth
 
 Before this change the simulated house drew on storage all afternoon, so on 2024-05-08 the
 battery sat at 0 kWh by 16:00 and missed the $1,333–$4,981/MWh evening. Running the same policy
-with the hold switched off (`holdout.evaluate(hold_for_peak=False)`, kept so the bug stays
-measurable) scores **6 of 7 days, mean +$0.70, median +$0.58, worst −$5.37** — and 2024-05-08
-itself goes from **+$6.78 to −$5.37**, $24.05 of signal value down to $11.90. Test:
-`tests/test_holdout.py::test_the_peak_hold_is_what_turns_the_worst_held_out_day_around`.
+with the hold switched off for both schedules (`holdout.evaluate(hold_for_peak=False)`, kept so
+the bug stays measurable) scores **6 of 7 days, mean +$0.70, median +$0.58, worst −$5.37** — a
+*better* uplift than the corrected run, because the clock schedule gains more from the hold than
+the policy does. What the hold is worth is visible in the absolute number instead: on 2024-05-08
+the battery earns **$24.05 instead of $11.90**. Test:
+`tests/test_holdout.py::test_the_peak_hold_is_what_the_worst_held_out_day_earns_on`.
 
 #### Corrected for same-interval lookahead
 
@@ -1370,13 +1383,13 @@ only (`same_interval_price=False`, the default in
 
 | Scoring | Days won | Mean $ | Median $ | Worst $ |
 |---|---|---:|---:|---:|
-| Corrected (day-ahead + last settled print), home-first | 7/7 | +2.96 | +1.94 | +0.33 |
-| As first scored (same-interval price), home-first | 7/7 | +3.82 | +1.94 | +0.33 |
+| Corrected (day-ahead + last settled print), home-first | 5/7 | −0.79 | +0.13 | −14.98 |
+| As first scored (same-interval price), home-first | 4/7 | +0.07 | +0.13 | −8.65 |
 | Corrected, grid-only | 5/7 | −0.76 | +0.07 | −14.98 |
 | As first scored (same-interval price), grid-only | 4/7 | +0.09 | +0.05 | −8.65 |
 
 The correction costs the scarcity day, not the ordinary ones: the median is unchanged and the
-mean falls $3.82 → $2.96, because a causal policy reacts to the $4,981/MWh spike one interval
+mean falls $0.07 → −$0.79, because a causal policy reacts to the $4,981/MWh spike one interval
 late while the naive schedule is already selling into it. That is the honest size of the effect,
 and it is why the corrected number is the one quoted everywhere. Regression test:
 `tests/test_dam.py::test_an_intervals_own_print_cannot_change_its_own_decision`.
@@ -1396,7 +1409,8 @@ policy won 2 of 7 days (mean −$0.15, worst −$4.89) because it held charge wa
 never came; planning the windows from a price curve the operator genuinely has in advance removes
 most of that guesswork, and the real-time detector now only has to catch the divergence. Read it
 conservatively all the same: two scarcity days carry most of the mean, so a fleet-level claim
-built on the scarcity day alone would be dishonest — the median day is worth $1.94.
+built on the scarcity day alone would be dishonest — the median day is worth $0.13 against the
+clock schedule; against a battery that does nothing, median $1.64.
 
 Reproduce with `python -m gridsignal.holdout`.
 
@@ -1445,11 +1459,16 @@ real Base Power device or fleet.
   not metered data, so the export split and member savings move with that assumption.
 - The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in
   the simulator: no partner utility, installer or member is represented, and nothing is dispatched.
-- **The out-of-sample edge is concentrated**: 7 of 7 held-out days beat naive home-first at a
-  median of +$1.94, but the two scarcity days carry most of the mean, and the same policy run
-  grid-only wins only 5 of 7 at −$0.76 a day once same-interval lookahead is removed. Day-ahead
-  anchoring and the peak hold fixed the previous generalisation failure; they did not turn this
-  into a revenue product.
+- **The out-of-sample edge is thin and it can be negative**: 5 of 7 held-out days beat the naive
+  schedule home-first at a median of +$0.13, but the mean is **−$0.79** because 2024-05-08 goes to
+  the clock schedule by $14.98 once that schedule is allowed the same evening-peak hold. Against a
+  battery that does nothing, median $1.64 a day. Day-ahead anchoring and the peak hold
+  fixed the previous generalisation failure; they did not turn this into a revenue product.
+- **The held-out set is not pristine.** It was scored, published, and then scored again after
+  several policy revisions — same-interval lookahead removed, day-ahead anchoring, the peak hold,
+  and the naive baseline corrected. Parameters were never fitted on it, and every rescore is
+  published including the ones that made the number worse, but it has informed the work and is
+  weaker evidence than a set scored once.
 - The congestion read is 15 days of settlement prices: the zone-timed uplift is a re-timing
   study on one battery, and the placement sketch's saturation curve is an assumed linear
   relationship, not an estimated one. Neither is a forecast or a siting recommendation.

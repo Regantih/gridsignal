@@ -14,6 +14,7 @@ that asserts the old and the new signature cover the same fields.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import replace
@@ -59,13 +60,33 @@ def discharge_headroom_kw(engine: ControlRoomEngine, device: Device) -> float:
 
 
 def _share(engine: ControlRoomEngine, pool: list[Device], target: float) -> float:
-    """Old: read each device's headroom again for the sum and again for the split."""
+    """Old: read each device's headroom again for the sum and again for the split.
+
+    The largest-remainder pass is the current one: this module reproduces the old
+    *speed*, and an allocation that lands on a different kW would make the before/after
+    comparison meaningless.
+    """
     total_headroom = sum(engine.exportable_kw(d) for d in pool)
     if total_headroom <= 0 or target <= 0:
         return 0.0
     share = min(target, total_headroom)
+
+    remainders: list[tuple[float, str, Device]] = []
     for device in pool:
-        device.assigned_kw = round(share * engine.exportable_kw(device) / total_headroom, 2)
+        exact = share * engine.exportable_kw(device) / total_headroom
+        floored = math.floor(exact * 100) / 100
+        device.assigned_kw = floored
+        remainders.append((exact - floored, device.device_id, device))
+
+    cents = int(round((share - sum(d.assigned_kw for d in pool)) * 100))
+    remainders.sort(key=lambda item: (-item[0], item[1]))
+    for _, _device_id, device in remainders:
+        if cents <= 0:
+            break
+        if device.assigned_kw + 0.01 > engine.exportable_kw(device) + 1e-9:
+            continue
+        device.assigned_kw = round(device.assigned_kw + 0.01, 2)
+        cents -= 1
     return round(sum(d.assigned_kw for d in pool), 2)
 
 

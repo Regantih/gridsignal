@@ -100,9 +100,11 @@ prices the utility-partner access fee at the break-even the battery cannot pay o
 the member backup floor turns out to be load-bearing rather than decorative — the same walk
 with the floor removed spends promised backup in 335 intervals.
 
-**Against.** The held-out uplift is 7 of 7 days at mean $2.96 and median $1.94 per battery per
-day, but on seven days only, and two scarcity days carry most of the mean. That is enough to say
-the policy is not broken and not enough to size a business.
+**Against.** Once the naive clock schedule is allowed the same evening-peak hold, the held-out
+uplift is 5 of 7 days at **mean −$0.79 and median +$0.13** per battery per day: one scarcity day
+goes to the clock schedule by $14.98 and takes the mean with it. Against a battery that does
+nothing the median day is worth $1.64. That is enough to say the policy is not broken and
+nowhere near enough to size a business.
 
 ## Value — Usability — 9 / 10
 

@@ -232,11 +232,11 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
     speedup = before.total_p50_ms / after.total_p50_ms if after.total_p50_ms else 0.0
     return Section(
         "The evidence",
-        "Days the policy never saw, a pack of safety questions committed before it was "
-        "scored, and a replay of a real scarcity day at Base scale.",
+        "Days the parameters were never fitted on, a pack of safety questions committed "
+        "before it was scored, and a replay of a real scarcity day at Base scale.",
         (
             Claim(
-                "Held-out days, scored once",
+                "Held-out days, rescored at every revision",
                 f"{home_first.days_won} of {home_first.days} days beat the baseline",
                 f"Mean ${home_first.mean_uplift_usd:,.2f} and median "
                 f"${home_first.median_uplift_usd:,.2f} per battery per day against a "

@@ -163,7 +163,8 @@ GLOSSARY: dict[str, str] = {
         "ERCOT's market that clears the day before delivery, so the price is known in advance."
     ),
     "held-out": (
-        "Days the policy was never tuned on, scored once, so the result is not hindsight."
+        "Days no parameter was fitted on. They have been rescored at every policy revision, "
+        "and every rescore is published."
     ),
     "ancillary": (
         "Capacity ERCOT pays for standing ready (Reg Up, Reg Down, RRS, ECRS, Non-Spin) "
@@ -288,7 +289,7 @@ def insight_run() -> list[insight.DayInsight]:
 
 @st.cache_data(show_spinner=False)
 def holdout_run() -> list[holdout.DayResult]:
-    """Score the frozen policy on the bundled days it was never tuned on."""
+    """Score the frozen policy on the bundled days no parameter was fitted on."""
     return holdout.evaluate()
 
 
@@ -1741,9 +1742,9 @@ def render_money_chart(ledger: pd.DataFrame) -> None:
 
 
 def render_holdout() -> None:
-    """Out-of-sample scorecard: the same frozen policy on days it never saw."""
+    """Out-of-sample scorecard: the same frozen policy on days it was not fitted on."""
     results = holdout_run()
-    st.subheader("Held-out days (parameters frozen, never tuned on these)")
+    st.subheader("Held-out days (parameters frozen, never fitted on these)")
     if not results:
         caption(
             "No held-out days bundled. Run python scripts/fetch_holdout.py "
@@ -2370,7 +2371,7 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
     )
     if out.days:
         holdout_card = (
-            f"<div class='gs-kicker'>Across {out.days} held-out days the policy never saw</div>"
+            f"<div class='gs-kicker'>Across {out.days} held-out days, parameters frozen</div>"
             f"<div style='font-size:3.1rem;font-weight:700;color:#38bdf8;line-height:1.2'>"
             f"{signed_usd(out.mean_uplift_usd)}</div>"
             f"<div class='gs-body'>mean uplift per battery per day — median "
@@ -2394,8 +2395,10 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
     )
     caption(
         "The scenario-day figure is one extreme day and is never the claim on its own: "
-        "the held-out average beside it is what the frozen policy does on days it was "
-        "never tuned on, and it can lose money on an individual day."
+        "the held-out average beside it is what the frozen policy does on days no "
+        "parameter was fitted on, and it can lose money on an individual day. Those days "
+        "informed several policy revisions, so they are weaker evidence than a set "
+        "scored once."
     )
 
 

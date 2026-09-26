@@ -44,8 +44,9 @@ approval gate, quarantine and reassignment — and appends every transition to a
    afternoon before the trade day, so the plan uses only information the operator has in advance.
 5. Signals: charge / hold / export per interval — the day-ahead plan, overridden only where real
    time diverges from it. `signals.py` is the real-time-only fallback for a day with no curve.
-6. Backtest: dollars captured vs. a naive schedule, scored once on `data/holdout/` with the
-   parameters fitted on `data/tuning/` plus the two scenario days.
+6. Backtest: dollars captured vs. a naive schedule given the same evening-peak hold, scored on
+   `data/holdout/` with the parameters fitted on `data/tuning/` plus the two scenario days. The
+   held-out days were never fitted on, but they have been rescored at every policy revision.
 7. Dashboard: member view plus an operator view for Base.
 
 ## Agent mesh (`src/gridsignal/mesh/`)

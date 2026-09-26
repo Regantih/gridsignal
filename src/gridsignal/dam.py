@@ -24,8 +24,9 @@ from gridsignal.signals import SPIKE_THRESHOLD, Signal, make_signals
 
 # Frozen after a grid search on the tuning split only — the two bundled scenario days
 # plus data/tuning — maximising median uplift per battery per day (scripts/tune_policy.py).
-# Several spreads tie at the top; the middle value is taken. The held-out days in
-# data/holdout were scored once, afterwards, and never fed back into these numbers.
+# Several spreads tie at the top; the middle value is taken. No parameter here was ever
+# fitted on data/holdout, but those days have been rescored at every policy revision and
+# every rescore is published, so they are weaker evidence than a set scored once.
 CHARGE_HOURS = 5
 EXPORT_HOURS = 6
 # A round trip at 90% efficiency needs the sell price to beat the buy price by ~1.11x

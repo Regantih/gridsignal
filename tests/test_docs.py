@@ -159,8 +159,11 @@ CLAIMS: tuple[tuple[str, str], ...] = (
     (r"\$([\d,]+) recovered", "dollars_recovered"),
     (r"\$([\d,]+)/day across 10,000 batteries", "scenario_fleet_usd"),
     (r"[Hh]ome-first[^|\n]{0,60}?(\d) of 7", "holdout_days_won"),
-    (r"[Hh]ome-first[^|\n]{0,80}?mean \+?\$(\d+\.\d\d)", "holdout_mean_usd"),
+    (r"[Hh]ome-first[^|\n]{0,80}?mean ([+\u2212-]?)\$(\d+\.\d\d)", "holdout_mean_usd"),
     (r"[Hh]ome-first[^|\n]{0,110}?median \+?\$(\d+\.\d\d)", "holdout_median_usd"),
+    # The naive schedule can flatter or damn the policy; the absolute comparison cannot.
+    (r"does nothing[^|\n]{0,60}?median \$(\d+\.\d\d)", "holdout_vs_nothing_median_usd"),
+    (r"do-nothing battery, median \$(\d+\.\d\d)", "holdout_vs_nothing_median_usd"),
     (r"[Gg]rid-only[^|\n]{0,60}?(\d) of 7", "grid_only_days_won"),
     (r"[Gg]rid-only[^|\n]{0,80}?mean ([+\u2212-]?)\$(\d+\.\d\d)", "grid_only_mean_usd"),
     (

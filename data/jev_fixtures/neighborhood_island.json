@@ -1,82 +1,5 @@
 {
   "entries": {
-    "4a6d1200c1611654e54e2dfd": {
-      "answers": {
-        "backup_risk": {
-          "choice": null,
-          "confidence": 0.03,
-          "kind": "score",
-          "probabilities": {
-            "0": 0.55,
-            "1": 0.26,
-            "2": 0.19
-          },
-          "question_id": "backup_risk",
-          "score": 0.65,
-          "yes": null
-        },
-        "root_cause": {
-          "choice": "grid_event",
-          "confidence": 0.27,
-          "kind": "choice",
-          "probabilities": {
-            "device_fault": 0.23,
-            "gateway_outage": 0.03,
-            "grid_event": 0.42,
-            "spoofed_agent": 0.31,
-            "telemetry_lag": 0.01
-          },
-          "question_id": "root_cause",
-          "score": null,
-          "yes": null
-        },
-        "trust_BAT-292": {
-          "choice": null,
-          "confidence": 0.57,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.43,
-            "yes": 0.57
-          },
-          "question_id": "trust_BAT-292",
-          "score": null,
-          "yes": true
-        },
-        "trust_BAT-716": {
-          "choice": null,
-          "confidence": 0.53,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.47,
-            "yes": 0.53
-          },
-          "question_id": "trust_BAT-716",
-          "score": null,
-          "yes": true
-        },
-        "trust_BAT-980": {
-          "choice": null,
-          "confidence": 0.56,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.44,
-            "yes": 0.56
-          },
-          "question_id": "trust_BAT-980",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 418.7,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "backup_risk",
-        "root_cause",
-        "trust_BAT-292",
-        "trust_BAT-716",
-        "trust_BAT-980"
-      ]
-    },
     "53065f1c8fc816aefc35bc94": {
       "answers": {
         "backup_risk": {
@@ -306,6 +229,83 @@
         "trust_BAT-011",
         "trust_BAT-037",
         "trust_BAT-047"
+      ]
+    },
+    "f054ef531dafc4a44ef215c4": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.03,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.55,
+            "1": 0.26,
+            "2": 0.19
+          },
+          "question_id": "backup_risk",
+          "score": 0.65,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "grid_event",
+          "confidence": 0.27,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.23,
+            "gateway_outage": 0.03,
+            "grid_event": 0.42,
+            "spoofed_agent": 0.31,
+            "telemetry_lag": 0.01
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-292": {
+          "choice": null,
+          "confidence": 0.57,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.43,
+            "yes": 0.57
+          },
+          "question_id": "trust_BAT-292",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-716": {
+          "choice": null,
+          "confidence": 0.53,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.47,
+            "yes": 0.53
+          },
+          "question_id": "trust_BAT-716",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-980": {
+          "choice": null,
+          "confidence": 0.56,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.44,
+            "yes": 0.56
+          },
+          "question_id": "trust_BAT-980",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 418.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-292",
+        "trust_BAT-716",
+        "trust_BAT-980"
       ]
     }
   },

@@ -113,13 +113,15 @@ def value_captured(
     frame["naive_action"] = [_naive_action(ts) for ts in frame["interval_start"]]
 
     loads = _home_load_kwh(frame, hours) if serve_home else [0.0] * len(frame)
-    reserved, peak_now = (
-        _peak_reserve(plan, hours, power_kw, kwh)
-        if hold_for_peak
-        else ([0.0] * len(hours), [True] * len(hours))
-    )
+    no_hold = ([0.0] * len(hours), [True] * len(hours))
 
     for strategy in ("signal", "naive"):
+        # Both strategies hold energy back for their own remaining export hours: a
+        # baseline exempted from the rule is beaten by the rule, not by the signal.
+        schedule = plan if strategy == "signal" else _naive_plan(plan, frame)
+        reserved, peak_now = (
+            _peak_reserve(schedule, hours, power_kw, kwh) if hold_for_peak else no_hold
+        )
         soc, socs, cashflows, served, from_grid = 0.0, [], [], [], []
         for action, price, span, load_kwh, reserve, at_peak in zip(
             frame[f"{strategy}_action"],
@@ -134,7 +136,7 @@ def value_captured(
             home_kwh = 0.0
             sellable = max(soc - backup_kwh, 0.0)
             if action != Signal.CHARGE.value:
-                spare = sellable if (at_peak or strategy == "naive") else max(soc - reserve, 0.0)
+                spare = sellable if at_peak else max(soc - reserve, 0.0)
                 home_kwh = min(load_kwh, spare, sellable, power_kw * span)
                 soc -= home_kwh
                 sellable -= home_kwh
@@ -208,6 +210,15 @@ def _peak_reserve(
             owed += power_kw * hours[i]
             best_ahead = max(best_ahead, dam_mwh[i])
     return reserved[::-1], peak_now[::-1]
+
+
+def _naive_plan(plan: pd.DataFrame, frame: pd.DataFrame) -> pd.DataFrame:
+    """The clock schedule read as a plan, so it holds for its own export hours too."""
+    if "dam_mwh" not in plan:
+        return plan
+    return pd.DataFrame(
+        {"planned": frame["naive_action"].to_numpy(), "dam_mwh": plan["dam_mwh"].to_numpy()}
+    )
 
 
 def _home_load_kwh(frame: pd.DataFrame, hours: list[float]) -> list[float]:

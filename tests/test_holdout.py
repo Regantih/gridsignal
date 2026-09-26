@@ -137,14 +137,20 @@ def test_cli_prints_every_day(capsys: pytest.CaptureFixture[str]) -> None:
     assert "beat the naive schedule" in out
 
 
-def test_the_peak_hold_is_what_turns_the_worst_held_out_day_around() -> None:
-    """2024-05-08: the house used to empty the battery before the $4,981/MWh evening."""
+def test_the_peak_hold_is_what_the_worst_held_out_day_earns_on() -> None:
+    """2024-05-08: the house used to empty the battery before the $4,981/MWh evening.
+
+    The hold is worth money in absolute terms, not in uplift: the naive schedule now gets
+    the same rule and gains more from it than the signals do, so the day is lost by more
+    with the hold on than with it off. Both halves are the honest reading.
+    """
     trace = next(t for t in holdout.load_holdout() if t.date == "2024-05-08")
     held = holdout.score_day(trace)
     drained = holdout.score_day(trace, hold_for_peak=False)
 
-    assert drained.uplift_usd < 0 < held.uplift_usd
     assert held.signal_usd > drained.signal_usd
+    assert held.naive_usd > drained.naive_usd
+    assert held.uplift_usd < drained.uplift_usd < 0
 
 
 def test_the_legacy_unit_is_still_scoreable_as_a_comparison() -> None:
@@ -153,7 +159,9 @@ def test_the_legacy_unit_is_still_scoreable_as_a_comparison() -> None:
         holdout.evaluate(kwh=backtest.LEGACY_KWH, power_kw=backtest.LEGACY_POWER_KW)
     )
     assert default.median_uplift_usd > legacy.median_uplift_usd > 0
-    assert legacy.days_won == legacy.days
+    # Both units win most days and lose the mean to the same scarcity day.
+    assert legacy.days_won > legacy.days / 2
+    assert legacy.mean_uplift_usd < 0
 
 
 def test_every_day_is_also_scored_against_a_do_nothing_battery(

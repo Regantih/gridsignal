@@ -8,7 +8,7 @@ from gridsignal.control_room.engine import MIN_DISPATCH_HOURS, ApprovalError
 from gridsignal.control_room.models import DeviceStatus, IncidentStatus, Role, Severity, TaskStatus
 from gridsignal.fleet import FOCUS_DEVICE_ID, build_fleet
 from gridsignal.home import DEFAULT_RESERVE_FRACTION, reserve_kwh
-from gridsignal.prices import energy_value_usd
+from gridsignal.prices import SCENARIOS, energy_value_usd, load_price_trace
 
 
 def test_fleet_is_deterministic():
@@ -160,6 +160,23 @@ def test_reset_replays_the_demo_without_leftovers():
     assert incident.incident_id == "INC-001"
     eng.approve_recovery()
     assert eng.snapshot().coverage_pct == pytest.approx(100.0, abs=0.5)
+
+
+@pytest.mark.parametrize("fleet_size", [1_000, 10_000])
+@pytest.mark.parametrize("day", ["normal", "scarcity"])
+def test_the_stable_fleet_commits_its_target_to_the_kilowatt(fleet_size: int, day: str):
+    """Rounding each battery's share on its own left the fleet 0.7 kW short of itself."""
+    eng = ControlRoomEngine(
+        price_trace=load_price_trace(SCENARIOS[day].path), fleet_size=fleet_size
+    )
+    snap = eng.snapshot()
+
+    assert snap.committed_kw == pytest.approx(eng.grid_event.target_kw, abs=0.005)
+    assert round(snap.committed_kw) == round(eng.grid_event.target_kw)
+    assert snap.coverage_pct == pytest.approx(100.0, abs=0.01)
+    # The remainder is handed out within headroom, so no member is over-asked for it.
+    for device in eng.mine:
+        assert device.assigned_kw <= eng.exportable_kw(device) + 1e-9
 
 
 def test_human_summary_mentions_approval_state():

@@ -172,6 +172,178 @@
         "principle_reversible"
       ]
     },
+    "10b64724b9008b251b8baa50": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.71,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.71,
+            "yes": 0.29
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.87,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.13,
+            "yes": 0.87
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.76,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.24,
+            "yes": 0.76
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.7,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.3,
+            "yes": 0.7
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.8,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.2,
+            "yes": 0.8
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 269.0,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "1133afc867174b04ba779f2b": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.77,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.23,
+            "yes": 0.77
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": true
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.53,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.53,
+            "yes": 0.47
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.83,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.17,
+            "yes": 0.83
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.89,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.11,
+            "yes": 0.89
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.64,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.36,
+            "yes": 0.64
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.75,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.25,
+            "yes": 0.75
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 295.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "11a4d14d710b9446af324f4d": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -344,6 +516,92 @@
         "principle_reversible"
       ]
     },
+    "1d2d5dd3b9dcac9ec388debf": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.84,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.84,
+            "yes": 0.16
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.82,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.82,
+            "yes": 0.18
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.67,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.67,
+            "yes": 0.33
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": false
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.76,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.76,
+            "yes": 0.24
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": false
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.61,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.61,
+            "yes": 0.39
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": false
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 458.9,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "1dcc8000e11fec383460520a": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -430,27 +688,27 @@
         "principle_reversible"
       ]
     },
-    "1de9e8f7e7e3ee8f2b99c985": {
+    "1dfb1304f680b4907f171847": {
       "answers": {
         "principle_ask_when_in_doubt": {
           "choice": null,
-          "confidence": 0.73,
+          "confidence": 0.71,
           "kind": "noul",
           "probabilities": {
-            "no": 0.73,
-            "yes": 0.27
+            "no": 0.29,
+            "yes": 0.71
           },
           "question_id": "principle_ask_when_in_doubt",
           "score": null,
-          "yes": false
+          "yes": true
         },
         "principle_certainty_for_money": {
           "choice": null,
-          "confidence": 0.63,
+          "confidence": 0.56,
           "kind": "noul",
           "probabilities": {
-            "no": 0.63,
-            "yes": 0.37
+            "no": 0.56,
+            "yes": 0.44
           },
           "question_id": "principle_certainty_for_money",
           "score": null,
@@ -458,11 +716,11 @@
         },
         "principle_deliverable": {
           "choice": null,
-          "confidence": 0.77,
+          "confidence": 0.76,
           "kind": "noul",
           "probabilities": {
-            "no": 0.23,
-            "yes": 0.77
+            "no": 0.24,
+            "yes": 0.76
           },
           "question_id": "principle_deliverable",
           "score": null,
@@ -470,11 +728,11 @@
         },
         "principle_market_rules": {
           "choice": null,
-          "confidence": 0.58,
+          "confidence": 0.61,
           "kind": "noul",
           "probabilities": {
-            "no": 0.58,
-            "yes": 0.42
+            "no": 0.61,
+            "yes": 0.39
           },
           "question_id": "principle_market_rules",
           "score": null,
@@ -482,11 +740,11 @@
         },
         "principle_protect_backup": {
           "choice": null,
-          "confidence": 0.58,
+          "confidence": 0.6,
           "kind": "noul",
           "probabilities": {
-            "no": 0.42,
-            "yes": 0.58
+            "no": 0.4,
+            "yes": 0.6
           },
           "question_id": "principle_protect_backup",
           "score": null,
@@ -494,18 +752,18 @@
         },
         "principle_reversible": {
           "choice": null,
-          "confidence": 0.73,
+          "confidence": 0.75,
           "kind": "noul",
           "probabilities": {
-            "no": 0.27,
-            "yes": 0.73
+            "no": 0.25,
+            "yes": 0.75
           },
           "question_id": "principle_reversible",
           "score": null,
           "yes": true
         }
       },
-      "latency_ms": 294.4,
+      "latency_ms": 368.6,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -592,92 +850,6 @@
         }
       },
       "latency_ms": 328.6,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "20e7a568f1120b2484560212": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.92,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.08,
-            "yes": 0.92
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.83,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.17,
-            "yes": 0.83
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": true
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.91,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.09,
-            "yes": 0.91
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.93,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.07,
-            "yes": 0.93
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.74,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.26,
-            "yes": 0.74
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.81,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.19,
-            "yes": 0.81
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 384.5,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -860,92 +1032,6 @@
         "principle_reversible"
       ]
     },
-    "255ff6d7f23472f4ffe45dc7": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.71,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.29,
-            "yes": 0.71
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.56,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.56,
-            "yes": 0.44
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.76,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.24,
-            "yes": 0.76
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.61,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.61,
-            "yes": 0.39
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.6,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.4,
-            "yes": 0.6
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.75,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.25,
-            "yes": 0.75
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 368.6,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
     "2b47bdf9be9314591f4282b6": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -1022,6 +1108,178 @@
         }
       },
       "latency_ms": 313.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "2dd4ba40aba795239b072c64": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.58,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.58,
+            "yes": 0.42
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.87,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.87,
+            "yes": 0.13
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.74,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.74,
+            "yes": 0.26
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": false
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.84,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.84,
+            "yes": 0.16
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": false
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.6,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.6,
+            "yes": 0.4
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": false
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.68,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.32,
+            "yes": 0.68
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 488.4,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "2de8557c44e568c2821e6e14": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.66,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.66,
+            "yes": 0.34
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.55,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.55,
+            "yes": 0.45
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.84,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.16,
+            "yes": 0.84
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.88,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.12,
+            "yes": 0.88
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.61,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.39,
+            "yes": 0.61
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.72,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.28,
+            "yes": 0.72
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 307.6,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -1204,6 +1462,92 @@
         "principle_reversible"
       ]
     },
+    "35b3b2d061fdd5066b93e0ce": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.92,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.08,
+            "yes": 0.92
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": true
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.83,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.17,
+            "yes": 0.83
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.91,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.09,
+            "yes": 0.91
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.93,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.07,
+            "yes": 0.93
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.74,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.26,
+            "yes": 0.74
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.81,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.19,
+            "yes": 0.81
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 384.5,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "3b0393ce6aa8cd9bc82bc293": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -1366,6 +1710,92 @@
         }
       },
       "latency_ms": 387.4,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "3db7765ca9d113e119d10fa3": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.73,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.73,
+            "yes": 0.27
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.63,
+            "yes": 0.37
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.77,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.23,
+            "yes": 0.77
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.58,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.58,
+            "yes": 0.42
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": false
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.58,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.42,
+            "yes": 0.58
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.73,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.27,
+            "yes": 0.73
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 294.4,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -2236,92 +2666,6 @@
         "principle_reversible"
       ]
     },
-    "53dea44957b2cac209b20552": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.8,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.2,
-            "yes": 0.8
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.69,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.31,
-            "yes": 0.69
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": true
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.89,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.11,
-            "yes": 0.89
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.76,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.24,
-            "yes": 0.76
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.72,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.28,
-            "yes": 0.72
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.83,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.17,
-            "yes": 0.83
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 327.7,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
     "5cc282bc666f6ed4e2b645f7": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -2666,6 +3010,92 @@
         "principle_reversible"
       ]
     },
+    "66986ab77aee57436dfb1522": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.53,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.53,
+            "yes": 0.47
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.77,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.23,
+            "yes": 0.77
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.9,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.1,
+            "yes": 0.9
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.92,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.08,
+            "yes": 0.92
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.71,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.29,
+            "yes": 0.71
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.8,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.2,
+            "yes": 0.8
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 366.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "69f6bdf4f798d620027090a5": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -2828,92 +3258,6 @@
         }
       },
       "latency_ms": 327.7,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "6a7fc32ced6cae1268cce76f": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.71,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.71,
-            "yes": 0.29
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.63,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.37,
-            "yes": 0.63
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": true
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.87,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.13,
-            "yes": 0.87
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.76,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.24,
-            "yes": 0.76
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.7,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.3,
-            "yes": 0.7
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.8,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.2,
-            "yes": 0.8
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 269.0,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -3698,6 +4042,178 @@
         "principle_reversible"
       ]
     },
+    "81e16846dd97b54ccd83381a": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.54,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.54,
+            "yes": 0.46
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.83,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.83,
+            "yes": 0.17
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.75,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.75,
+            "yes": 0.25
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": false
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.82,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.82,
+            "yes": 0.18
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": false
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.55,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.55,
+            "yes": 0.45
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": false
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.71,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.29,
+            "yes": 0.71
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 379.9,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "82a9b9073ebc576a84abba73": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.85,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.85,
+            "yes": 0.15
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.87,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.87,
+            "yes": 0.13
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.68,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.68,
+            "yes": 0.32
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": false
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.77,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.77,
+            "yes": 0.23
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": false
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.6,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.6,
+            "yes": 0.4
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": false
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.67,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.33,
+            "yes": 0.67
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 351.1,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "86cc447c2130e591a64578ba": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -3774,92 +4290,6 @@
         }
       },
       "latency_ms": 357.4,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "8920a9465c9751f107c5f56e": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.66,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.66,
-            "yes": 0.34
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.55,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.55,
-            "yes": 0.45
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.84,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.16,
-            "yes": 0.84
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.88,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.12,
-            "yes": 0.88
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.61,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.39,
-            "yes": 0.61
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.72,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.28,
-            "yes": 0.72
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 307.6,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -4558,92 +4988,6 @@
         "principle_reversible"
       ]
     },
-    "94a2378372ceaed1532a1d1f": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.58,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.58,
-            "yes": 0.42
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.87,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.87,
-            "yes": 0.13
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.74,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.74,
-            "yes": 0.26
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": false
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.84,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.84,
-            "yes": 0.16
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.6,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.6,
-            "yes": 0.4
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": false
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.68,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.32,
-            "yes": 0.68
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 488.4,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
     "94cd35358b4a2fbf5dc4e0b8": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -4806,178 +5150,6 @@
         }
       },
       "latency_ms": 464.7,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "97706364f6b1cc15039ab7f7": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.84,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.84,
-            "yes": 0.16
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.82,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.82,
-            "yes": 0.18
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.67,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.67,
-            "yes": 0.33
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": false
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.76,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.76,
-            "yes": 0.24
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.61,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.61,
-            "yes": 0.39
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": false
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.69,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.31,
-            "yes": 0.69
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 458.9,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "9860eccef920c688af668152": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.88,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.12,
-            "yes": 0.88
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.76,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.24,
-            "yes": 0.76
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": true
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.87,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.13,
-            "yes": 0.87
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.55,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.55,
-            "yes": 0.45
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.7,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.3,
-            "yes": 0.7
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.81,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.19,
-            "yes": 0.81
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 385.9,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -5332,178 +5504,6 @@
         "principle_reversible"
       ]
     },
-    "9b6e8748903dbab79b1f4866": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.78,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.78,
-            "yes": 0.22
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.69,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.69,
-            "yes": 0.31
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.79,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.21,
-            "yes": 0.79
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.66,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.34,
-            "yes": 0.66
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.6,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.4,
-            "yes": 0.6
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.78,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.22,
-            "yes": 0.78
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 329.5,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "9df7a16bcc5c5309d7a16947": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.85,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.85,
-            "yes": 0.15
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.87,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.87,
-            "yes": 0.13
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.68,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.68,
-            "yes": 0.32
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": false
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.77,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.77,
-            "yes": 0.23
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.6,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.6,
-            "yes": 0.4
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": false
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.67,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.33,
-            "yes": 0.67
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 351.1,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
     "a2d2ecb0b35243f17e4d4e1e": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -5752,178 +5752,6 @@
         }
       },
       "latency_ms": 344.6,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "aa4584f2aded431afe83e922": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.56,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.44,
-            "yes": 0.56
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.64,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.64,
-            "yes": 0.36
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.81,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.19,
-            "yes": 0.81
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.64,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.36,
-            "yes": 0.64
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.63,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.37,
-            "yes": 0.63
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.79,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.21,
-            "yes": 0.79
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 313.4,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "ae71c2f4f5346a2fcc7ebeff": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.54,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.54,
-            "yes": 0.46
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.83,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.83,
-            "yes": 0.17
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.75,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.75,
-            "yes": 0.25
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": false
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.82,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.82,
-            "yes": 0.18
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": false
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.55,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.55,
-            "yes": 0.45
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": false
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.71,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.29,
-            "yes": 0.71
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 379.9,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -6192,92 +6020,6 @@
         "principle_reversible"
       ]
     },
-    "b6ca1aea5e662a1e1ea201bb": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.77,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.23,
-            "yes": 0.77
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": true
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.53,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.53,
-            "yes": 0.47
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": false
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.83,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.17,
-            "yes": 0.83
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.89,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.11,
-            "yes": 0.89
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.64,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.36,
-            "yes": 0.64
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.75,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.25,
-            "yes": 0.75
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 295.7,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
     "b85fd438bd8e2fc1288ee0a1": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -6440,92 +6182,6 @@
         }
       },
       "latency_ms": 305.0,
-      "model": "typesafe-ai/jev",
-      "questions": [
-        "principle_ask_when_in_doubt",
-        "principle_certainty_for_money",
-        "principle_deliverable",
-        "principle_market_rules",
-        "principle_protect_backup",
-        "principle_reversible"
-      ]
-    },
-    "bdfd17aa3affb30df600989b": {
-      "answers": {
-        "principle_ask_when_in_doubt": {
-          "choice": null,
-          "confidence": 0.54,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.54,
-            "yes": 0.46
-          },
-          "question_id": "principle_ask_when_in_doubt",
-          "score": null,
-          "yes": false
-        },
-        "principle_certainty_for_money": {
-          "choice": null,
-          "confidence": 0.66,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.34,
-            "yes": 0.66
-          },
-          "question_id": "principle_certainty_for_money",
-          "score": null,
-          "yes": true
-        },
-        "principle_deliverable": {
-          "choice": null,
-          "confidence": 0.89,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.11,
-            "yes": 0.89
-          },
-          "question_id": "principle_deliverable",
-          "score": null,
-          "yes": true
-        },
-        "principle_market_rules": {
-          "choice": null,
-          "confidence": 0.53,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.47,
-            "yes": 0.53
-          },
-          "question_id": "principle_market_rules",
-          "score": null,
-          "yes": true
-        },
-        "principle_protect_backup": {
-          "choice": null,
-          "confidence": 0.75,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.25,
-            "yes": 0.75
-          },
-          "question_id": "principle_protect_backup",
-          "score": null,
-          "yes": true
-        },
-        "principle_reversible": {
-          "choice": null,
-          "confidence": 0.78,
-          "kind": "noul",
-          "probabilities": {
-            "no": 0.22,
-            "yes": 0.78
-          },
-          "question_id": "principle_reversible",
-          "score": null,
-          "yes": true
-        }
-      },
-      "latency_ms": 474.7,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -6880,27 +6536,27 @@
         "principle_reversible"
       ]
     },
-    "cf1d1f79c8290bc3ba4a42ce": {
+    "cc6107f1e46c69ea35b2f4b7": {
       "answers": {
         "principle_ask_when_in_doubt": {
           "choice": null,
-          "confidence": 0.53,
+          "confidence": 0.88,
           "kind": "noul",
           "probabilities": {
-            "no": 0.53,
-            "yes": 0.47
+            "no": 0.12,
+            "yes": 0.88
           },
           "question_id": "principle_ask_when_in_doubt",
           "score": null,
-          "yes": false
+          "yes": true
         },
         "principle_certainty_for_money": {
           "choice": null,
-          "confidence": 0.77,
+          "confidence": 0.76,
           "kind": "noul",
           "probabilities": {
-            "no": 0.23,
-            "yes": 0.77
+            "no": 0.24,
+            "yes": 0.76
           },
           "question_id": "principle_certainty_for_money",
           "score": null,
@@ -6908,11 +6564,11 @@
         },
         "principle_deliverable": {
           "choice": null,
-          "confidence": 0.9,
+          "confidence": 0.87,
           "kind": "noul",
           "probabilities": {
-            "no": 0.1,
-            "yes": 0.9
+            "no": 0.13,
+            "yes": 0.87
           },
           "question_id": "principle_deliverable",
           "score": null,
@@ -6920,23 +6576,23 @@
         },
         "principle_market_rules": {
           "choice": null,
-          "confidence": 0.92,
+          "confidence": 0.55,
           "kind": "noul",
           "probabilities": {
-            "no": 0.08,
-            "yes": 0.92
+            "no": 0.55,
+            "yes": 0.45
           },
           "question_id": "principle_market_rules",
           "score": null,
-          "yes": true
+          "yes": false
         },
         "principle_protect_backup": {
           "choice": null,
-          "confidence": 0.71,
+          "confidence": 0.7,
           "kind": "noul",
           "probabilities": {
-            "no": 0.29,
-            "yes": 0.71
+            "no": 0.3,
+            "yes": 0.7
           },
           "question_id": "principle_protect_backup",
           "score": null,
@@ -6944,18 +6600,18 @@
         },
         "principle_reversible": {
           "choice": null,
-          "confidence": 0.8,
+          "confidence": 0.81,
           "kind": "noul",
           "probabilities": {
-            "no": 0.2,
-            "yes": 0.8
+            "no": 0.19,
+            "yes": 0.81
           },
           "question_id": "principle_reversible",
           "score": null,
           "yes": true
         }
       },
-      "latency_ms": 366.7,
+      "latency_ms": 385.9,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",
@@ -7396,6 +7052,92 @@
         "principle_reversible"
       ]
     },
+    "dd408121847d0f72c5a1930b": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.54,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.54,
+            "yes": 0.46
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.66,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.34,
+            "yes": 0.66
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.89,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.11,
+            "yes": 0.89
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.53,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.47,
+            "yes": 0.53
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.75,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.25,
+            "yes": 0.75
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.78,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.22,
+            "yes": 0.78
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 474.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "deea3ad99261124952ec1cac": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -7826,6 +7568,92 @@
         "principle_reversible"
       ]
     },
+    "ec78a4826e5f9839c82f0a90": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.56,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.44,
+            "yes": 0.56
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": true
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.64,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.64,
+            "yes": 0.36
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.81,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.19,
+            "yes": 0.81
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.64,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.36,
+            "yes": 0.64
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.79,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.21,
+            "yes": 0.79
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 313.4,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "ecb18097de21e8eb8793563d": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -8084,6 +7912,92 @@
         "principle_reversible"
       ]
     },
+    "f857a48ee43ef9e144c1123b": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.8,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.2,
+            "yes": 0.8
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": true
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": true
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.89,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.11,
+            "yes": 0.89
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.76,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.24,
+            "yes": 0.76
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.72,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.28,
+            "yes": 0.72
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.83,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.17,
+            "yes": 0.83
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 327.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
     "fb812c5fe9e75e714c34e357": {
       "answers": {
         "principle_ask_when_in_doubt": {
@@ -8160,6 +8074,92 @@
         }
       },
       "latency_ms": 293.2,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "principle_ask_when_in_doubt",
+        "principle_certainty_for_money",
+        "principle_deliverable",
+        "principle_market_rules",
+        "principle_protect_backup",
+        "principle_reversible"
+      ]
+    },
+    "fbb5dee50d49b5ddb62e9df7": {
+      "answers": {
+        "principle_ask_when_in_doubt": {
+          "choice": null,
+          "confidence": 0.78,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.78,
+            "yes": 0.22
+          },
+          "question_id": "principle_ask_when_in_doubt",
+          "score": null,
+          "yes": false
+        },
+        "principle_certainty_for_money": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.69,
+            "yes": 0.31
+          },
+          "question_id": "principle_certainty_for_money",
+          "score": null,
+          "yes": false
+        },
+        "principle_deliverable": {
+          "choice": null,
+          "confidence": 0.79,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.21,
+            "yes": 0.79
+          },
+          "question_id": "principle_deliverable",
+          "score": null,
+          "yes": true
+        },
+        "principle_market_rules": {
+          "choice": null,
+          "confidence": 0.66,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.34,
+            "yes": 0.66
+          },
+          "question_id": "principle_market_rules",
+          "score": null,
+          "yes": true
+        },
+        "principle_protect_backup": {
+          "choice": null,
+          "confidence": 0.6,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.4,
+            "yes": 0.6
+          },
+          "question_id": "principle_protect_backup",
+          "score": null,
+          "yes": true
+        },
+        "principle_reversible": {
+          "choice": null,
+          "confidence": 0.78,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.22,
+            "yes": 0.78
+          },
+          "question_id": "principle_reversible",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 329.5,
       "model": "typesafe-ai/jev",
       "questions": [
         "principle_ask_when_in_doubt",

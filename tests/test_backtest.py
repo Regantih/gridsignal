@@ -126,6 +126,20 @@ def test_storage_serves_the_house_when_nothing_later_pays_more():
     )
 
 
+def test_the_naive_schedule_holds_for_its_own_peak_like_the_signals_do():
+    """The baseline was exempt from the hold, so the policy was beating the rule, not it."""
+    plan, prices = peak_day()
+    held = backtest.value_captured(plan, prices, serve_home=True)
+    drained = backtest.value_captured(plan, prices, serve_home=True, hold_for_peak=False)
+
+    # The clock schedule exports 17:00 to 21:00, so its afternoon load goes to the grid too.
+    assert held.loc[40:67, "naive_home_kwh"].sum() == pytest.approx(0.0)
+    assert drained.loc[40:67, "naive_home_kwh"].sum() > 0
+    assert held.loc[68, "naive_soc_kwh"] > drained.loc[68, "naive_soc_kwh"]
+    # Both strategies are settled under the same rule, so the naive day earns more too.
+    assert backtest.summarize(held).naive_usd > backtest.summarize(drained).naive_usd
+
+
 def test_a_plan_without_a_day_ahead_curve_reserves_nothing():
     plan, prices = peak_day()
     bare = backtest.value_captured(plan[["signal"]].copy(), prices, serve_home=True)
