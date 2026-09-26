@@ -106,13 +106,38 @@ def fetch_scarcity_day(
 
 
 def fetch_load(start: str, end: str) -> pd.DataFrame:
-    """System load. TODO."""
-    raise NotImplementedError
+    """ERCOT system load over ``[start, end]``, as ``interval_start``/``load_mw``."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_load(date=start, end=end)
+    return (
+        raw.rename(columns={"Interval Start": "interval_start", "Load": "load_mw"})[
+            ["interval_start", "load_mw"]
+        ]
+        .sort_values("interval_start")
+        .reset_index(drop=True)
+    )
 
 
 def fetch_fuel_mix(start: str, end: str) -> pd.DataFrame:
-    """Generation by fuel type. TODO."""
-    raise NotImplementedError
+    """ERCOT generation by fuel type, one tidy row per interval and fuel (MW)."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_fuel_mix(date=(pd.Timestamp(start), pd.Timestamp(end)))
+    fuels = [c for c in raw.columns if c not in {"Time", "Interval Start", "Interval End"}]
+    return (
+        raw.rename(columns={"Interval Start": "interval_start"})
+        .melt(
+            id_vars="interval_start",
+            value_vars=fuels,
+            var_name="fuel",
+            value_name="mw",
+        )
+        .sort_values(["interval_start", "fuel"])
+        .reset_index(drop=True)
+    )
 
 
 def save(df: pd.DataFrame, name: str) -> Path:

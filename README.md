@@ -73,13 +73,31 @@ ruff check .
 ruff format --check .
 ```
 
-## Using the Control Room
+## Using the dashboard
+
+The sidebar **View** switch picks between the two pages:
+
+### Control Room
 
 - **Trigger BAT-042 Failure** (sidebar) — simulate the telemetry blackout.
 - **Approve Recovery Plan** (incident panel) — the human gate; nothing moves until it is clicked.
 - **Reset Demo** (sidebar) — replay the story without reloading the browser.
 - **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
   and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
+
+### Grid Signals
+
+An offline analytics view over the same bundled ERCOT day: rolling-baseline spike detection, a
+spike-probability forecast, charge/hold/export signals for a 13.5 kWh / 5 kW battery, and a
+backtest against a naive 1–5am charge / 5–9pm export schedule. The headline number is the extra
+revenue at the selected fleet scale ($28,100/day across 10,000 batteries on the 2023-09-06
+scarcity day). Signals are advisory; nothing is dispatched.
+
+Same numbers from the CLI:
+
+```bash
+python -m gridsignal.pipeline --scenario scarcity --devices 10000
+```
 
 Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEMO.md`](docs/DEMO.md).
 
@@ -107,6 +125,9 @@ flowchart LR
     subgraph GP["ERCOT pipeline"]
         G[gridstatus<br/>public ERCOT MIS] --> P[ingest.py] --> Q[(Parquet store)]
         Q --> PR
+        Q --> DT[detect.py<br/>rolling-baseline spikes] --> FC[forecast.py<br/>spike probability]
+        FC --> SG[signals.py<br/>charge / hold / export] --> BT[backtest.py<br/>$ vs naive schedule]
+        BT --> D
     end
 ```
 
@@ -117,10 +138,16 @@ flowchart LR
 | `src/gridsignal/control_room/engine.py` | State machine: baseline → failure → incident → **human approval** → recovery |
 | `src/gridsignal/ingest.py` | Pulls real-time settlement point prices from ERCOT via gridstatus and caches them as Parquet |
 | `src/gridsignal/prices.py` | Named price scenarios, cached-trace loading, peak-window selection, kW to dollars |
+| `src/gridsignal/detect.py` | Rolling trailing-median baseline with a MAD spread; flags spike intervals and groups them into windows |
+| `src/gridsignal/forecast.py` | Causal spike-probability score from the z-score, its ramp and the price-over-baseline level |
+| `src/gridsignal/signals.py` | Declining reservation price turning prices plus spike probability into charge/hold/export |
+| `src/gridsignal/backtest.py` | Battery settlement ledger (SoC, cashflow) for the signals and for a naive fixed schedule |
+| `src/gridsignal/pipeline.py` | `run(scenario)` wiring detect → forecast → signals → backtest, plus a CLI |
 | `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
 | `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
 | `tests/test_prices.py`, `tests/test_ingest.py` | Scenario loading, peak-window selection, dollar conversion, cache provenance |
 | `tests/test_scale.py` | Gateway-ring scaling, scarcity pricing, and a 10,000-device detect-plus-reallocate benchmark |
+| `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_signals.py`, `tests/test_backtest.py`, `tests/test_pipeline.py` | The analytics pipeline: spike detection, look-ahead safety, dispatch policy, settlement math, end-to-end run |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 
@@ -130,8 +157,8 @@ See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 2. Click **Trigger BAT-042 Failure**, read the incident panel, click **Approve Recovery Plan**.
 3. Click **Reset Demo** to replay. Results are identical every run (seeded simulation).
 
-Optional live-data path: `pip install -e ".[ercot]"`, copy `.env.example` to `.env`, then
-`python -m gridsignal.pipeline --start 2026-08-01 --end 2026-09-24`.
+Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal.ingest --date
+<recent date>` to refresh the cached trace before running the pipeline against it.
 
 ## Data and Provenance
 
@@ -153,8 +180,9 @@ historical scarcity trace is pricing context only — it is not replayed as a re
   (state lives in the Streamlit session and resets on server restart).
 - Detection is a single rule (telemetry staleness) on one scripted device rather than a monitor
   over a real event stream.
-- Only the price half of the ERCOT pipeline is implemented; `detect`, `forecast`, `signals` and
-  `backtest` are still stubs, as are load and fuel-mix ingest.
+- The spike forecast is a fixed-coefficient logistic score, not a trained model, and the backtest
+  is a price-taker single-day replay: no bidding, no ancillary services, no degradation cost.
+- Load and fuel-mix ingest are implemented but not yet used by either view.
 - ERCOT's public SPP report only keeps roughly the last week online, so `--date` must be recent;
   scarcity days come from the yearly historical archive instead. Both bundled samples are the
   cached copies that keep the demo reproducible and offline.

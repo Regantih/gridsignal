@@ -9,6 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+from gridsignal import pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
     Device,
@@ -25,6 +26,7 @@ from gridsignal.prices import (
     energy_value_usd,
     load_scenario,
 )
+from gridsignal.signals import Signal
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
 
@@ -74,6 +76,19 @@ CSS = """
 # thins healthy devices out and always keeps everything that is not online.
 MAP_MARKERS = 400
 GRID_TILES = 48
+
+VIEWS = ("Control Room", "Grid Signals")
+SIGNAL_COLOR = {
+    Signal.CHARGE.value: "#38bdf8",
+    Signal.HOLD.value: "#6b7280",
+    Signal.EXPORT.value: "#f59e0b",
+}
+
+
+@st.cache_data(show_spinner=False)
+def signals_run(scenario: str) -> pipeline.PipelineResult:
+    """Detect -> forecast -> signal -> backtest for one bundled ERCOT day."""
+    return pipeline.run(scenario)
 
 
 def engine() -> ControlRoomEngine:
@@ -413,6 +428,7 @@ def render_audit(eng: ControlRoomEngine) -> None:
 def render_scenario_controls() -> None:
     """Price scenario and fleet scale. Changing either rebuilds the simulation."""
     with st.sidebar:
+        st.radio("View", VIEWS, key="view", horizontal=True)
         st.header("Scenario")
         scenarios = available_scenarios()
         keys = [s.key for s in scenarios]
@@ -472,9 +488,146 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
         )
 
 
+def render_signal_chart(plan: pd.DataFrame) -> None:
+    """Price, the declining reservation price, and the action taken each interval."""
+    fig = px.line(plan, x="interval_start", y="spp", height=320, log_y=True)
+    fig.update_traces(line={"color": "#64748b", "width": 1.5}, name="$/MWh")
+    fig.add_scatter(
+        x=plan["interval_start"],
+        y=plan["reservation_mwh"],
+        mode="lines",
+        line={"color": "#a78bfa", "width": 1, "dash": "dot"},
+        name="reservation price",
+    )
+    for action, color in SIGNAL_COLOR.items():
+        rows = plan[plan["signal"] == action]
+        fig.add_scatter(
+            x=rows["interval_start"],
+            y=rows["spp"],
+            mode="markers",
+            marker={"color": color, "size": 8},
+            name=action,
+        )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        yaxis_title="$/MWh (log)",
+        xaxis_title=None,
+        legend={"orientation": "h", "y": -0.2},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_money_chart(ledger: pd.DataFrame) -> None:
+    money = ledger.melt(
+        id_vars="interval_start",
+        value_vars=["signal_cum_usd", "naive_cum_usd"],
+        var_name="strategy",
+        value_name="usd",
+    ).replace({"signal_cum_usd": "GridSignal", "naive_cum_usd": "Naive schedule"})
+    fig = px.line(
+        money,
+        x="interval_start",
+        y="usd",
+        color="strategy",
+        height=280,
+        color_discrete_map={"GridSignal": "#4ade80", "Naive schedule": "#94a3b8"},
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        yaxis_title="$ per battery",
+        xaxis_title=None,
+        legend={"orientation": "h", "y": -0.2},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_grid_signals(scenario: str, fleet_size: int) -> None:
+    """Spike detection, spike forecast, dispatch signals and what they were worth."""
+    result = signals_run(scenario)
+    summary = result.summary
+    trace = result.trace
+
+    st.subheader("Backtest: GridSignal vs. a naive fixed schedule")
+    st.markdown(
+        f"<div class='gs-card' style='text-align:center'>"
+        f"<div class='gs-kicker'>Extra revenue if the fleet followed the signals</div>"
+        f"<div style='font-size:3.1rem;font-weight:700;color:#4ade80;line-height:1.2'>"
+        f"${summary.fleet_usd(fleet_size):,.0f}</div>"
+        f"<div class='gs-body'>on {trace.date} across {fleet_size:,} simulated batteries "
+        f"— ${summary.uplift_usd:,.2f} per battery per day</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(4)
+    cols[0].metric("GridSignal", f"${summary.signal_usd:,.2f}", delta="per battery")
+    cols[1].metric(
+        "Naive 1-5am / 5-9pm", f"${summary.naive_usd:,.2f}", delta="per battery", delta_color="off"
+    )
+    cols[2].metric("Uplift", f"${summary.uplift_usd:,.2f}", delta=f"{summary.uplift_pct:+.0f}%")
+    cols[3].metric(
+        "Spike intervals",
+        f"{int(result.detections['is_spike'].sum())}",
+        delta=f"{len(result.windows)} window(s)",
+        delta_color="off",
+    )
+
+    render_signal_chart(result.plan)
+
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown("<div class='gs-kicker'>Cumulative dollars per battery</div>", True)
+        render_money_chart(result.ledger)
+    with right:
+        st.markdown("<div class='gs-kicker'>Scarcity windows detected</div>", True)
+        if result.windows.empty:
+            st.caption("No interval cleared the spike threshold on this day.")
+        else:
+            windows = result.windows.assign(
+                window=lambda w: (
+                    w["start"].dt.strftime("%H:%M") + " – " + w["end"].dt.strftime("%H:%M")
+                )
+            )
+            st.dataframe(
+                windows[["window", "intervals", "peak_mwh", "peak_z"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+
+    with st.expander("Interval-by-interval signal log"):
+        plan = result.plan
+        st.dataframe(
+            plan.assign(interval=plan["interval_start"].dt.strftime("%H:%M"))[
+                ["interval", "spp", "z", "spike_prob", "signal", "reason"]
+            ],
+            hide_index=True,
+            use_container_width=True,
+            height=320,
+        )
+
+    st.caption(
+        usd(
+            f"Backtest on real cached ERCOT {trace.market} prices for {trace.location}, "
+            f"{trace.date} ({len(trace.frame)} intervals, peak ${trace.peak_mwh:,.2f}/MWh). "
+            "Battery model: 13.5 kWh usable, 5 kW inverter, 90% round trip. Signals are "
+            "advisory only — nothing is dispatched, and past prices are not a forecast of "
+            "future revenue."
+        )
+    )
+
+
 def main() -> None:
     render_header()
     render_scenario_controls()
+    if st.session_state.get("view", VIEWS[0]) == "Grid Signals":
+        render_grid_signals(
+            st.session_state.get("scenario", DEFAULT_SCENARIO),
+            st.session_state.get("fleet_size", FLEET_SIZE),
+        )
+        return
     eng = engine()
     render_demo_controls(eng)
     render_overview(eng)
