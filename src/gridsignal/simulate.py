@@ -151,7 +151,7 @@ class RunResult:
     def jev_label(self) -> str:
         source = self.metrics.jev_source
         if source == Source.FALLBACK.value:
-            return "Jev offline, rules fallback"
+            return "rules (Jev offline)"
         if source == Source.FIXTURE.value:
             return "Jev (recorded answers)"
         return "Jev (live)"

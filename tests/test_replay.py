@@ -39,10 +39,14 @@ def test_spoofed_cards_never_enter_the_plan():
 def test_orchestration_protects_dollars_it_can_account_for():
     result = replay.run(SMALL)
     assert result.dollars_at_risk > 0
-    assert 0 < result.dollars_recovered <= result.dollars_at_risk
+    assert 0 < result.dollars_recovered < result.dollars_at_risk
     assert result.fault_minutes > 0
-    expected = round(result.dollars_recovered / result.fault_minutes, 2)
-    assert result.protected_usd_per_fault_minute == expected
+    # Recovery is priced over the hours left after the fix, so the degraded minutes are
+    # never sold twice and the headline can never round its way past what was at risk.
+    assert result.recovery_hours < result.window_hours
+    assert result.dollars_recovered == pytest.approx(
+        result.dollars_at_risk * result.recovery_hours / result.window_hours, rel=0.02
+    )
 
 
 def test_no_orchestration_is_the_whole_loss():
@@ -67,18 +71,19 @@ def test_stale_wave_removes_capacity_rather_than_assuming_it_is_good():
     assert engine.snapshot().committed_kw == round(before - dropped, 1)
 
 
-def test_cli_reports_runtime_and_the_per_minute_figure(capsys):
+def test_cli_reports_runtime_and_what_the_recovery_does_not_cover(capsys):
     assert replay.main(["--devices", str(SMALL)]) == 0
     out = capsys.readouterr().out
-    assert "protected per minute of fault" in out
+    assert "simulated minutes the fleet spent degraded did not" in out
     assert "wall clock" in out
     assert "spoofed agents" in out
 
 
-def test_full_recovery_is_reported_with_the_headroom_that_allowed_it():
-    """100% recovered is a fact about spare capacity, not a property of the orchestrator."""
+def test_near_full_recovery_is_reported_with_the_headroom_that_allowed_it():
+    """What comes back is a fact about spare capacity, not a property of the orchestrator."""
     result = replay.run()
-    assert result.recovered_share == pytest.approx(1.0, abs=1e-6)
+    # Never all of it: the kW are reassigned, the degraded minutes are gone.
+    assert 0.9 < result.recovered_share < 1.0
     assert result.spare_kw_at_fault >= result.kw_lost
     assert result.headroom_cover == round(result.spare_kw_at_fault / result.kw_lost, 2)
     text = "\n".join(replay.lines(result))

@@ -47,7 +47,7 @@ from gridsignal.mesh.scenarios import HOLDOUT_DIR, load_scenario
 LABELS_PATH = paths.DATA_DIR / "holdout_safety_labels.yaml"
 HOLDOUT_FIXTURE = "judgment_holdout"
 OVERRIDE_FIXTURE = "judgment_overrides"
-RULES = "rules fallback"
+RULES = "rules (Jev offline)"
 JEV = "Jev"
 
 
@@ -349,7 +349,9 @@ def save_calibration(report: Report, path: Path = TUNED_PATH) -> Path:
 def markdown(report: Report) -> str:
     """The tables the README and the Control Room show."""
     lines: list[str] = []
-    source = "recorded Jev answers" if report.jev_live else "rules fallback (no key, no fixture)"
+    source = (
+        "recorded Jev answers" if report.jev_live else "rules (Jev offline: no key, no fixture)"
+    )
     lines.append(
         f"**Blind score on held-out drills** — pack and answer key committed before the "
         f"first run; answers from {source}."
@@ -362,7 +364,7 @@ def markdown(report: Report) -> str:
         lines.append(f"| {mode} | {score.correct}/{score.total} ({score.share:.0%}) |")
     lines.append("")
 
-    lines.append("| Drill | Question | rules fallback | Jev | Answer key | Who was right |")
+    lines.append(f"| Drill | Question | {RULES} | {JEV} | Answer key | Who was right |")
     lines.append("| --- | --- | --- | --- | --- | --- |")
     if not report.disagreements:
         lines.append("| — | the two layers agreed on every question | | | | |")

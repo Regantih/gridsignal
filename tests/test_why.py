@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from gridsignal import ancillary, deliverability_report, holdout, judgment_report, replay, why
+from gridsignal.jev import evaluate
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "src" / "gridsignal" / "why.py").read_text(encoding="utf-8")
@@ -51,7 +52,7 @@ def test_the_held_out_claim_is_the_number_the_held_out_run_produces() -> None:
 def test_the_recovery_claim_is_the_number_the_replay_produces() -> None:
     run = replay.run(fleet_size=48)
     claim = _claim(why.evidence_section(fleet_size=48), "Recovery at fleet scale")
-    assert f"${run.protected_usd_per_fault_minute:,.0f}" in claim.value
+    assert f"{run.recovered_share:.0%}" in claim.value
     # The spare headroom travels with the recovery, so "all of it came back" can never
     # be read as a guarantee.
     assert f"{run.spare_kw_at_fault:,.0f} kW of spare headroom" in claim.detail
@@ -78,7 +79,7 @@ def test_the_model_is_presented_as_a_second_opinion_that_loses_to_the_rules() ->
     rules = report.blind[judgment_report.RULES]
     jev = report.blind[judgment_report.JEV]
     claim = _claim(why.evidence_section(fleet_size=48), "second opinion")
-    assert f"rules {rules.correct} of {rules.total}" in claim.value
+    assert f"rules (Jev offline) {rules.correct} of {rules.total}" in claim.value
     assert f"Jev {jev.correct} of {jev.total}" in claim.value
     assert rules.correct >= jev.correct, "if that ever flips, rewrite the claim"
 
@@ -115,3 +116,14 @@ def test_the_page_is_built_once_per_process_so_the_timing_cannot_drift() -> None
 
 def _claim(section: why.Section, needle: str) -> why.Claim:
     return next(c for c in section.claims if needle.lower() in c.label.lower())
+
+
+def test_the_page_says_what_the_recorded_jev_answers_actually_change() -> None:
+    deltas = evaluate.fixture_deltas()
+    claim = _claim(why.evidence_section(fleet_size=48), "switched off")
+
+    # With no approve path the model cannot move a kW; it moves the explanation.
+    assert deltas and not any(d.changed for d in deltas)
+    assert f"{len(deltas)} of {len(deltas)}" in claim.value
+    differing = sum(d.rules_root_cause != d.jev_root_cause for d in deltas)
+    assert f"root cause differs in {differing}" in claim.detail

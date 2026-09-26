@@ -77,6 +77,7 @@ def _notice(
     affected: bool,
     backup_hours: float,
     degraded: bool = False,
+    quarantined: bool = False,
 ) -> tuple[str, str, str]:
     """Plain-English status for the member: no jargon, no incident IDs."""
     if (incident is None or not affected) and degraded:
@@ -96,12 +97,24 @@ def _notice(
             f"Nothing to do. You have about {backup_hours:.1f} hours of backup held in reserve.",
         )
 
+    if incident.status is IncidentStatus.RESOLVED and quarantined:
+        return (
+            "Resolved for the grid, your battery is still paused",
+            "The internet gateway at your home stopped reporting during a grid event and "
+            "other batteries covered your share, so the neighbourhood commitment was met. "
+            "Your battery has not reported a fault of its own, but we are keeping it out "
+            "of grid participation until its readings have been trusted for long enough — "
+            "it is still backing up your home in the meantime.",
+            "A technician visit is scheduled to replace the gateway. Your backup energy is "
+            f"untouched: about {backup_hours:.1f} hours held in reserve.",
+        )
+
     if incident.status is IncidentStatus.RESOLVED:
         return (
             "Resolved: your battery is reporting to us again",
             "The internet gateway at your home stopped reporting during a grid event, so for "
             "that period we could not confirm the state of your battery. Its readings are "
-            "back now and nothing is wrong with the battery itself. We paused its grid "
+            "back now and it has not reported a fault of its own. We paused its grid "
             "participation while it was dark and other batteries covered your share, so the "
             "neighbourhood commitment was still met.",
             "A technician visit is scheduled to replace the gateway. "
@@ -154,7 +167,8 @@ def member_summary(
             protected = round(recovery.dollars_recovered * extra_kw / recovery.restored_kw, 2)
 
     degraded = device.status is DeviceStatus.DEGRADED
-    headline, body, next_step = _notice(incident, affected, backup_hours, degraded)
+    quarantined = device.status is DeviceStatus.UNAVAILABLE
+    headline, body, next_step = _notice(incident, affected, backup_hours, degraded, quarantined)
     return MemberSummary(
         device_id=device.device_id,
         site=device.site,

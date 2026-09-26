@@ -141,3 +141,16 @@ def test_a_degraded_battery_is_not_described_to_its_owner_as_healthy(
     assert not view.is_affected
     assert "healthy" not in view.headline.lower()
     assert "reporting slowly" in view.headline.lower()
+
+
+def test_a_quarantined_home_is_not_told_nothing_is_wrong(eng: ControlRoomEngine) -> None:
+    """The ring is still out of dispatch after recovery, so the member is told that."""
+    eng.trigger_device_failure()
+    eng.approve_recovery()
+
+    view = member.member_summary(eng)
+
+    assert eng.device(FOCUS_DEVICE_ID).status is DeviceStatus.UNAVAILABLE
+    assert "nothing is wrong" not in view.body.lower()
+    assert "paused" in view.headline.lower()
+    assert "backing up your home" in view.body.lower()

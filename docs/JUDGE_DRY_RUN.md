@@ -41,7 +41,7 @@ a reload is a new one. There is no persistence, no auth and no multi-operator st
 verified/stale/rejected states, contract-net bidding with idempotent awards, a deliverability
 proof that re-runs at the approval gate, a staged rollout with per-ring health gates and
 rollback, and a judgment layer whose pack and answer key were committed before the first score
-(rules fallback 21 of 24, Jev 17 of 24). The optimisation work is honest too: the replaced
+(rules, Jev offline, 21 of 24; Jev 17 of 24). The optimisation work is honest too: the replaced
 implementations live in `src/gridsignal/perf_before.py` and are swapped back in during the same
 run, so the "before" column is code and not a memory.
 

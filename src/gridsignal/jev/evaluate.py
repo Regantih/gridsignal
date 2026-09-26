@@ -23,7 +23,7 @@ RULES = "rules-only"
 JEV = "jev"
 #: What the second column is really called when there is no key and no recorded answer:
 #: the deterministic rules answered, so calling the row "jev" would overstate it.
-JEV_FALLBACK = "jev (rules fallback)"
+JEV_FALLBACK = "rules (Jev offline)"
 
 
 @dataclass(frozen=True)
@@ -126,6 +126,62 @@ def evaluate(paths: list[Path] | None = None, directory: Path = FIXTURE_DIR) -> 
     )
 
 
+@dataclass(frozen=True)
+class FixtureDelta:
+    """One scenario run twice: with the recorded Jev answers, and with them withheld."""
+
+    scenario: str
+    rules_covered_kw: float
+    jev_covered_kw: float
+    rules_root_cause: str
+    jev_root_cause: str
+
+    @property
+    def changed(self) -> bool:
+        return round(self.rules_covered_kw, 1) != round(self.jev_covered_kw, 1)
+
+
+def fixture_deltas(
+    paths: list[Path] | None = None, directory: Path = FIXTURE_DIR
+) -> tuple[FixtureDelta, ...]:
+    """What the recorded Jev answers actually change, scenario by scenario."""
+    from gridsignal.simulate import run_scenario
+
+    files = paths if paths is not None else available_scenarios()
+    deltas: list[FixtureDelta] = []
+    for path in files:
+        scenario = load_scenario(path)
+        without = run_scenario(scenario, jev=JevClient.offline(fallback=rules.answers)).metrics
+        with_ = run_scenario(
+            scenario,
+            jev=JevClient.for_scenario(scenario.slug, directory=directory, fallback=rules.answers),
+        ).metrics
+        deltas.append(
+            FixtureDelta(
+                scenario=scenario.slug,
+                rules_covered_kw=round(without.covered_kw, 1),
+                jev_covered_kw=round(with_.covered_kw, 1),
+                rules_root_cause=without.root_cause,
+                jev_root_cause=with_.root_cause,
+            )
+        )
+    return tuple(deltas)
+
+
+def fixture_delta_markdown(deltas: tuple[FixtureDelta, ...]) -> str:
+    """The on/off table: how much of the outcome the model is responsible for."""
+    lines = [
+        f"| Scenario | kW covered, {JEV_FALLBACK} | kW covered, recorded Jev answers | Changed? |",
+        "| --- | ---: | ---: | --- |",
+    ]
+    for delta in deltas:
+        lines.append(
+            f"| {delta.scenario} | {delta.rules_covered_kw:,.1f} kW | "
+            f"{delta.jev_covered_kw:,.1f} kW | {'yes' if delta.changed else 'no'} |"
+        )
+    return "\n".join(lines)
+
+
 def markdown(report: EvalReport) -> str:
     """The table that goes in the README and the Agent Mesh view."""
     jev_mode = JEV_FALLBACK if any(r.mode == JEV_FALLBACK for r in report.rows) else JEV
@@ -162,6 +218,9 @@ def main(argv: list[str] | None = None) -> int:
 
     report = evaluate()
     print(markdown(report))
+    print()
+    print("Recorded Jev answers on versus off, same seeds:")
+    print(fixture_delta_markdown(fixture_deltas()))
     if args.json is not None:
         args.json.write_text(
             json.dumps([r.__dict__ for r in report.rows], indent=2) + "\n", encoding="utf-8"

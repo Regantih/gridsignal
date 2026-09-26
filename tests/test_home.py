@@ -161,3 +161,22 @@ def test_the_member_view_splits_home_load_from_export(eng: ControlRoomEngine):
     assert view.backup_hours_with_generator >= view.backup_hours
     assert view.unit_type in ("legacy", "base_core")
     assert view.controller == "base"
+
+
+def test_the_other_tenants_units_are_a_stand_in_held_to_the_member_reserve() -> None:
+    """This mesh writes their kW, so it obeys the same backup floor ours does."""
+    eng = ControlRoomEngine(fleet_size=1_000)
+    theirs = [d for d in eng.devices if not d.is_operator_controlled]
+    assert theirs
+
+    assert any(d.export_kw > 0 for d in theirs)
+    for fraction in (eng.reserve_fraction, home.STORM_RESERVE_FRACTION):
+        if fraction != eng.reserve_fraction:
+            eng.set_reserve_floor(fraction)
+        hours = eng.remaining_hours()
+        for device in theirs:
+            spare_kw = home.spare_backup_kwh(device, fraction) / hours
+            assert device.export_kw <= max(spare_kw - device.home_load_kw, 0.0) + 1e-6
+            assert device.export_kw >= 0.0
+    # Raising the floor takes kW off their units too; it never adds any.
+    assert all(d.export_kw <= 3.0 for d in theirs)

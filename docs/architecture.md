@@ -79,7 +79,7 @@ here is an original implementation of those ideas and vendors nothing from them.
 Code acts, the rules and the hard vetoes decide, a human approves every commit; Jev is a second
 opinion that escalates when it disagrees and has no approve path. The layer is optional: with no API key
 it replays recorded answers, and with neither key nor fixture it answers with deterministic rules
-labelled "Jev offline, rules fallback".
+labelled "rules (Jev offline)".
 
 1. `questions.py` builds the `IncidentSnapshot` — simulated fleet scale, offline agents, zones and
    gateway rings, card statuses and HMAC validity, telemetry ages, prices, lost kW, dollars at

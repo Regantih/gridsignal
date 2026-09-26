@@ -32,7 +32,7 @@ Then paste the resulting `https://<name>.streamlit.app` URL into the README badg
 
 Optional: to run Jev live instead of replaying the recorded answers, add `AI_GATEWAY_API_KEY` or
 `TYPESAFE_API_KEY` under **Settings → Secrets**. With neither key the app replays
-`data/jev_fixtures/` and, failing that, shows "Jev offline, rules fallback" — that is the
+`data/jev_fixtures/` and, failing that, shows "rules (Jev offline)" — that is the
 supported judging path.
 
 ## What was verified for this deploy

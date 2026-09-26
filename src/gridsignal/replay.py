@@ -62,6 +62,9 @@ class ReplayResult:
     kw_lost: float
     dollars_at_risk: float
     dollars_recovered: float
+    #: Hours of the peak window still unsold when the operator's approval landed. Only these
+    #: hours are priced as recovery: the minutes the fleet spent degraded cannot be sold twice.
+    recovery_hours: float
     rejected_cards: int
     phantom_kw_rejected: float
     #: Uncommitted, deliverable kW the healthy fleet still had when the faults landed.
@@ -74,13 +77,6 @@ class ReplayResult:
     def dollars_unprotected(self) -> float:
         """What orchestration did not get back: the honest remainder."""
         return round(self.dollars_at_risk - self.dollars_recovered, 2)
-
-    @property
-    def protected_usd_per_fault_minute(self) -> float:
-        """Dollars recovered per simulated minute the fleet spent degraded."""
-        if self.fault_minutes <= 0:
-            return 0.0
-        return round(self.dollars_recovered / self.fault_minutes, 2)
 
     @property
     def headroom_cover(self) -> float:
@@ -137,6 +133,7 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
 
     price_mwh = engine.remaining_price_mwh()
     hours = engine.remaining_hours()
+    hours_at_fault = hours
     kw_lost = incident.lost_kw
     dollars_at_risk = energy_value_usd(kw_lost, hours, price_mwh)
     # Measured before the approval: what the healthy fleet could still take on.
@@ -146,6 +143,7 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
     engine.approve_recovery(OWNERS[Role.FLEET_OPERATOR])
     committed_after = engine.snapshot().committed_kw
     recovered = round(committed_after - (committed_before - kw_lost), 2)
+    recovery_hours = min(engine.remaining_hours(), hours_at_fault)
 
     return ReplayResult(
         fleet_size=fleet_size,
@@ -176,11 +174,10 @@ def run(fleet_size: int = FLEET_SIZE, scenario: str = "scarcity") -> ReplayResul
         ),
         kw_lost=kw_lost,
         dollars_at_risk=dollars_at_risk,
-        # Capped at what was at risk: reassignment can round a few kW past the lost
-        # capacity, and claiming more than was lost would be a lie.
-        dollars_recovered=min(
-            max(energy_value_usd(recovered, hours, price_mwh), 0.0), dollars_at_risk
+        dollars_recovered=max(
+            energy_value_usd(min(recovered, kw_lost), recovery_hours, price_mwh), 0.0
         ),
+        recovery_hours=round(recovery_hours, 3),
         rejected_cards=rejected,
         phantom_kw_rejected=phantom_kw,
         spare_kw_at_fault=spare_kw,
@@ -195,9 +192,9 @@ def summary(result: ReplayResult) -> str:
         f"{result.fleet_size:,} simulated batteries on the real ERCOT {result.location} "
         f"{result.date} scarcity day: {result.kw_lost:,.0f} kW lost to three faults at the peak "
         f"(${result.dollars_at_risk:,.0f} at risk), one approval recovered "
-        f"${result.dollars_recovered:,.0f} in {result.fault_minutes:.1f} simulated minutes "
-        f"= ${result.protected_usd_per_fault_minute:,.0f} protected per minute of fault "
-        f"(only because {result.spare_kw_at_fault:,.0f} kW of spare headroom was left, "
+        f"${result.dollars_recovered:,.0f} ({result.recovered_share:.0%}) — the kW came back, "
+        f"the {result.fault_minutes:.1f} simulated minutes the fleet spent degraded did not "
+        f"(only possible because {result.spare_kw_at_fault:,.0f} kW of spare headroom was left, "
         f"{result.headroom_cover:.1f}x what was lost); "
         f"{result.runtime_s:.1f}s wall clock"
     )
@@ -218,7 +215,8 @@ def lines(result: ReplayResult) -> list[str]:
         f"${result.dollars_at_risk:,.0f} gone",
         f"with orchestration: ${result.dollars_recovered:,.0f} recovered after one human "
         f"approval ({result.recovered_share:.0%} of what was at risk), "
-        f"${result.dollars_unprotected:,.0f} not recovered",
+        f"${result.dollars_unprotected:,.0f} not recovered — the reassigned kW is priced over "
+        f"the {result.recovery_hours:.2f} h left once the fix landed, not the whole window",
         f"why that was possible: {result.spare_kw_at_fault:,.0f} kW of uncommitted, "
         f"deliverable headroom sat in the healthy fleet when the faults landed, "
         f"{result.headroom_cover:.1f}x the {result.kw_lost:,.0f} kW lost — recovery is "

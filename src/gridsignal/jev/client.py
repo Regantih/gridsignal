@@ -18,7 +18,7 @@ Judges run this repo without a key, so every answer is cached: when a key is pre
 live answer is recorded to ``data/jev_fixtures/<scenario>.json`` (with a timestamp and the
 model version), and when it is absent the recorded answer is replayed. With neither, the
 client falls back to the deterministic rules in :mod:`gridsignal.jev.rules` and the UI is
-labelled *Jev offline, rules fallback*.
+labelled *rules (Jev offline)*.
 """
 
 from __future__ import annotations

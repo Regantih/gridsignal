@@ -41,7 +41,9 @@ BASE_CORE_EVERY = 4
 #: A modelling assumption about market structure, not a description of a real partnership.
 UTILITY_ZONE = "LZ_WEST"
 UTILITY_PARTNER = "Partner utility (simulated tenant)"
-#: Fixed kW each utility-controlled unit exports on its partner's own schedule.
+#: Simulated stand-in for what a utility-controlled unit exports under its partner's
+#: dispatch. Written by this repo, not read from any partner, and clamped to the
+#: member's backup reserve by the control room before it is shown.
 PARTNER_SCHEDULE_KW = 3.0
 
 FLEET_SIZE = 48

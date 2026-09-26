@@ -90,7 +90,7 @@ optional and the app runs fully offline without any of them.
 
 | Variable | Used for | Without it |
 |---|---|---|
-| `AI_GATEWAY_API_KEY` | Jev via Vercel AI Gateway (`POST /v1/evaluate`, model `typesafe-ai/jev`) | Recorded Jev answers replay from `data/jev_fixtures/`; then deterministic rules, labelled "Jev offline, rules fallback" |
+| `AI_GATEWAY_API_KEY` | Jev via Vercel AI Gateway (`POST /v1/evaluate`, model `typesafe-ai/jev`) | Recorded Jev answers replay from `data/jev_fixtures/`; then deterministic rules, labelled "rules (Jev offline)" |
 | `TYPESAFE_API_KEY` | Jev direct (`POST /v1/systemone`, model `jev-latest`) | as above |
 | `ERCOT_API_USERNAME` / `ERCOT_API_PASSWORD` / `ERCOT_API_SUBSCRIPTION_KEY` | Only if you swap `gridstatus` for ERCOT's official API | `gridstatus` reads the same public reports with no credentials |
 | `DEFAULT_ZONE` | Load zone for refreshes | `LZ_HOUSTON` |
@@ -177,14 +177,16 @@ python -m gridsignal.replay          # 10,000 batteries; --devices to scale down
 | kW lost to the three faults | 1,638 kW |
 | At risk with no orchestration (the kW never comes back) | $13,618 |
 | Spare headroom left in the healthy fleet when the faults landed | 9,617 kW (5.9x the kW lost) |
-| Protected after one human approval | $13,618 (100%) |
-| Dollars protected per minute of fault | $3,982 / min (3.4 simulated min) |
+| Protected after one human approval | $13,436 (99%) |
+| Not recovered: the 3.4 simulated minutes the fleet spent degraded | $182 |
 | Spoofed capacity refused on signature | 480 kW, 12 cards |
 | Wall-clock runtime | 0.7 s |
 
-**The 100% is not a guarantee.** All of the exposure came back only because 9,617 kW of
-uncommitted, deliverable headroom — 5.9x the 1,638 kW lost — was still sitting in the healthy
-fleet above every member's reserve. Recovery is capped by that headroom: on a fleet already
+**The 99% is not a guarantee, and it is deliberately not 100%.** Reassigned kW only earns from
+the moment the approval lands, so the minutes the fleet spent degraded are priced as lost — the
+recovery is valued over the 1.94 h left after the fix, not the whole window. Even that much came
+back only because 9,617 kW of uncommitted, deliverable headroom — 5.9x the 1,638 kW lost — was
+still sitting in the healthy fleet above every member's reserve. Recovery is capped by that headroom: on a fleet already
 committed to its target, or with the faults hitting a larger share of it, the same orchestration
 would recover only part. The replay prints the headroom next to the recovery for that reason.
 
@@ -559,7 +561,7 @@ keys are read from the environment and never written to fixtures, traces or logs
 **Judges will not have a key, and they do not need one.** Real Jev answers for every bundled
 scenario are recorded in `data/jev_fixtures/*.json` with the model version and timestamp and are
 replayed offline. With no fixture and no key the mesh falls back to deterministic rules and says
-so: **Jev offline, rules fallback**. The default run and the whole test suite pass with no key
+so: **rules (Jev offline)**. The default run and the whole test suite pass with no key
 and no network.
 
 ```bash
@@ -620,11 +622,20 @@ python -m gridsignal.judgment_report   # blind score, disagreements, calibration
 ```
 
 **Blind score on the four held-out drills** (24 answers, scored against the committed key before
-any tuning): rules fallback **21/24 (88%)**, Jev **17/24 (71%)**. Every disagreement is settled by
+any tuning): rules (Jev offline) **21/24 (88%)**, Jev **17/24 (71%)**. Every disagreement is settled by
 the key and reported with the winner — all four go to the rules layer, and all four are Jev calling
 a backup or market-rule question *unsafe* where the key says it is safe. Jev is the more anxious
 reader of these states; on this pack that costs it accuracy, and it never turned a held-back step
 into an automatic one.
+
+**What the recorded Jev answers change, on versus off.** Every bundled scenario is replayed twice
+on the same seeds — once with the recorded Jev answers, once with them withheld — and the covered
+kW is identical in 5 of 5, while the reported root cause differs in 2. With no approve path the
+model can move the explanation an operator reads and when they are asked, never the dispatch.
+
+```bash
+python -m gridsignal.jev.evaluate   # the on/off table, keyless
+```
 
 **Learning from overrides (simulated).** 96 deterministic episodes are generated across fleet size,
 price day, reserve floor, stale-telemetry share and four labelled complications; a documented
@@ -880,7 +891,7 @@ fleet would detect or respond in the field.
 | Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
 | Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
-| Jev decision round trip | recorded live median | 326 ms (rules fallback: microseconds) |
+| Jev decision round trip | recorded live median | 326 ms (rules (Jev offline): microseconds) |
 | Full-fleet scarcity replay: 3 faults at the peak + recovery (`python -m gridsignal.replay`) | 10,000 devices | ~0.7 s |
 
 ## Deploying to Streamlit Community Cloud
@@ -1246,7 +1257,7 @@ real Base Power device or fleet.
   Five scenarios is far too small a sample to conclude anything about the model; it is reported as
   measured rather than tuned away.
 - The Jev fixtures are keyed on the exact incident state, so changing the snapshot schema or the
-  scenarios invalidates them and the mesh silently drops to the rules fallback until they are
+  scenarios invalidates them and the mesh silently drops to the rules layer (Jev offline) until they are
   re-recorded with a key.
 - Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
   exposure change minute to minute rather than as a single window average.

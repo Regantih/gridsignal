@@ -179,3 +179,12 @@ def test_cli_device_override_keeps_nested_scenario_dataclasses(tmp_path, capsys)
     assert rollout.main([str(GOOD), "--devices", "2000", "--no-trace"]) == 0
     out = capsys.readouterr().out
     assert "2,000 simulated devices" in out
+
+
+def test_the_promotion_approval_is_labelled_scripted_not_a_live_click():
+    """No screen or trace may imply a human clicked to promote a firmware ring."""
+    result = rollout.run_rollout(rollout.load_rollout(GOOD), trace=None)
+    approvals = [m for m in result.bus.messages if "approved promotion" in m.summary]
+
+    assert approvals
+    assert all("scripted approver, not a live operator click" in m.summary for m in approvals)

@@ -90,7 +90,7 @@ def judgment_beat() -> Beat:
     return Beat(
         "Beat 3 — who decides: rules and vetoes, with the model as a second opinion",
         (
-            f"blind safety pack, committed before it was scored: rules fallback "
+            f"blind safety pack, committed before it was scored: rules (Jev offline) "
             f"{rules.correct} of {rules.total}, Jev {jev.correct} of {jev.total}",
             f"calibration on a simulated override log: tuning did not meaningfully improve "
             f"held-out agreement, {cal.before:.0%} to {cal.after:.0%}, {moved:+d} episode of "

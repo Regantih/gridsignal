@@ -473,7 +473,7 @@ def test_offline_fallback_can_never_clear_the_gate() -> None:
     response = client.ask(snap.as_state(), incident_questions(snap))
     decision = decide(response, dollars=1.0, covered_fully=True, human_approver="operator")
     assert not decision.gate_clear
-    assert "Jev offline, rules fallback" in decision.reason
+    assert "rules (Jev offline)" in decision.reason
 
 
 def test_no_reading_of_the_gate_can_put_jev_in_the_approver_seat() -> None:
@@ -510,7 +510,7 @@ def test_scenario_runs_from_fixtures_with_no_key_and_no_network() -> None:
 def test_scenario_runs_offline_labelled_as_rules_fallback() -> None:
     scenario = load_scenario("zone_outage.yaml")
     result = run_scenario(scenario, jev=JevClient.offline(fallback=rules.answers))
-    assert result.jev_label == "Jev offline, rules fallback"
+    assert result.jev_label == "rules (Jev offline)"
     assert result.metrics.root_cause == "gateway_outage"
     assert result.metrics.root_cause_correct
     assert result.metrics.gate_clear_steps == 0
@@ -565,4 +565,4 @@ def test_eval_says_rules_fallback_when_there_is_no_fixture(tmp_path: Path) -> No
     fallback = report.summary(evaluate.JEV_FALLBACK)
     assert fallback is not None and fallback.scenarios == 1
     table = evaluate.markdown(report)
-    assert "rules fallback" in table and "| jev |" not in table
+    assert "rules (Jev offline)" in table and "| jev |" not in table

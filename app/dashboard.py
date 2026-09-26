@@ -213,7 +213,7 @@ JEV_COLOR = {
 JEV_LABEL = {
     Source.LIVE: "Jev live",
     Source.FIXTURE: "Jev (recorded answer)",
-    Source.FALLBACK: "Jev offline, rules fallback",
+    Source.FALLBACK: "rules (Jev offline)",
 }
 SIGNAL_COLOR = {
     Signal.CHARGE.value: "#38bdf8",
@@ -526,7 +526,9 @@ def render_home_first(eng: ControlRoomEngine) -> None:
     caption(
         "Exported kW is battery discharge minus the home's own load. The partner"
         " tenant's units are shown for visibility only — this mesh never bids, awards"
-        " or reassigns a battery it does not control."
+        " or reassigns a battery it does not control, and the kW shown for them is a"
+        " simulated stand-in written by this repo, not the partner's schedule. It is"
+        " held to the same member backup floor as everything else."
     )
 
     hours, price = eng.remaining_hours(), eng.grid_event.price_mwh
@@ -572,8 +574,9 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             use_container_width=True,
         )
         caption(
-            "Simulated tenancy: in non-retail-choice territory the utility partner runs "
-            "its own schedule and this control room only reads it."
+            "Simulated tenancy: in non-retail-choice territory the utility partner would "
+            "dispatch these units and this control room never can. Their export here is a "
+            "simulated stand-in, reserve-first like the rest, not a partner schedule."
         )
 
 
@@ -680,9 +683,12 @@ def render_fleet_replay() -> None:
     )
     metric(
         cols[3],
-        "Per minute of fault",
-        money(result.protected_usd_per_fault_minute, cents=False),
-        note=f"{result.fault_minutes:.1f} simulated min",
+        "Share of the dollars at risk",
+        f"{result.recovered_share:.0%}",
+        note=(
+            f"priced over the {result.recovery_hours:.2f} h after the fix, "
+            f"not the {result.fault_minutes:.1f} simulated min degraded"
+        ),
     )
     st.dataframe(
         pd.DataFrame(
@@ -2652,7 +2658,8 @@ def render_rollout() -> None:
         "and 100%; each one has to clear telemetry heartbeat, charge/discharge "
         "response and backup reserve held before the next opens, no ring advances "
         "during a grid event or while a home is islanded, and every promotion past "
-        "10% of the fleet needs a named human. Reproduce with "
+        "10% of the fleet needs a named human — scripted by the scenario here, not "
+        "clicked; the recovery approval in the Control Room is the live one. Reproduce with "
         f"`python -m gridsignal.rollout scenarios/{choice.name}`; the run writes a "
         "replayable JSONL trace."
     )

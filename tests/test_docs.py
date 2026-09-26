@@ -13,6 +13,7 @@ import pytest
 
 from gridsignal import demo_numbers, replay
 from gridsignal.drills import available_drills
+from gridsignal.jev import evaluate
 from gridsignal.mesh.scenarios import available_scenarios
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
@@ -207,5 +208,18 @@ def test_replay_figures_in_the_docs_come_from_the_replay_itself() -> None:
     for name in ("README.md", "docs/JUDGING_MAP.md"):
         text = (DOCS.parent / name).read_text()
         assert f"${result.dollars_recovered:,.0f}" in text
-        assert f"${result.protected_usd_per_fault_minute:,.0f}" in text
+        assert f"{result.recovered_share:.0%}" in text
         assert f"{result.phantom_kw_rejected:,.0f} kW" in text
+
+
+def test_the_model_ablation_in_the_docs_matches_the_ablation_itself() -> None:
+    """README and JUDGING_MAP claim what the recorded Jev answers change; prove it."""
+    deltas = evaluate.fixture_deltas()
+    same_kw = sum(not d.changed for d in deltas)
+    different_cause = sum(d.rules_root_cause != d.jev_root_cause for d in deltas)
+    for name in ("README.md", "docs/JUDGING_MAP.md"):
+        text = (DOCS.parent / name).read_text()
+        assert f"{same_kw} of {len(deltas)}" in text
+        assert f"root cause differs in {different_cause}" in text or (
+            f"root cause in {different_cause}" in text
+        )

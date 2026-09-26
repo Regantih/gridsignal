@@ -226,8 +226,8 @@ class FleetSnapshot:
     def committed_kw(self) -> float:
         """Exported kW counting towards the operator's commitment.
 
-        Utility-controlled units follow their partner's schedule and are never part
-        of this number.
+        Utility-controlled units belong to another tenant and are never part of this
+        number. What they export here is a simulated stand-in, not a partner schedule.
         """
         return round(
             sum(
@@ -248,7 +248,7 @@ class FleetSnapshot:
 
     @property
     def partner_kw(self) -> float:
-        """Exported kW on the utility partner's own schedule, a separate tenant."""
+        """Exported kW of the separate, utility-controlled tenant. Simulated stand-in."""
         return round(
             sum(
                 d.export_kw

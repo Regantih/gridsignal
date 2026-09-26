@@ -90,7 +90,10 @@ class RolloutScenario:
     grid_event_s: tuple[int, int] | None = None
     #: Devices whose home is islanded; their ring waits for them.
     islanded: tuple[str, ...] = ()
-    approver: str | None = "M. Alvarez (Fleet Operator)"
+    #: The simulated operator the scenario scripts as approving each promotion past
+    #: PROMOTION_GATE. Scripted, not clicked: the only approval a human makes by hand in
+    #: this build is the Control Room recovery button.
+    approver: str | None = "M. Alvarez (Fleet Operator, scripted)"
     approval_delay_s: int = 60
     source: Path | None = field(default=None, compare=False)
 
@@ -399,7 +402,8 @@ def run_rollout(
                 MessageKind.APPROVAL,
                 who,
                 "rollout-coordinator",
-                f"{who} approved promotion to {name} ({share:.0%} of the fleet)",
+                f"{who} approved promotion to {name} ({share:.0%} of the fleet) — "
+                "scripted approver, not a live operator click",
                 ring=name,
                 share=share,
             )

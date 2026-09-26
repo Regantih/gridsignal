@@ -30,6 +30,7 @@ from gridsignal import (
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
 from gridsignal.fleet import FLEET_SIZE, FOCUS_DEVICE_ID
+from gridsignal.jev import evaluate
 from gridsignal.prices import load_scenario
 
 #: The scale the demo and the docs talk about.
@@ -206,6 +207,9 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
     """What was measured, including the results that did not flatter the product."""
     home_first = holdout.summarize(holdout.evaluate())
     run = replay.run(fleet_size=fleet_size)
+    deltas = evaluate.fixture_deltas()
+    unchanged_kw = sum(not d.changed for d in deltas)
+    different_cause = sum(d.rules_root_cause != d.jev_root_cause for d in deltas)
     split = ancillary.holdout_summary(ANCILLARY_UNIT)
     unrestricted = ancillary.holdout_summary(ANCILLARY_UNIT, rules=ancillary.ALL_PRODUCTS)
     top_day, top_share = split.top_day_share
@@ -235,9 +239,11 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
             ),
             Claim(
                 "Recovery at fleet scale",
-                f"${run.protected_usd_per_fault_minute:,.0f} per fault minute",
+                f"{run.recovered_share:.0%} of the dollars at risk",
                 f"${run.dollars_recovered:,.0f} of ${run.dollars_at_risk:,.0f} came "
-                f"back, which was only possible because "
+                f"back — priced only over the {run.recovery_hours:,.2f} h left once the "
+                f"fix landed, never the minutes the fleet spent degraded — and only "
+                f"possible because "
                 f"{run.spare_kw_at_fault:,.0f} kW of spare headroom existed "
                 f"({run.headroom_cover:,.1f}x the kW lost). Runtime "
                 f"{run.runtime_s:,.1f} s, machine-dependent.",
@@ -266,12 +272,24 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
             ),
             Claim(
                 "The model is a second opinion, not the decider",
-                f"rules {rules.correct} of {rules.total}, Jev {jev.correct} of {jev.total}",
+                f"rules (Jev offline) {rules.correct} of {rules.total}, "
+                f"Jev {jev.correct} of {jev.total}",
                 f"Blind score on a safety pack and answer key committed before the "
                 f"first run; the deterministic layer won every one of the "
                 f"{len(judgment.disagreements)} disagreements, so the rules and the "
                 f"vetoes decide and Jev escalates.",
                 "python -m gridsignal.judgment_report",
+            ),
+            Claim(
+                "What the model changes when it is switched off",
+                f"{unchanged_kw} of {len(deltas)} scenarios: not one kW",
+                f"Every bundled scenario replayed twice on the same seeds, once with the "
+                f"recorded Jev answers and once with them withheld: the covered kW is "
+                f"identical in {unchanged_kw} of {len(deltas)}, while the reported root "
+                f"cause differs in {different_cause}. Since the model has no approve "
+                f"path, what it changes is the explanation an operator reads and when "
+                f"they are asked — never the dispatch.",
+                "python -m gridsignal.jev.evaluate",
             ),
             Claim(
                 "It runs at fleet scale",

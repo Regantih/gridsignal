@@ -42,6 +42,7 @@ from gridsignal.fleet import (
     FLEET_SIZE,
     FOCUS_DEVICE_ID,
     GATEWAY_RING_SIZE,
+    PARTNER_SCHEDULE_KW,
     UTILITY_PARTNER,
     build_fleet,
     gateway_ring,
@@ -176,6 +177,7 @@ class ControlRoomEngine:
                 f"{self.prices.location} {self.prices.date} (cached Parquet)"
             ),
         )
+        self._hold_partner_reserve()
         self._allocate_dispatch()
         self._log(
             actor="system",
@@ -299,6 +301,30 @@ class ControlRoomEngine:
         for device in pool:
             device.assigned_kw = round(share * headroom[device.device_id] / total_headroom, 2)
         return round(sum(d.assigned_kw for d in pool), 2)
+
+    def _hold_partner_reserve(self) -> None:
+        """Hold the other tenant's units to the same member backup floor as ours.
+
+        This mesh never dispatches them, but the kW it *shows* for them is written
+        here, so it obeys the floor everything else does: the house is served first,
+        the member's reserve is subtracted next, and only the rest can leave. The
+        number is a simulated stand-in, not a schedule read from any partner.
+        """
+        hours = self._hours_left()
+        for device in self.devices:
+            if device.is_operator_controlled:
+                continue
+            if not device.is_dispatchable:
+                device.assigned_kw = 0.0
+                continue
+            spare_kw = home.spare_backup_kwh(device, self.reserve_fraction) / hours
+            allowed = min(
+                PARTNER_SCHEDULE_KW,
+                device.power_kw - device.home_load_kw,
+                spare_kw - device.home_load_kw,
+            )
+            # Floor, not round: rounding up here would spend a member's reserve.
+            device.assigned_kw = math.floor(max(allowed, 0.0) * 100) / 100
 
     def _allocate_dispatch(self) -> float:
         """Share the grid-event target across dispatchable devices by headroom.
@@ -555,6 +581,7 @@ class ControlRoomEngine:
         """
         outcome = self.reserve_outcome(fraction)
         self.reserve_fraction = fraction
+        self._hold_partner_reserve()
         committed = self._allocate_dispatch()
         self._log(
             actor=OWNERS[Role.FLEET_OPERATOR],

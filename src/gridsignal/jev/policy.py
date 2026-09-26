@@ -125,7 +125,7 @@ def decide(
 
     reasons: list[str] = []
     if response.source is Source.FALLBACK:
-        reasons.append("Jev offline, rules fallback")
+        reasons.append("rules (Jev offline)")
     if confidence < gate.confidence_threshold:
         reasons.append(f"confidence {confidence:.2f} below {gate.confidence_threshold:.2f}")
     if risk > gate.max_backup_risk:
