@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
+import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
 from gridsignal import holdout
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
+import dashboard  # noqa: E402
 
 APP = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
 
@@ -133,3 +139,69 @@ def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
 
     reasons = [df.value for df in app.dataframe if "Why" in df.value.columns]
     assert reasons and "member backup reserve" in set(reasons[0]["Why"])
+
+
+# ------------------------------------------------------------------ operator UI
+
+
+def test_the_banner_states_delivered_against_promised_and_what_is_at_risk() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    assert not app.exception, app.exception
+    covered = " ".join(e.value for e in app.success)
+    assert "Delivering" in covered and "kW at risk" in covered
+
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    assert not app.exception, app.exception
+    at_risk = " ".join(e.value for e in app.error)
+    assert re.search(r"Delivering [\d,]+ of [\d,]+ kW; [\d,]+ kW at risk", at_risk), at_risk
+
+
+def test_rounding_never_reports_more_delivered_than_promised() -> None:
+    assert dashboard.coverage_banner(499.6, 500.0) == "Delivering 499 of 500 kW; 1 kW at risk"
+    assert dashboard.coverage_banner(500.0, 500.0) == "Delivering 500 of 500 kW; 0 kW at risk"
+    # A fleet over-assigned by rounding still reads as exactly its commitment.
+    assert dashboard.coverage_banner(500.4, 500.0) == "Delivering 500 of 500 kW; 0 kW at risk"
+    assert dashboard.coverage_pct_text(499.6, 500.0, 99.92) == "99%"
+    assert dashboard.coverage_pct_text(500.0, 500.0, 100.0) == "100%"
+
+
+def test_the_fleet_map_renders_without_internet_tiles() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "Device": "BAT-001",
+                "Status": "Online",
+                "Site": "Austin",
+                "Zone": "LZ_AUSTIN",
+                "lat": 30.3,
+                "lon": -97.7,
+                "Assigned kW": 3.0,
+                "SoC %": 80,
+                "size": 11,
+            }
+        ]
+    )
+    offline = dashboard.map_figure(frame, tiles=False)
+    assert "map" not in offline.layout.to_plotly_json()
+    assert offline.data[0].type == "scatter"  # plain x/y plot, no basemap request
+    tiled = dashboard.map_figure(frame, tiles=True)
+    assert tiled.data[0].type in {"scattermap", "scattermapbox"}
+
+
+def test_the_member_app_does_not_claim_protection_while_contact_is_lost() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    app.session_state["view"] = "Member App"
+    app.run()
+    assert not app.exception, app.exception
+
+    text = " ".join(m.value for m in app.markdown)
+    assert "lost contact" in text.lower()
+    assert "still protecting your home" not in text
+    assert "cannot confirm" in text
+    labels = " ".join(m.label for m in app.metric)
+    assert "last reported" in labels

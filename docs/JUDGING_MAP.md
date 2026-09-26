@@ -101,8 +101,8 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 
 | Evidence | Where |
 |---|---|
-| 10,000 devices: build ~104 ms, detect ~1 ms, approve + reallocate ~33 ms | `tests/test_scale.py` (`pytest -q -s tests/test_scale.py`) |
-| 10,000 agents: register ~242 ms, heartbeat sweep ~106 ms, negotiation over 5,913 bids ~22 ms | `tests/test_simulate.py` (`pytest -q -s tests/test_simulate.py`) |
+| 10,000 devices, in-process compute on simulated state (no network, no device round trips): construct fleet ~104 ms, raise the incident from an in-memory snapshot ~1 ms, recompute the full allocation after approval ~33 ms | `tests/test_scale.py` (`pytest -q -s tests/test_scale.py`) |
+| 10,000 agents, in-process compute (no messaging): build and verify signed cards ~242 ms, apply one heartbeat to each and re-evaluate staleness ~106 ms, score and award one contract-net call over 5,913 bids ~22 ms | `tests/test_simulate.py` (`pytest -q -s tests/test_simulate.py`) |
 | 10,000-device staged rollout with per-ring gates in ~2 ms; 400 units commissioned into a 10,000-device mesh and re-auctioned in ~600 ms | `tests/test_rollout.py::test_ten_thousand_device_rollout_detects_the_bad_build_fast`, `tests/test_install.py::test_ten_thousand_device_install_wave_benchmark` |
 | Fleet map thins healthy markers above 400 devices so a 10,000-device view stays interactive | `MAP_MARKERS` in `app/dashboard.py` |
 | Analytics, held-out scoring, insight and chaos replays are cached per input in the dashboard | `@st.cache_data` on `signals_run`, `holdout_run`, `insight_run`, `chaos_run`, `jev_eval` |

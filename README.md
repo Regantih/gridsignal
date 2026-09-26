@@ -54,8 +54,11 @@ the year. This repo is built around that minute.
 - **A person still signs.** Nothing dispatches without a named human approval, and the whole
   sequence lands in an append-only audit timeline — the shape a utility-facing operation has to
   have before it can be trusted with real hardware.
-- **It scales to the fleet Base is building, not the one in the demo.** 10,000 devices detect and
-  reallocate in ~138 ms, and 10,000 agents negotiate in ~370 ms.
+- **It scales to the fleet Base is building, not the one in the demo.** Building a 10,000-device
+  fleet in memory, raising the incident and recomputing the whole allocation takes ~138 ms of
+  compute, and building a 10,000-agent registry, sweeping its heartbeats and clearing one
+  contract-net auction takes ~370 ms. These are in-process compute timings on simulated state:
+  no network, no device round trips, no field latency.
 - **The homeowner is a first-class view.** The same event rendered as backup hours and dollars
   earned, with no incident IDs — the support conversation, not the ops console.
 - **The market read is honest.** The dispatch policy is scored on real ERCOT days it was never
@@ -583,14 +586,18 @@ fleet zone settles against `LZ_AEN` via `fleet.settlement_zone`.
 Measured on this machine (Python 3.11, single process, no GPU); reproduce with
 `pytest -q -s tests/test_scale.py tests/test_simulate.py`.
 
-| Benchmark | Scale | Result |
+Every row is **in-process compute on in-memory simulated state**: no network, no message bus, no
+device round trips. They measure how long the orchestration maths takes, not how fast a real
+fleet would detect or respond in the field.
+
+| Benchmark (what is actually timed) | Scale | Result |
 |---|---|---|
-| Control Room: build fleet | 10,000 devices | ~104 ms |
-| Control Room: detect failure | 10,000 devices | ~1 ms |
-| Control Room: approve + reallocate | 10,000 devices | ~33 ms |
-| Mesh: register signed cards | 10,000 agents | ~242 ms |
-| Mesh: heartbeat sweep | 10,000 agents | ~106 ms |
-| Mesh: contract-net negotiation | 10,000 agents, 5,913 bids | ~22 ms |
+| Control Room: construct the fleet objects | 10,000 devices | ~104 ms |
+| Control Room: raise the incident from an in-memory snapshot (no telemetry wait) | 10,000 devices | ~1 ms |
+| Control Room: recompute the full allocation after an approval | 10,000 devices | ~33 ms |
+| Mesh: build and verify signed cards in the registry | 10,000 agents | ~242 ms |
+| Mesh: apply one heartbeat to every agent and re-evaluate staleness | 10,000 agents | ~106 ms |
+| Mesh: score and award one contract-net call in process (no messaging) | 10,000 agents, 5,913 bids | ~22 ms |
 | Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
 | Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |

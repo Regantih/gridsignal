@@ -98,22 +98,26 @@ def _notice(
 
     if incident.status is IncidentStatus.RESOLVED:
         return (
-            "Resolved: your battery is back under our watch",
-            "The internet gateway at your home stopped reporting to us during a grid event. "
-            "Your battery itself was never at fault and kept protecting your home the whole "
-            "time. We paused its grid participation and other batteries covered your share, "
-            "so the neighbourhood commitment was still met.",
+            "Resolved: your battery is reporting to us again",
+            "The internet gateway at your home stopped reporting during a grid event, so for "
+            "that period we could not confirm the state of your battery. Its readings are "
+            "back now and nothing is wrong with the battery itself. We paused its grid "
+            "participation while it was dark and other batteries covered your share, so the "
+            "neighbourhood commitment was still met.",
             "A technician visit is scheduled to replace the gateway. "
-            "Your backup protection is unaffected in the meantime.",
+            "Your backup protection is unaffected now that readings are back.",
         )
 
     return (
         "We've lost contact with your battery",
-        "Your home's gateway stopped sending us data during a grid event. Your battery is "
-        "still running and still protecting your home — we just cannot see it right now, so "
-        "we have paused its grid participation while an operator reviews what happened.",
-        f"No action needed from you. You still have about {backup_hours:.1f} hours of "
-        "backup available if the power goes out.",
+        "Your home's gateway stopped sending us data during a grid event, so we cannot "
+        "currently confirm whether your battery is charged, discharging or able to back up "
+        "your home. We have paused its grid participation while an operator reviews what "
+        "happened.",
+        f"No action needed from you. The last reading we received showed about "
+        f"{backup_hours:.1f} hours of backup, but we cannot confirm that until contact "
+        "is restored — if your power is out and the battery is not carrying the house, "
+        "call us.",
     )
 
 

@@ -5,8 +5,11 @@ Run with:  streamlit run app/dashboard.py
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from gridsignal import (
@@ -236,6 +239,24 @@ def render_header() -> None:
         )
 
 
+def coverage_banner(committed_kw: float, target_kw: float) -> str:
+    """What the fleet is actually delivering against what it promised.
+
+    Rounding is deliberately one-directional: delivered kW is truncated and never
+    allowed past the target, so a fleet that is 0.4 kW short never reads as covered.
+    """
+    target = math.floor(target_kw)
+    delivered = min(math.floor(committed_kw), target)
+    return f"Delivering {delivered:,} of {target:,} kW; {max(target - delivered, 0):,} kW at risk"
+
+
+def coverage_pct_text(committed_kw: float, target_kw: float, coverage_pct: float) -> str:
+    """Percent covered, held below 100% until every promised kW is actually there."""
+    if target_kw > 0 and committed_kw < target_kw:
+        return f"{min(math.floor(coverage_pct), 99)}%"
+    return f"{coverage_pct:.0f}%"
+
+
 def render_overview(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     ev = snap.grid_event
@@ -259,7 +280,10 @@ def render_overview(eng: ControlRoomEngine) -> None:
     cols[4].metric(
         "Grid event",
         ev.status.title(),
-        delta=f"{snap.coverage_pct:.0f}% of {ev.target_kw:,.0f} kW",
+        delta=(
+            f"{coverage_pct_text(snap.committed_kw, ev.target_kw, snap.coverage_pct)} "
+            f"of {ev.target_kw:,.0f} kW"
+        ),
         delta_color="off",
     )
     cols[5].metric(
@@ -276,13 +300,11 @@ def render_overview(eng: ControlRoomEngine) -> None:
         delta_color="off",
     )
 
-    if snap.coverage_pct >= 99.5:
-        st.success(f"Commitment covered: {snap.committed_kw:.0f} kW of {ev.target_kw:.0f} kW.")
+    banner = coverage_banner(snap.committed_kw, ev.target_kw)
+    if snap.committed_kw + 0.5 >= ev.target_kw:
+        st.success(banner)
     else:
-        st.error(
-            f"Commitment at risk: {snap.committed_kw:.0f} kW of {ev.target_kw:.0f} kW "
-            f"({snap.coverage_pct:.0f}%). Recovery plan needs operator approval."
-        )
+        st.error(f"{banner}. Recovery plan needs operator approval.")
 
 
 def render_home_first(eng: ControlRoomEngine) -> None:
@@ -443,6 +465,73 @@ def map_devices(devices: list[Device]) -> list[Device]:
     return list(keep.values())
 
 
+def map_figure(frame: pd.DataFrame, tiles: bool = False) -> go.Figure:
+    """The fleet plotted by position.
+
+    The default draws the devices on their own coordinates and fetches nothing, so the
+    Control Room renders on a machine with no internet. Tiled basemaps are opt-in.
+    """
+    color_map = {STATUS_LABEL[s]: c for s, c in STATUS_COLOR.items()}
+    hover = {
+        "Site": True,
+        "Zone": True,
+        "Assigned kW": True,
+        "SoC %": True,
+        "lat": False,
+        "lon": False,
+        "size": False,
+    }
+    if tiles:
+        fig = px.scatter_map(
+            frame,
+            lat="lat",
+            lon="lon",
+            color="Status",
+            size="size",
+            size_max=20,
+            color_discrete_map=color_map,
+            hover_name="Device",
+            hover_data=hover,
+            zoom=4.5,
+            center={"lat": 30.8, "lon": -97.5},
+            height=430,
+        )
+        fig.update_layout(
+            map_style="carto-darkmatter",
+            margin={"l": 0, "r": 0, "t": 0, "b": 0},
+            legend={"orientation": "h", "y": -0.05},
+        )
+        return fig
+
+    fig = px.scatter(
+        frame,
+        x="lon",
+        y="lat",
+        color="Status",
+        size="size",
+        size_max=20,
+        color_discrete_map=color_map,
+        hover_name="Device",
+        hover_data=hover,
+        height=430,
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 0, "b": 0},
+        legend={"orientation": "h", "y": -0.05},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="#0f1620",
+        xaxis={"title": None, "showgrid": True, "gridcolor": "#1e2937", "zeroline": False},
+        yaxis={
+            "title": None,
+            "showgrid": True,
+            "gridcolor": "#1e2937",
+            "zeroline": False,
+            "scaleanchor": "x",
+        },
+    )
+    return fig
+
+
 def render_map(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     shown = map_devices(snap.devices)
@@ -462,35 +551,16 @@ def render_map(eng: ControlRoomEngine) -> None:
             for d in shown
         ]
     )
-    color_map = {STATUS_LABEL[s]: c for s, c in STATUS_COLOR.items()}
-    fig = px.scatter_map(
-        frame,
-        lat="lat",
-        lon="lon",
-        color="Status",
-        size="size",
-        size_max=20,
-        color_discrete_map=color_map,
-        hover_name="Device",
-        hover_data={
-            "Site": True,
-            "Zone": True,
-            "Assigned kW": True,
-            "SoC %": True,
-            "lat": False,
-            "lon": False,
-            "size": False,
-        },
-        zoom=4.5,
-        center={"lat": 30.8, "lon": -97.5},
-        height=430,
+    use_tiles = bool(st.session_state.get("map_tiles", False))
+    st.plotly_chart(map_figure(frame, tiles=use_tiles), use_container_width=True)
+    st.checkbox(
+        "Use online map tiles (needs internet)",
+        key="map_tiles",
+        help=(
+            "Off by default: the fleet plots from its own simulated coordinates, so the "
+            "Control Room works with no network at all."
+        ),
     )
-    fig.update_layout(
-        map_style="carto-darkmatter",
-        margin={"l": 0, "r": 0, "t": 0, "b": 0},
-        legend={"orientation": "h", "y": -0.05},
-    )
-    st.plotly_chart(fig, use_container_width=True)
 
     if len(shown) < len(snap.devices):
         st.caption(
@@ -1099,19 +1169,24 @@ def render_member(eng: ControlRoomEngine) -> None:
         unsafe_allow_html=True,
     )
 
+    stale = view.is_affected  # no live readings: every number below is a last-known value
     cols = st.columns(4)
     cols[0].metric(
-        "Whole-home backup left",
+        "Whole-home backup, last reported" if stale else "Whole-home backup left",
         f"{view.backup_hours:.1f} h",
         delta=(
-            f"{view.backup_hours_with_generator:.1f} h with your generator"
-            if view.generator_kwh > 0
-            else f"{view.backup_kwh:,.1f} kWh reserved for you"
+            "from the last reading before contact was lost"
+            if stale
+            else (
+                f"{view.backup_hours_with_generator:.1f} h with your generator"
+                if view.generator_kwh > 0
+                else f"{view.backup_kwh:,.1f} kWh reserved for you"
+            )
         ),
         delta_color="off",
     )
     cols[1].metric(
-        "Powering your home now",
+        "Powering your home, last reported" if stale else "Powering your home now",
         f"{view.home_load_kw:,.1f} kW",
         delta=f"{view.discharge_kw:,.1f} kW discharging in total",
         delta_color="off",

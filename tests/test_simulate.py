@@ -152,8 +152,10 @@ def test_ten_thousand_agent_negotiation_benchmark(capsys: pytest.CaptureFixture[
 
     with capsys.disabled():
         print(
-            f"\n10,000-agent mesh: register {registered_s * 1000:.0f} ms, "
-            f"heartbeat {heartbeat_s * 1000:.0f} ms, negotiate {negotiate_s * 1000:.0f} ms "
+            f"\n10,000-agent mesh, in-process compute only (no messaging, no network): "
+            f"build and verify cards {registered_s * 1000:.0f} ms, "
+            f"apply one heartbeat each {heartbeat_s * 1000:.0f} ms, "
+            f"score and award one call {negotiate_s * 1000:.0f} ms "
             f"({len(bids):,} bids, {len(award_set.awards)} awards, "
             f"{award_set.covered_kw:.0f} kW covered)"
         )

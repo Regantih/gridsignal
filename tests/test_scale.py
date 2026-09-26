@@ -88,8 +88,10 @@ def test_ten_thousand_device_failure_and_reallocation_is_fast(capsys):
 
     with capsys.disabled():
         print(
-            f"\n[benchmark] 10,000 devices | build {build_s * 1000:.0f} ms | "
-            f"detect {detect_s * 1000:.0f} ms | approve+reallocate {recover_s * 1000:.0f} ms | "
+            f"\n[benchmark] 10,000 devices, in-process compute only (no network, no device "
+            f"round trips) | construct fleet {build_s * 1000:.0f} ms | "
+            f"raise incident from snapshot {detect_s * 1000:.0f} ms | "
+            f"recompute allocation after approval {recover_s * 1000:.0f} ms | "
             f"{len(incident.cohort)} devices out, ${incident.dollars_at_risk:,.2f} at risk, "
             f"${incident.dollars_recovered:,.2f} recovered"
         )

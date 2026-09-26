@@ -78,7 +78,9 @@ def test_notice_walks_the_member_through_detection_and_resolution(eng: ControlRo
     during = member.member_summary(eng)
     assert "lost contact" in during.headline.lower()
     assert "no action needed" in during.next_step.lower()
-    assert "still protecting your home" in during.body
+    # Contact is lost, so the notice may not promise the battery is holding the house up.
+    assert "cannot currently confirm" in during.body
+    assert "still protecting your home" not in during.body
 
     eng.approve_recovery()
     after = member.member_summary(eng)

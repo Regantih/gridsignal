@@ -38,8 +38,10 @@ Two sidebar dials replay the same failure under conditions Base actually cares a
 | 10,000 | $294.04 at risk | **$8,971.58 at risk, $8,682.72 recovered** |
 
 One operator approval is worth roughly nine thousand dollars on a scarcity evening — per outage,
-per fleet. Detection plus reallocation across 10,000 devices runs in well under a second
-(`tests/test_scale.py` prints the measured build / detect / reallocate split on every test run).
+per fleet. Raising that incident and recomputing the whole 10,000-device allocation is well under
+a second of in-process compute — no network and no device round trips are involved
+(`tests/test_scale.py` prints the measured construct / raise-incident / recompute split on every
+test run).
 
 ## Home-first dispatch
 
