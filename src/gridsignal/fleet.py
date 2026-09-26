@@ -17,6 +17,17 @@ ZONES: list[tuple[str, str, float, float]] = [
     ("LZ_AUSTIN", "Austin", 30.27, -97.74),
 ]
 
+#: The simulated fleet groups Austin into one zone; ERCOT settles it across the city
+#: utility (LZ_AEN) and LZ_LCRA. Map the fleet's zone onto a real settlement zone so
+#: congestion analysis and dispatch preference talk about the same place.
+SETTLEMENT_ZONE: dict[str, str] = {"LZ_AUSTIN": "LZ_AEN"}
+
+
+def settlement_zone(zone: str) -> str:
+    """The ERCOT settlement zone a fleet zone's prices come from."""
+    return SETTLEMENT_ZONE.get(zone, zone)
+
+
 FLEET_SIZE = 48
 FOCUS_DEVICE_ID = "BAT-042"
 DEFAULT_SEED = 42

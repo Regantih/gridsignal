@@ -65,6 +65,7 @@ class ControlRoomEngine:
         self.seed = seed
         self.fleet_size = fleet_size
         self.prices = price_trace or load_price_trace()
+        self.priority_zone: str | None = None
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -142,10 +143,23 @@ class ControlRoomEngine:
         trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
         return min(device.power_kw * trust, device.available_kwh)
 
+    def _share(self, pool: list[Device], target: float) -> float:
+        """Split ``target`` kW across ``pool`` in proportion to headroom."""
+        total_headroom = sum(self._headroom_kw(d) for d in pool)
+        if total_headroom <= 0 or target <= 0:
+            return 0.0
+        share = min(target, total_headroom)
+        for device in pool:
+            device.assigned_kw = round(share * self._headroom_kw(device) / total_headroom, 2)
+        return round(sum(d.assigned_kw for d in pool), 2)
+
     def _allocate_dispatch(self) -> float:
         """Share the grid-event target across dispatchable devices by headroom.
 
-        Returns the total kW committed. Devices that are not dispatchable get 0 kW.
+        With a ``priority_zone`` set the operator has chosen to lean on one congested
+        zone first: its devices are filled to their headroom before the rest of the
+        fleet shares what is left. Returns the total kW committed; devices that are not
+        dispatchable get 0 kW.
         """
         for device in self.devices:
             device.assigned_kw = 0.0
@@ -156,9 +170,41 @@ class ControlRoomEngine:
             return 0.0
 
         target = min(self.grid_event.target_kw, total_headroom)
-        for device in pool:
-            device.assigned_kw = round(target * self._headroom_kw(device) / total_headroom, 2)
-        return round(sum(d.assigned_kw for d in pool), 2)
+        first = [d for d in pool if d.zone == self.priority_zone]
+        if not first:
+            return self._share(pool, target)
+
+        committed = self._share(first, target)
+        rest = [d for d in pool if d.zone != self.priority_zone]
+        return round(committed + self._share(rest, target - committed), 2)
+
+    def set_priority_zone(self, zone: str | None) -> float:
+        """Discharge one zone's batteries first, and reallocate the open commitment.
+
+        Simulated dispatch preference only: the target and the homeowner reserve rules
+        do not move, only which zone carries the commitment first.
+        """
+        if zone == self.priority_zone:
+            return self.snapshot().committed_kw
+        self.priority_zone = zone
+        committed = self._allocate_dispatch()
+        self._log(
+            actor=OWNERS[Role.FLEET_OPERATOR],
+            kind="dispatch_priority",
+            summary=(
+                f"Congestion priority set to {zone}"
+                if zone
+                else "Congestion priority cleared, fleet shares the target by headroom"
+            ),
+            detail=(
+                f"{committed:.0f} kW committed of {self.grid_event.target_kw:.0f} kW; "
+                f"{len([d for d in self.devices if d.zone == zone and d.assigned_kw > 0])} "
+                f"devices in {zone} discharge first."
+                if zone
+                else f"{committed:.0f} kW committed of {self.grid_event.target_kw:.0f} kW."
+            ),
+        )
+        return committed
 
     # ------------------------------------------------------------------ failure
 

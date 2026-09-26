@@ -117,6 +117,9 @@ The sidebar **View** switch picks between the four pages:
 - **Reset Demo** (sidebar) — replay the story without reloading the browser.
 - **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
   and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
+- **Congestion dispatch preference** (incident column) — discharge one zone's batteries to their
+  headroom first, ordered by the bundled ERCOT basis; the target, the homeowner reserve and the
+  approval gate are unchanged, and the choice is written to the audit log.
 
 ### Member App
 
@@ -156,7 +159,9 @@ python -m gridsignal.holdout          # the held-out scorecard
 ```
 
 The view opens on the **Open Grid Data insight card** (below), then the backtest headline, the
-signal chart and the held-out scorecard.
+signal chart, the held-out scorecard and the **congestion panel** — a zone-by-hour basis heatmap,
+the West-to-load-center spread, zone-timed against zone-blind value per battery, and the "where
+to install next" placement sketch ([Congestion](#open-grid-data-congestion-and-where-the-next-battery-is-worth-most)).
 
 Full walkthrough, safety boundaries and the timed 5-minute demo script:
 [`docs/DEMO.md`](docs/DEMO.md).
@@ -405,6 +410,57 @@ python -m gridsignal.insight
 This is a statement about 15 real LZ_HOUSTON days, not about ERCOT in general, and the foresight
 ceiling is one cycle per day — a two-cycle battery would move both columns.
 
+## Open Grid Data: congestion, and where the next battery is worth most
+
+A second read of the same days, this time across space instead of time. West Texas generates;
+Houston, Dallas, Austin and San Antonio consume; when the lines between them bind, the same
+15-minute interval settles at different prices in different zones. The bundled set now carries
+**all eight ERCOT load zones plus the hub average** for every one of the 15 trade dates, so the
+spread can be measured rather than asserted.
+
+Two spreads, per 15-minute interval, per zone:
+
+- **zone-to-hub basis** = zone SPP − `HB_HUBAVG` SPP — what a zone paid over the system reference.
+- **West-to-load-center spread** = load-zone SPP − `LZ_WEST` SPP — what a metro paid over the
+  generation-heavy west, which is the direction congestion pushes.
+
+**What most people miss:** across these 15 bundled days, **LZ_LCRA at hour 18 priced $39.82/MWh
+above the hub average on average**, and **3,427 of 11,520 zone-intervals (29.8%) settled more than
+$5/MWh away from the hub** — yet timing discharge to a zone's own price instead of the hub average
+is worth only **+$0.13 per battery per day on average** (best `LZ_SOUTH` +$0.57, worst `LZ_WEST`
+−$0.01). The congestion is large and real; the share of it a single 13.5 kWh battery can collect
+by re-timing alone is small. Both halves are in the Grid Signals panel.
+
+| Zone | Metro | Zone-timed $/bat/day | Zone-blind $/bat/day | Uplift $ | Mean basis $/MWh | Days won |
+|---|---|---:|---:|---:|---:|---|
+| LZ_SOUTH | South Texas | 7.01 | 6.44 | **+0.57** | −1.62 | 11/15 |
+| LZ_LCRA | Austin (LCRA) | 7.47 | 7.32 | **+0.15** | 6.25 | 10/15 |
+| LZ_HOUSTON | Houston | 7.29 | 7.21 | **+0.08** | 2.57 | 11/15 |
+| LZ_AEN | Austin (city) | 7.35 | 7.27 | **+0.08** | 3.72 | 11/15 |
+| LZ_NORTH | Dallas-Fort Worth | 7.35 | 7.28 | **+0.07** | 2.61 | 9/15 |
+| LZ_RAYBN | Rayburn | 7.32 | 7.25 | **+0.07** | 1.48 | 8/15 |
+| LZ_CPS | San Antonio | 7.32 | 7.26 | **+0.06** | 3.11 | 11/15 |
+| LZ_WEST | West Texas | 7.37 | 7.38 | **−0.01** | 9.49 | 8/15 |
+
+**Method.** Both policies settle at the *same* local zone prints on the same 13.5 kWh / 5 kW
+battery; the only difference is which price series ranks the intervals — the zone's own price
+(zone-timed) or `HB_HUBAVG` (zone-blind). So the number isolates the value of the local signal,
+not of a better location. Code: [`src/gridsignal/congestion.py`](src/gridsignal/congestion.py),
+tests: `tests/test_congestion.py`, reproduce with `python -m gridsignal.congestion`.
+
+**Where to install next (data-driven sketch, not a forecast).** The panel ranks zones by grid
+value per battery on these days and places the next N batteries (default 1,000) greedily, 100 at
+a time, with each zone's marginal value falling linearly toward a saturation count derived from
+its positive mean basis (`RELIEF_MW_PER_DOLLAR = 8 MW per $/MWh of basis`, an explicit modelling
+assumption, not a measured relationship). It is a sketch on 15 days of prices — not a siting
+study, not a forecast, and it models no interconnection, land, permitting or network constraint.
+
+**Zone-aware dispatch.** The Control Room has a congestion dispatch preference: pick a zone and
+its batteries are filled to their headroom before the rest of the fleet shares what is left. The
+target, the homeowner reserve and the human approval gate do not move — only the order. The zone
+ordering comes from the bundled basis (`congestion.dispatch_order`); the simulated `LZ_AUSTIN`
+fleet zone settles against `LZ_AEN` via `fleet.settlement_zone`.
+
 ## Benchmarks
 
 Measured on this machine (Python 3.11, single process, no GPU); reproduce with
@@ -572,6 +628,7 @@ Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal
 | Held-out evaluation days | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive and [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report via `gridstatus` | **Real data.** Seven LZ_HOUSTON REAL_TIME_15_MIN days, 96 intervals each, cached under `data/holdout/` with a sidecar `.json` per day; refresh with `python scripts/fetch_holdout.py` |
 | Tuning days | same ERCOT sources via `gridstatus` | **Real data.** Six LZ_HOUSTON REAL_TIME_15_MIN days under `data/tuning/`, chosen by the quantile rule in `scripts/fetch_tuning.py` so they never collide with the held-out dates. These plus the two scenario days are the only days any parameter may be fitted on; refresh with `python scripts/fetch_tuning.py` |
 | Day-ahead settlement point prices | ERCOT MIS [NP4-190-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD) and the DAM historical archive via `gridstatus` | **Real data.** LZ_HOUSTON, DAY_AHEAD_HOURLY, 24 hours for every bundled trade date, cached beside each real-time trace as `*_dam.parquet` with a sidecar `*_dam.json`; refresh with `python scripts/fetch_dam.py`. DAM results clear the afternoon **before** the trade day, which is why the plan may use them |
+| All-zone settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report and [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** All eight load zones (`LZ_WEST`, `LZ_NORTH`, `LZ_HOUSTON`, `LZ_SOUTH`, `LZ_AEN`, `LZ_CPS`, `LZ_LCRA`, `LZ_RAYBN`) plus the hub average `HB_HUBAVG`, REAL_TIME_15_MIN, 96 intervals for each of the same 15 bundled trade dates. One file per date under `data/zones/zones_rtm_spp_<YYYYMMDD>.parquet` with a sidecar `.json` carrying market, locations, date, source and `fetched_at`; refresh with `python scripts/fetch_zones.py` |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
@@ -657,6 +714,9 @@ real Base Power device or fleet.
 - **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive, but the
   median day is +$0.10 and most of the mean comes from two scarcity days. Day-ahead anchoring
   fixed the previous generalisation failure; it did not turn this into a revenue product.
+- The congestion read is 15 days of settlement prices: the zone-timed uplift is a re-timing
+  study on one battery, and the placement sketch's saturation curve is an assumed linear
+  relationship, not an estimated one. Neither is a forecast or a siting recommendation.
 - The day-ahead plan is a top-k hour selection, not an optimiser: no state-of-charge-aware
   dynamic program, no forecast error model on the DAM-to-RTM basis.
 - Load and fuel-mix ingest are implemented but not yet used by either view.

@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import drills, holdout, insight, member, pipeline
+from gridsignal import congestion, drills, holdout, insight, member, pipeline
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
@@ -20,7 +20,7 @@ from gridsignal.control_room.models import (
     Severity,
     TaskStatus,
 )
-from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID
+from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID, settlement_zone
 from gridsignal.jev import evaluate as jev_evaluate
 from gridsignal.jev import incident as jev_incident
 from gridsignal.jev.client import JevResponse, Source
@@ -565,6 +565,60 @@ def render_scenario_controls() -> None:
         st.divider()
 
 
+@st.cache_data(show_spinner=False)
+def congestion_rank() -> dict[str, int]:
+    """Settlement zone -> its place in the congestion-aware discharge order."""
+    if not congestion.bundled_days():
+        return {}
+    return {zone: i + 1 for i, zone in enumerate(congestion.dispatch_order(congestion_basis()))}
+
+
+def render_dispatch_priority(eng: ControlRoomEngine) -> None:
+    """Let the operator discharge one congested zone's batteries before the rest."""
+    ranks = congestion_rank()
+    zones = sorted({d.zone for d in eng.devices})
+    options: list[str | None] = [
+        None,
+        *sorted(zones, key=lambda z: ranks.get(settlement_zone(z), 99)),
+    ]
+
+    def label(zone: str | None) -> str:
+        if zone is None:
+            return "Share by headroom (no preference)"
+        place = ranks.get(settlement_zone(zone))
+        suffix = f" — congestion rank #{place}" if place else ""
+        return f"{zone}{suffix}"
+
+    st.markdown("<div class='gs-kicker'>Congestion dispatch preference</div>", True)
+    choice = st.selectbox(
+        "Discharge first under congestion",
+        options,
+        format_func=label,
+        key="priority_zone",
+        label_visibility="collapsed",
+    )
+    if choice != eng.priority_zone:
+        eng.set_priority_zone(choice)
+        st.rerun()
+
+    snap = eng.snapshot()
+    in_zone = [d for d in eng.devices if d.zone == eng.priority_zone and d.assigned_kw > 0]
+    cols = st.columns(2)
+    cols[0].metric("Committed", f"{snap.committed_kw:,.0f} kW", delta=f"{snap.coverage_pct:.0f}%")
+    cols[1].metric(
+        "Discharging first",
+        f"{len(in_zone):,} devices" if eng.priority_zone else "whole fleet",
+        delta=f"{sum(d.assigned_kw for d in in_zone):,.0f} kW" if in_zone else "by headroom",
+        delta_color="off",
+    )
+    st.caption(
+        "Zone order comes from the bundled ERCOT basis in Grid Signals: the zone that "
+        "priced furthest above the hub average goes first. The target, the homeowner "
+        "reserve and the approval gate are unchanged — this only decides who carries the "
+        "commitment first, in simulation."
+    )
+
+
 def render_demo_controls(eng: ControlRoomEngine) -> None:
     with st.sidebar:
         st.header("Demo Controls")
@@ -905,6 +959,189 @@ def render_insight() -> None:
         )
 
 
+@st.cache_data(show_spinner=False)
+def congestion_basis() -> pd.DataFrame:
+    return congestion.basis_frame()
+
+
+@st.cache_data(show_spinner=False)
+def congestion_uplift() -> list[congestion.ZoneUplift]:
+    return congestion.zone_uplift(congestion_basis())
+
+
+def render_congestion_heatmap(basis: pd.DataFrame) -> None:
+    grid = congestion.heatmap(basis)
+    fig = px.imshow(
+        grid,
+        color_continuous_scale="RdBu_r",
+        color_continuous_midpoint=0.0,
+        aspect="auto",
+        height=340,
+        labels={"x": "hour of day", "y": "", "color": "$/MWh over hub"},
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+def render_placement(ranks: list[congestion.PlacementRank]) -> None:
+    """The 'where to install next' sketch: greedy placement with visible saturation."""
+    st.markdown("<div class='gs-kicker'>Where to install next (sketch)</div>", True)
+    batteries = st.slider(
+        "Next batteries to place",
+        min_value=100,
+        max_value=5_000,
+        value=1_000,
+        step=100,
+        key="placement_batteries",
+    )
+    sketch = congestion.placement_sketch(batteries, ranks=ranks)
+    if sketch.empty:
+        st.caption("No bundled zone priced above the hub average, so the sketch places none.")
+        return
+
+    cols = st.columns(3)
+    cols[0].metric("Placed", f"{int(sketch['batteries placed'].sum()):,}")
+    cols[1].metric("Value at these prices", f"${sketch.attrs['total_usd_per_day']:,.0f}/day")
+    cols[2].metric(
+        "Top zone",
+        sketch.iloc[0]["metro"],
+        delta=f"{int(sketch.iloc[0]['batteries placed']):,} batteries",
+        delta_color="off",
+    )
+
+    fig = px.bar(
+        sketch,
+        x="metro",
+        y="batteries placed",
+        height=260,
+        color_discrete_sequence=["#38bdf8"],
+    )
+    fig.update_layout(
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis_title=None,
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.dataframe(
+        sketch.style.format(
+            {
+                "batteries placed": "{:,.0f}",
+                "first $/battery/day": "{:,.2f}",
+                "last $/battery/day": "{:,.2f}",
+                "total $/day": "{:,.0f}",
+                "saturates at": "{:,.0f}",
+            }
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        usd(
+            "Data-driven sketch on a few bundled days of prices, not a forecast and not a "
+            "siting study. Batteries are placed greedily into whichever zone pays most at "
+            f"that moment; a zone's marginal value falls linearly to zero at its assumed "
+            f"saturation point ({congestion.RELIEF_MW_PER_DOLLAR:.0f} MW of congested-hour "
+            "discharge per $1/MWh of mean basis, an explicit assumption). Real siting "
+            "depends on interconnection, permitting and load growth, none of which are here."
+        )
+    )
+
+
+def render_congestion() -> None:
+    """Zonal congestion: where the power was expensive, not just when."""
+    if not congestion.bundled_days():
+        return
+    basis = congestion_basis()
+    uplifts = congestion_uplift()
+    summary = congestion.summarize(basis)
+
+    st.subheader("Congestion: West Texas generation, load-center prices")
+    st.markdown(
+        "<div class='gs-card gs-insight'>"
+        "<div class='gs-kicker'>What most people miss when they watch one price</div>"
+        f"<div class='gs-huge'>${summary.widest.hub_basis:,.0f}</div>"
+        f"<div class='gs-lead'>/MWh: how far {summary.widest.metro} priced above the ERCOT "
+        f"hub average in hour {summary.widest.hour:02d}</div>"
+        f"<div class='gs-body'>{summary.headline} {summary.subhead}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown(
+            "<div class='gs-kicker'>Mean basis by zone and hour ($/MWh over the hub)</div>", True
+        )
+        render_congestion_heatmap(basis)
+    with right:
+        st.markdown("<div class='gs-kicker'>West-to-load-center spread by hour ($/MWh)</div>", True)
+        spread = congestion.west_spread(basis)
+        st.dataframe(
+            spread.rename(columns=congestion.METRO).style.format("{:,.1f}"),
+            use_container_width=True,
+            height=320,
+        )
+
+    st.markdown(
+        "<div class='gs-kicker'>Timing discharge to your own zone vs. the hub signal</div>", True
+    )
+    st.dataframe(
+        congestion.uplift_frame(uplifts).style.format(
+            {
+                "zone-timed $/battery/day": "{:,.2f}",
+                "zone-blind $/battery/day": "{:,.2f}",
+                "uplift $": "{:+,.2f}",
+                "mean basis $/MWh": "{:,.2f}",
+                "peak basis $/MWh": "{:,.2f}",
+            }
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        usd(
+            f"Both columns settle the same 13.5 kWh / 5 kW battery at that zone's own real "
+            f"15-minute prints across {summary.days} bundled days. The only difference is "
+            "which hours were chosen: the zone's own price, which carries its congestion, or "
+            "the ERCOT hub average a zone-blind operator watches. Uplift is small and it is "
+            "negative in some zones; that is what these days show."
+        )
+    )
+
+    render_placement(congestion.placement_ranks(uplifts))
+
+    with st.expander("Widest zone-hours and data provenance"):
+        widest = pd.DataFrame(
+            [
+                {
+                    "zone": h.location,
+                    "metro": h.metro,
+                    "hour": f"{h.hour:02d}:00",
+                    "mean $ over hub": h.hub_basis,
+                    "mean $ over West": h.west_basis,
+                    "days": h.days,
+                }
+                for h in congestion.widest_hours(basis, top=10)
+            ]
+        )
+        st.dataframe(widest, hide_index=True, use_container_width=True)
+        days = congestion.bundled_days()
+        meta = congestion.provenance(days[-1])
+        st.caption(
+            f"{len(days)} bundled trade days, {len(congestion.ZONES)} ERCOT load zones plus "
+            f"{congestion.HUB_AVERAGE}, {meta.get('market', '')} settlement point prices from "
+            f"{meta.get('source', 'ERCOT')}. Each Parquet file has a provenance sidecar "
+            "(market, location, date, source, fetched_at) in data/zones/. Read-only public "
+            "data; nothing here is dispatched."
+        )
+
+
 def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> None:
     """One scenario day next to the held-out record — never the single day on its own.
 
@@ -1012,6 +1249,9 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
 
     st.divider()
     render_holdout()
+
+    st.divider()
+    render_congestion()
 
     st.caption(
         usd(
@@ -1274,6 +1514,7 @@ def main() -> None:
         st.subheader("ERCOT price trace")
         render_prices(eng)
     with right:
+        render_dispatch_priority(eng)
         render_incident(eng)
         render_tasks(eng)
     st.divider()

@@ -164,3 +164,51 @@ def test_human_summary_mentions_approval_state():
     assert "awaiting operator approval" in eng.human_summary()
     eng.approve_recovery()
     assert "approved by" in eng.human_summary()
+
+
+def test_priority_zone_discharges_that_zone_first_without_changing_the_target():
+    eng = ControlRoomEngine()
+    before = eng.snapshot().committed_kw
+    zone = "LZ_HOUSTON"
+    committed = eng.set_priority_zone(zone)
+
+    in_zone = [d for d in eng.devices if d.zone == zone and d.is_dispatchable]
+    # Every dispatchable battery in the chosen zone is pushed to its full headroom.
+    for device in in_zone:
+        assert device.assigned_kw == pytest.approx(eng._headroom_kw(device), abs=0.02)
+    assert committed == pytest.approx(before, abs=0.5)
+    assert eng.snapshot().coverage_pct == pytest.approx(100.0, abs=0.5)
+    assert eng.audit[-1].kind == "dispatch_priority"
+
+
+def test_priority_zone_is_reversible_and_idempotent():
+    eng = ControlRoomEngine()
+    baseline = {d.device_id: d.assigned_kw for d in eng.devices}
+    eng.set_priority_zone("LZ_WEST")
+    logged = len(eng.audit)
+    eng.set_priority_zone("LZ_WEST")
+    assert len(eng.audit) == logged
+
+    eng.set_priority_zone(None)
+    assert {d.device_id: d.assigned_kw for d in eng.devices} == baseline
+
+
+def test_priority_zone_survives_the_failure_and_recovery_flow():
+    eng = ControlRoomEngine()
+    eng.set_priority_zone("LZ_NORTH")
+    eng.trigger_device_failure(FOCUS_DEVICE_ID)
+    eng.approve_recovery()
+
+    quarantined = eng.device(FOCUS_DEVICE_ID)
+    assert quarantined.assigned_kw == 0.0
+    assert eng.snapshot().coverage_pct == pytest.approx(100.0, abs=0.5)
+    # Reserve is untouched: nothing is asked for more than its headroom.
+    for device in eng.devices:
+        assert device.assigned_kw <= eng._headroom_kw(device) + 0.02
+
+
+def test_unknown_priority_zone_falls_back_to_sharing_by_headroom():
+    eng = ControlRoomEngine()
+    baseline = {d.device_id: d.assigned_kw for d in eng.devices}
+    eng.set_priority_zone("LZ_NOWHERE")
+    assert {d.device_id: d.assigned_kw for d in eng.devices} == baseline

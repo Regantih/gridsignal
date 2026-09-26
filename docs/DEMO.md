@@ -129,6 +129,28 @@ grid conditions (grid-side share of the missing kW, and homes islanded together)
 rules-only from 0/4 to 4/4. Jev stayed at 1/4. Backup-reserve violations remained zero
 throughout, and the tuned-five results did not move.
 
+## Congestion: the same days, read across the map
+
+The **Grid Signals → congestion panel** adds all eight ERCOT load zones plus the hub average for
+the same 15 bundled trade dates (`data/zones/`, one Parquet and one provenance JSON per date).
+It shows the zone-to-hub basis as a zone-by-hour heatmap, the West-to-load-center spread by hour,
+and what timing discharge to a zone's own price is worth against timing it to the hub average —
+both policies settling at the *same* local prints, so the number isolates the signal, not the
+location.
+
+The finding is two-sided and both halves are on screen: **LZ_LCRA at hour 18 averaged $39.82/MWh
+over the hub and 29.8% of all zone-intervals settled more than $5 away from it, yet re-timing to
+the local price is worth only $0.13 per battery per day** (best `LZ_SOUTH` +$0.57, worst
+`LZ_WEST` −$0.01). "Where to install next" places the next 1,000 batteries greedily and shows
+each zone's marginal value decaying as it saturates — a **data-driven sketch on 15 days of
+prices, not a forecast and not a siting study**. In the Control Room, the same ordering drives a
+congestion dispatch preference: one zone discharges to its headroom first, with the target, the
+homeowner reserve and the approval gate untouched.
+
+```bash
+python -m gridsignal.congestion
+```
+
 ## Safety boundaries
 
 - **No real-world effect.** No device commands, no utility or market integration, no credentials
@@ -176,7 +198,7 @@ restored at the fleet level, and a person owns the decision.
 ## Timed 5-minute demo script
 
 Record the screen live; every number below comes from the running app, not from slides. Total
-runtime 4:55 (the Spain-style cascade at 2:45 is the 30-second beat). Start on **Control Room**, sidebar set to **Normal day / 48 devices**, demo reset.
+runtime 4:57 (the Spain-style cascade at 2:45 and the congestion map at 3:33 are the strong beats). Start on **Control Room**, sidebar set to **Normal day / 48 devices**, demo reset.
 
 | Time | Screen | Say and do |
 |---|---|---|
@@ -187,9 +209,10 @@ runtime 4:55 (the Spain-style cascade at 2:45 is the 30-second beat). Start on *
 | **2:10** | Agent Mesh → Jev + escalation | "Code acts, Jev decides, humans approve when Jev is unsure." Show Jev's root cause, confidence, probabilities and latency in the log. "Confidence never cleared 0.9 on any bundled scenario, so every award here is human-approved — and the rules fallback reports zero confidence, so it can never auto-approve." Switch to `fleet_wide_scarcity`: partial cover committed, remainder escalated to a person. |
 | **2:45** | Agent Mesh → held-out drills | "Then we wrote four drills *after* freezing the rules and the prompts, from how real grids actually fail, and scored them once." Open `holdout/cascade_spain_style`: a simulated generation trip drops frequency, then gateways fail, then a stale-telemetry wave — in waves, so the faults interact, the shape ENTSO-E describes for the April 2025 Iberian blackout. "Both layers blamed the gateways. Rules 0 of 4, Jev 1 of 4 — published as it came out. What held is the part that matters: zero homeowner backup violations, zero auto-approvals, 76–100% of every gap covered. Then we fixed it and said so: the cards now carry a local 59.85 Hz rule, so the fleet self-deploys 238 kW in 12 simulated cycles without the coordinator and reconciles without double-counting. Rules go 4 of 4, Jev stays at 1 of 4 — the rules improved, not the model. All of it simulated." |
 | **3:15** | Grid Signals → insight card | "Open Grid Data: what the public data hides. Across the ERCOT scarcity days bundled here, only **47%** of a battery's capturable value was visible in the day-ahead curve. The $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. All 19 intervals that printed 5x their day-ahead hour fell on scarcity days; the 12 ordinary days never diverged." |
-| **3:40** | Grid Signals → held-out days | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen." |
-| **4:00** | Member App | "The same event from the homeowner's side: hours of whole-home backup still held, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |
-| **4:20** | Control Room at scale | Sidebar → **Scarcity day**, **10,000 devices**; trigger and approve. "Real ERCOT scarcity prices, Base-scale fleet: **$8,971 at risk, $8,683 recovered** on one approval. Detection plus reallocation across 10,000 devices is ~138 ms; a 10,000-agent negotiation over 5,913 bids is ~22 ms." Show the architecture diagram in the README: ERCOT pipeline, agent mesh, Jev, human gate. |
-| **4:40** | Close | Click **Reset Demo**. "Deterministic, replayable, offline, no API key. The fleet's commitment survives a device failure — and a person still owns the decision." |
+| **3:33** | Grid Signals → congestion | "Second thing the data hides, this time across the map. All eight load zones plus the hub average, same 15 days. LZ_LCRA at 6pm prices **$39.82/MWh above the hub**, and **29.8%** of all zone-intervals sit more than $5 from it — but timing discharge to your own zone's price instead of the hub is worth only **$0.13 per battery per day**, best zone +$0.57. The congestion is large; what one battery collects by re-timing alone is not. Placement sketch: the next 1,000 batteries go mostly to Austin's LCRA zone and the marginal value falls as it saturates — a sketch on 15 days of prices, not a forecast and not a siting study." |
+| **3:50** | Grid Signals → held-out days | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen." |
+| **4:05** | Member App | "The same event from the homeowner's side: hours of whole-home backup still held, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |
+| **4:22** | Control Room at scale | Set **Discharge first under congestion → LZ_HOUSTON** ("the zone order comes from that basis data; reserve and approval gate unchanged"), then sidebar → **Scarcity day**, **10,000 devices**; trigger and approve. "Real ERCOT scarcity prices, Base-scale fleet: **$8,971 at risk, $8,683 recovered** on one approval. Detection plus reallocation across 10,000 devices is ~138 ms; a 10,000-agent negotiation over 5,913 bids is ~22 ms." Show the architecture diagram in the README: ERCOT pipeline, agent mesh, Jev, human gate. |
+| **4:42** | Close | Click **Reset Demo**. "Deterministic, replayable, offline, no API key. The fleet's commitment survives a device failure — and a person still owns the decision." |
 
 Reset between takes with **Reset Demo**; the story replays without reloading the browser.

@@ -38,6 +38,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | It holds up on failures nobody designed for: a simulated cascade in waves, an under-frequency event where batteries self-deploy from their own cards in 12 simulated cycles and reconcile without double-counting, a neighbourhood islanding that resyncs on restore, a large-load squeeze with conflicting bids | `scenarios/holdout/*.yaml`, `tests/test_drills.py`, `docs/DEMO.md` 2:45 |
 | Failures are priced, not just logged: dollars at risk before approval, dollars recovered after | `control_room/engine.py`, `prices.energy_value_usd`, screen: **Control Room → incident panel** |
 | Open Grid Data: a specific, checkable claim about what the public data hides | `src/gridsignal/insight.py`, `python -m gridsignal.insight`, screen: **Grid Signals → headline card** |
+| Congestion measured, not asserted: all eight load zones plus the hub average for 15 bundled days, zone-to-hub and West-to-load-center basis per 15-minute interval | `src/gridsignal/congestion.py`, `data/zones/*.parquet` with provenance sidecars, `tests/test_congestion.py`, screen: **Grid Signals → congestion panel** |
 
 ### The "why" — 15
 
@@ -45,6 +46,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 |---|---|
 | Why this problem is the one that matters to Base | README → *Why this matters to Base* |
 | Why the two tracks are one product: the value that only real time reveals lands in the same minute a device failure costs the most | README → *Open Grid Data*, `docs/DEMO.md` 0:00 and 3:15 |
+| Why the congestion read changes an operator decision: the zone order it produces is what the Control Room dispatches first, without moving the target, the homeowner reserve or the approval gate | `control_room/engine.py::set_priority_zone`, `congestion.dispatch_order`, `tests/test_control_room.py::test_priority_zone_discharges_that_zone_first_without_changing_the_target`, screen: **Control Room → congestion dispatch preference** |
 | Why the held-out result is published as measured, losses and all, before any tuning | README → *Held-out chaos drills*, `docs/DEMO.md` 2:45 |
 | Why a human gate rather than autonomy, and where Jev stops | README → *Jev, the decision layer*; `jev/policy.py` thresholds; `docs/DEMO.md` 1:30 |
 | Safety boundary stated in the product, not only the README | simulation banner in `app/dashboard.py`, `docs/DEMO.md` |
@@ -58,6 +60,8 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 | Only 47% of a scarcity day's capturable battery value was visible in the day-ahead curve; $18.83/battery/day exists only in real time, worth ~28 ordinary days | `insight.py`, screen: **Grid Signals → headline card**, README |
 | All 19 intervals that printed ≥5x their day-ahead hour fell on scarcity days; the 12 ordinary days never diverged | `insight.summarize`, `tests/test_insight.py::test_divergent_intervals_are_a_scarcity_phenomenon` |
 | Method is stated and reproducible, and the ceiling is labelled as a ceiling | README → *Open Grid Data*, expander under the insight card |
+| Congestion is large but re-timing collects little: LZ_LCRA hour 18 prices $39.82/MWh over the hub and 29.8% of zone-intervals sit >$5 from it, yet zone-timed discharge is worth +$0.13/battery/day (best +$0.57, worst −$0.01) | `congestion.summarize`, `congestion.zone_uplift`, `tests/test_congestion.py::test_zone_timed_beats_zone_blind_when_the_hub_misranks_the_peak`, screen: **Grid Signals → congestion panel** |
+| "Where to install next" ranks zones by value per battery and shows marginal value falling as a zone saturates, labelled a sketch rather than a forecast or siting study | `congestion.placement_ranks`, `congestion.placement_sketch`, `tests/test_congestion.py::test_marginal_value_falls_as_a_zone_saturates`, README → *Congestion* |
 | The honest counterweight: day-ahead anchoring turned 2/7 held-out days into 6/7, but the median day is +$0.10 | README → *Held-out results*, screen: **Grid Signals** |
 
 ### Usability: Base could use it tomorrow — 10
