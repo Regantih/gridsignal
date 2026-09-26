@@ -9,7 +9,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import congestion, drills, holdout, insight, install, member, pipeline, rollout
+from gridsignal import (
+    congestion,
+    drills,
+    holdout,
+    home,
+    insight,
+    install,
+    member,
+    pipeline,
+    rollout,
+)
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
@@ -20,7 +30,13 @@ from gridsignal.control_room.models import (
     Severity,
     TaskStatus,
 )
-from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID, settlement_zone
+from gridsignal.fleet import (
+    FLEET_SIZE,
+    FLEET_SIZES,
+    FOCUS_DEVICE_ID,
+    UTILITY_PARTNER,
+    settlement_zone,
+)
 from gridsignal.jev import evaluate as jev_evaluate
 from gridsignal.jev import incident as jev_incident
 from gridsignal.jev.client import JevResponse, Source
@@ -160,6 +176,12 @@ def holdout_run() -> list[holdout.DayResult]:
     return holdout.evaluate()
 
 
+@st.cache_data(show_spinner=False)
+def holdout_grid_only() -> list[holdout.DayResult]:
+    """The same frozen policy without household load, to price home-first dispatch."""
+    return holdout.evaluate(serve_home=False)
+
+
 def engine() -> ControlRoomEngine:
     """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
     key = (
@@ -250,6 +272,119 @@ def render_overview(eng: ControlRoomEngine) -> None:
             f"Commitment at risk: {snap.committed_kw:.0f} kW of {ev.target_kw:.0f} kW "
             f"({snap.coverage_pct:.0f}%). Recovery plan needs operator approval."
         )
+
+
+def render_home_first(eng: ControlRoomEngine) -> None:
+    """Where the discharge goes: members' houses first, the grid gets the surplus."""
+    snap = eng.snapshot()
+    st.markdown("<div class='gs-kicker'>Home-first dispatch</div>", True)
+    cols = st.columns(4)
+    cols[0].metric("Battery discharge", f"{snap.discharge_kw:,.0f} kW")
+    cols[1].metric(
+        "Served to members' homes",
+        f"{snap.home_load_kw:,.0f} kW",
+        delta="simulated household load",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Exported to the grid",
+        f"{snap.committed_kw:,.0f} kW",
+        delta=f"{snap.coverage_pct:.0f}% of target",
+        delta_color="off",
+    )
+    cols[3].metric(
+        "Partner tenant",
+        f"{snap.partner_kw:,.0f} kW",
+        delta=UTILITY_PARTNER,
+        delta_color="off",
+    )
+    st.caption(
+        "Exported kW is battery discharge minus the home's own load. The partner"
+        " tenant's units are shown for visibility only — this mesh never bids, awards"
+        " or reassigns a battery it does not control."
+    )
+
+    hours, price = eng.remaining_hours(), eng.grid_event.price_mwh
+    left, right = st.columns(2)
+    with left:
+        rows = home.by_unit_type(eng.mine, hours, price, eng.reserve_fraction)
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Unit type": r.unit_type,
+                        "Homes": r.devices,
+                        "Home load kW": r.home_load_kw,
+                        "Export kW": r.export_kw,
+                        "Revenue $": r.revenue_usd,
+                        "Backup h": r.backup_hours,
+                    }
+                    for r in rows
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(
+            "Base Core-style units are modelled at 40 kWh / 20 kW per public interview, "
+            "not an official specification."
+        )
+    with right:
+        tenants = home.by_tenant(eng.devices)
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Control authority": t.controller,
+                        "Batteries": t.devices,
+                        "Dispatchable": t.dispatchable,
+                        "Export kW": t.export_kw,
+                    }
+                    for t in tenants
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(
+            "Simulated tenancy: in non-retail-choice territory the utility partner runs "
+            "its own schedule and this control room only reads it."
+        )
+
+
+def render_reserve_policy(eng: ControlRoomEngine) -> None:
+    """Raise the member reserve floor before a storm, and price what that costs."""
+    st.markdown("<div class='gs-kicker'>Storm reserve policy</div>", True)
+    fraction = st.select_slider(
+        "Minimum member reserve",
+        options=[0.20, 0.30, 0.40, 0.50],
+        format_func=lambda f: f"{f:.0%} of capacity",
+        key="reserve_fraction",
+        label_visibility="collapsed",
+    )
+    if fraction != eng.reserve_fraction:
+        eng.set_reserve_floor(float(fraction))
+        st.rerun()
+
+    outcome = eng.reserve_outcome(home.STORM_RESERVE_FRACTION)
+    cols = st.columns(3)
+    cols[0].metric("Reserve floor", f"{eng.reserve_fraction:.0%}")
+    cols[1].metric(
+        "Revenue given up at 50%",
+        f"${outcome.revenue_given_up_usd:,.2f}",
+        delta=f"{outcome.committed_kw_after - outcome.committed_kw_before:,.0f} kW export",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Backup protected at 50%",
+        f"{outcome.backup_hours_after:,.1f} h",
+        delta=f"{outcome.backup_hours_gained:+.1f} h per member",
+        delta_color="off",
+    )
+    st.caption(
+        "Before a forecast storm the operator holds more energy back for members and "
+        "sells less into the event. Both numbers come from the same simulated fleet."
+    )
 
 
 def map_devices(devices: list[Device]) -> list[Device]:
@@ -413,7 +548,7 @@ def jev_answer_rows(response: JevResponse) -> list[dict[str, object]]:
         if question_id == ROOT_CAUSE:
             question = "Root cause"
         elif question_id == BACKUP_RISK:
-            question = "Risk to homeowner backup"
+            question = "Risk to member backup"
         else:
             question = f"{question_id[len(TRUST_PREFIX) :]} trustworthy?"
         top = sorted(answer.probabilities.items(), key=lambda kv: -kv[1])[:3]
@@ -627,7 +762,7 @@ def render_dispatch_priority(eng: ControlRoomEngine) -> None:
     )
     st.caption(
         "Zone order comes from the bundled ERCOT basis in Grid Signals: the zone that "
-        "priced furthest above the hub average goes first. The target, the homeowner "
+        "priced furthest above the hub average goes first. The target, the member "
         "reserve and the approval gate are unchanged — this only decides who carries the "
         "commitment first, in simulation."
     )
@@ -771,6 +906,7 @@ def render_holdout() -> None:
                 "signal_usd": "GridSignal $",
                 "naive_usd": "Naive $",
                 "uplift_usd": "Uplift $",
+                "member_savings_usd": "Member savings $",
             }
         ).style.format(
             {
@@ -779,6 +915,7 @@ def render_holdout() -> None:
                 "GridSignal $": "{:,.2f}",
                 "Naive $": "{:,.2f}",
                 "Uplift $": "{:+,.2f}",
+                "Member savings $": "{:,.2f}",
             }
         ),
         hide_index=True,
@@ -794,10 +931,74 @@ def render_holdout() -> None:
             "came out."
         )
     )
+    render_home_first_cost(results)
+
+
+def render_home_first_cost(results: list[holdout.DayResult]) -> None:
+    """What home-first dispatch costs in export revenue, stated rather than buried."""
+    grid_only = holdout.summarize(holdout_grid_only())
+    home_first = holdout.summarize(results)
+    savings = round(sum(r.member_savings_usd for r in results) / max(len(results), 1), 2)
+    cols = st.columns(3)
+    cols[0].metric(
+        "Grid-only battery",
+        f"${grid_only.mean_uplift_usd:,.2f}",
+        delta=f"mean uplift, wins {grid_only.days_won}/{grid_only.days}",
+        delta_color="off",
+    )
+    cols[1].metric(
+        "Home-first battery",
+        f"${home_first.mean_uplift_usd:,.2f}",
+        delta=f"mean uplift, wins {home_first.days_won}/{home_first.days}",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Member savings, home-first",
+        f"${savings:,.2f}",
+        delta="energy the house did not buy",
+        delta_color="off",
+    )
+    st.caption(
+        usd(
+            "Serving the house first costs export revenue, and the table above is the "
+            "home-first result. On the scarcity held-out day the grid-only battery earns "
+            "far more, because the household load eats the stored energy that a pure "
+            "trading battery would have sold into the spike. That is the trade the "
+            "product makes on purpose: the member keeps the energy and the backup."
+        )
+    )
+
+
+def render_mutual_aid(eng: ControlRoomEngine) -> None:
+    """Neighbour mutual aid: opted-in members topping up a medical-device neighbour."""
+    st.markdown("<div class='gs-kicker'>Neighbour mutual aid (simulated)</div>", True)
+    recipient = member.aid_candidate(eng)
+    plan = member.aid_plan(eng, recipient) if recipient else None
+    if plan is None or not plan.transfers:
+        st.markdown(
+            "<div class='gs-card'><div class='gs-body'>No neighbour needs help right now. "
+            "If a member who runs a medical device is short of backup during an island, "
+            "opted-in neighbours are asked to share only the energy they hold above their "
+            "own reserve.</div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+    givers = ", ".join(f"{t.from_device} ({t.kwh:.2f} kWh)" for t in plan.transfers)
+    st.markdown(
+        f"<div class='gs-card' style='border-left:4px solid #38bdf8'>"
+        f"<div class='gs-title'>{len(plan.transfers)} neighbours can send "
+        f"{plan.shared_kwh:.2f} kWh to {plan.recipient}</div>"
+        f"<div class='gs-body'>{plan.recipient} runs a medical device and has opted into "
+        f"sharing. {givers} each stay above their own backup reserve. That takes "
+        f"{plan.recipient} from {plan.hours_before:.1f} to {plan.hours_after:.1f} hours of "
+        f"backup, {plan.hours_gained:+.1f} h. Simulated: nothing is moved until both "
+        f"members confirm.</div></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_member(eng: ControlRoomEngine) -> None:
-    """The same incident from the homeowner's side: backup, dollars, plain-English notice."""
+    """The same incident from the member's side: backup, dollars, plain-English notice."""
     devices = [FOCUS_DEVICE_ID] + [
         d.device_id for d in eng.devices[:GRID_TILES] if d.device_id != FOCUS_DEVICE_ID
     ]
@@ -822,20 +1023,30 @@ def render_member(eng: ControlRoomEngine) -> None:
         unsafe_allow_html=True,
     )
 
-    cols = st.columns(3)
+    cols = st.columns(4)
     cols[0].metric(
         "Whole-home backup left",
         f"{view.backup_hours:.1f} h",
-        delta=f"{view.backup_kwh:,.1f} kWh reserved for you",
+        delta=(
+            f"{view.backup_hours_with_generator:.1f} h with your generator"
+            if view.generator_kwh > 0
+            else f"{view.backup_kwh:,.1f} kWh reserved for you"
+        ),
         delta_color="off",
     )
     cols[1].metric(
-        "Earned this event",
-        f"${view.earned_usd:,.2f}",
-        delta=f"your share of ${view.grid_value_usd:,.2f} of grid value",
+        "Powering your home now",
+        f"{view.home_load_kw:,.1f} kW",
+        delta=f"{view.discharge_kw:,.1f} kW discharging in total",
         delta_color="off",
     )
     cols[2].metric(
+        "Exported to the grid",
+        f"{view.export_kw:,.1f} kW",
+        delta=f"earned ${view.earned_usd:,.2f} of ${view.grid_value_usd:,.2f}",
+        delta_color="off",
+    )
+    cols[3].metric(
         "Helped protect",
         f"${view.protected_usd:,.2f}",
         delta="covering a neighbour's outage",
@@ -850,7 +1061,7 @@ def render_member(eng: ControlRoomEngine) -> None:
                 "use": ["Reserved for your home", "Offered to the grid event"],
                 "kwh": [view.backup_kwh, view.committed_kwh],
             }
-        )
+        )  # your house is served first; only what is left is offered to the grid
         fig = px.bar(split, x="kwh", y="use", orientation="h", height=180, text="kwh")
         fig.update_traces(marker_color=["#38bdf8", "#f59e0b"], texttemplate="%{text:.1f} kWh")
         fig.update_layout(
@@ -863,12 +1074,20 @@ def render_member(eng: ControlRoomEngine) -> None:
         st.plotly_chart(fig, use_container_width=True)
         st.caption(
             usd(
-                f"{view.stored_kwh:,.1f} kWh stored right now. Backup hours assume a "
+                f"{view.stored_kwh:,.1f} kWh stored right now, with at least "
+                f"{view.reserve_kwh:,.1f} kWh held back for you. Backup hours assume a "
                 f"{member.ESSENTIAL_LOAD_KW:.1f} kW essential household load and your "
                 f"earnings assume a {member.MEMBER_REVENUE_SHARE:.0%} member revenue share "
                 "— both are assumptions in this simulation, not a Base Power tariff."
             )
         )
+        if view.generator_kwh > 0:
+            st.info(
+                f"Your portable generator adds about {view.generator_kwh:,.1f} kWh, worth "
+                f"another {view.generator_hours:.1f} hours if an outage runs long "
+                "(simulated, and only counted while it has fuel)."
+            )
+        render_mutual_aid(eng)
     with right:
         st.markdown("<div class='gs-kicker'>Your neighbourhood</div>", True)
         peers = member.neighbours(eng, device_id)
@@ -1626,6 +1845,8 @@ def main() -> None:
     render_demo_controls(eng)
     render_overview(eng)
     st.divider()
+    render_home_first(eng)
+    st.divider()
     left, right = st.columns([3, 2], gap="large")
     with left:
         st.subheader("Fleet map")
@@ -1633,6 +1854,7 @@ def main() -> None:
         st.subheader("ERCOT price trace")
         render_prices(eng)
     with right:
+        render_reserve_policy(eng)
         render_dispatch_priority(eng)
         render_incident(eng)
         render_tasks(eng)

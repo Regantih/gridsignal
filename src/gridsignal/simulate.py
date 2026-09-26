@@ -275,7 +275,7 @@ def _log_decision(
         if question_id == ROOT_CAUSE:
             summary = f"Root cause: {answer.value.replace('_', ' ')}"
         elif question_id == BACKUP_RISK:
-            summary = f"Backup risk to homeowners: {answer.value}"
+            summary = f"Backup risk to members: {answer.value}"
         else:
             agent = question_id[len(TRUST_PREFIX) :]
             verdict = "trustworthy" if answer.yes else "NOT trustworthy"

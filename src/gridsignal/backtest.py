@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from gridsignal.load import HOURLY_LOAD_KW
 from gridsignal.signals import Signal
 
 # A Base-style home battery: ~13.5 kWh usable, 5 kW inverter, 90% round-trip efficiency.
@@ -28,6 +29,10 @@ class BacktestSummary:
     uplift_pct: float
     exported_kwh: float
     charged_kwh: float
+    #: Stored energy the battery gave the house instead of the grid.
+    home_served_kwh: float = 0.0
+    #: What that energy would have cost the member at the settlement price.
+    member_savings_usd: float = 0.0
 
     def fleet_usd(self, devices: int) -> float:
         """Uplift if every device in a fleet of ``devices`` followed the signals."""
@@ -40,13 +45,19 @@ def value_captured(
     kwh: float = DEFAULT_KWH,
     power_kw: float = DEFAULT_POWER_KW,
     efficiency: float = ROUND_TRIP_EFFICIENCY,
+    serve_home: bool = False,
 ) -> pd.DataFrame:
     """Settle both strategies interval by interval and return the ledger.
 
     Charging buys energy at the settlement price (a cost), exporting sells stored
     energy at it (revenue), both limited by the inverter and the state of charge.
     Columns added per strategy ``s`` in ``(signal, naive)``: ``{s}_action``,
-    ``{s}_soc_kwh``, ``{s}_usd``, ``{s}_cum_usd``.
+    ``{s}_soc_kwh``, ``{s}_usd``, ``{s}_cum_usd``, ``{s}_home_kwh``.
+
+    With ``serve_home`` the battery is home-first: the simulated house is served
+    from storage before anything is sold, the inverter limit covers both, and only
+    the surplus is exported. The home is left on the grid while the battery is
+    charging, so a cheap overnight charge is not spent on the house immediately.
     """
     frame = prices.reset_index(drop=True)[["interval_start", "interval_end", "spp"]].copy()
     plan = signals.reset_index(drop=True)
@@ -57,24 +68,32 @@ def value_captured(
     frame["signal_action"] = plan["signal"].to_numpy()
     frame["naive_action"] = [_naive_action(ts) for ts in frame["interval_start"]]
 
+    loads = _home_load_kwh(frame, hours) if serve_home else [0.0] * len(frame)
+
     for strategy in ("signal", "naive"):
-        soc, socs, cashflows = 0.0, [], []
-        for action, price, span in zip(
-            frame[f"{strategy}_action"], frame["spp"].astype(float), hours, strict=True
+        soc, socs, cashflows, served = 0.0, [], [], []
+        for action, price, span, load_kwh in zip(
+            frame[f"{strategy}_action"], frame["spp"].astype(float), hours, loads, strict=True
         ):
             delta = 0.0
+            home_kwh = 0.0
+            if action != Signal.CHARGE.value:
+                home_kwh = min(load_kwh, soc, power_kw * span)
+                soc -= home_kwh
             if action == Signal.CHARGE.value:
                 bought = min(power_kw * span, (kwh - soc) / efficiency)
                 soc += bought * efficiency
                 delta = -bought * price / 1000.0
             elif action == Signal.EXPORT.value:
-                sold = min(power_kw * span, soc)
+                sold = min(max(power_kw * span - home_kwh, 0.0), soc)
                 soc -= sold
                 delta = sold * price / 1000.0
             socs.append(round(soc, 3))
             cashflows.append(round(delta, 4))
+            served.append(round(home_kwh, 4))
         frame[f"{strategy}_soc_kwh"] = socs
         frame[f"{strategy}_usd"] = cashflows
+        frame[f"{strategy}_home_kwh"] = served
         frame[f"{strategy}_cum_usd"] = frame[f"{strategy}_usd"].cumsum().round(4)
 
     return frame
@@ -87,15 +106,27 @@ def summarize(ledger: pd.DataFrame) -> BacktestSummary:
     uplift = round(signal_usd - naive_usd, 2)
     # State of charge starts empty, so prepend 0 to catch energy moved in interval one.
     moved = pd.Series([0.0, *ledger["signal_soc_kwh"]]).diff().dropna()
+    home = ledger["signal_home_kwh"]
+    savings = float((home * ledger["spp"].astype(float) / 1000.0).sum())
     return BacktestSummary(
         signal_usd=signal_usd,
         naive_usd=naive_usd,
         uplift_usd=uplift,
         # Against a naive day that loses money, percentage uplift is meaningless.
         uplift_pct=round(100.0 * uplift / abs(naive_usd), 1) if naive_usd else 0.0,
-        exported_kwh=round(float(-moved.clip(upper=0).sum()), 2),
+        exported_kwh=round(float(-moved.clip(upper=0).sum() - home.sum()), 2),
         charged_kwh=round(float(moved.clip(lower=0).sum()), 2),
+        home_served_kwh=round(float(home.sum()), 2),
+        member_savings_usd=round(savings, 2),
     )
+
+
+def _home_load_kwh(frame: pd.DataFrame, hours: list[float]) -> list[float]:
+    """Simulated household draw for each interval, in kWh."""
+    return [
+        HOURLY_LOAD_KW[pd.Timestamp(ts).hour % 24] * span
+        for ts, span in zip(frame["interval_start"], hours, strict=True)
+    ]
 
 
 def _interval_hours(frame: pd.DataFrame) -> list[float]:

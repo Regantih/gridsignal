@@ -202,8 +202,9 @@ def test_priority_zone_survives_the_failure_and_recovery_flow():
     quarantined = eng.device(FOCUS_DEVICE_ID)
     assert quarantined.assigned_kw == 0.0
     assert eng.snapshot().coverage_pct == pytest.approx(100.0, abs=0.5)
-    # Reserve is untouched: nothing is asked for more than its headroom.
-    for device in eng.devices:
+    # Reserve is untouched: nothing we control is asked for more than its headroom.
+    # The utility tenant's units carry their partner's own schedule, not our award.
+    for device in eng.mine:
         assert device.assigned_kw <= eng._headroom_kw(device) + 0.02
 
 

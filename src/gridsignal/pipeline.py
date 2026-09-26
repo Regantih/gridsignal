@@ -28,13 +28,18 @@ def run(
     scenario: str = DEFAULT_SCENARIO,
     z: float = 3.0,
     kwh: float = backtest.DEFAULT_KWH,
+    serve_home: bool = True,
 ) -> PipelineResult:
-    """Replay a bundled ERCOT day end to end. No network, no credentials."""
+    """Replay a bundled ERCOT day end to end. No network, no credentials.
+
+    The battery is home-first by default: the simulated house is served out of
+    storage before anything is exported.
+    """
     trace = load_scenario(scenario)
     detections = detect.detect_spikes(trace.frame, z=z)
     spike_prob = forecast.forecast_spike_probability(forecast.build_features(detections))
     plan = dam.signals_for(detections, spike_prob, trace.dam)
-    ledger = backtest.value_captured(plan, trace.frame, kwh=kwh)
+    ledger = backtest.value_captured(plan, trace.frame, kwh=kwh, serve_home=serve_home)
     return PipelineResult(
         trace=trace,
         detections=detections,

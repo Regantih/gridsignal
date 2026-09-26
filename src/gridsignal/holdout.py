@@ -62,18 +62,34 @@ class DayResult:
     signal_usd: float
     naive_usd: float
     uplift_usd: float
+    #: Spot value of the energy the battery gave the house instead of exporting it.
+    member_savings_usd: float = 0.0
 
     @property
     def won(self) -> bool:
         return self.uplift_usd > 0
 
+    @property
+    def member_value_usd(self) -> float:
+        """Export revenue plus the purchases the home did not have to make."""
+        return round(self.signal_usd + self.member_savings_usd, 2)
 
-def score_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayResult:
-    """Run detect -> forecast -> signals -> backtest on one day, thresholds untouched."""
+
+def score_day(
+    trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True
+) -> DayResult:
+    """Run detect -> forecast -> signals -> backtest on one day, thresholds untouched.
+
+    ``serve_home`` is the product's dispatch: the house is paid first out of storage
+    and only the surplus is sold, so it scores lower than a grid-only battery. Pass
+    ``False`` to score the same frozen policy without home load, for comparison.
+    """
     detections = detect.detect_spikes(trace.frame)
     prob = forecast.forecast_spike_probability(forecast.build_features(detections))
     plan = dam.signals_for(detections, prob, trace.dam)
-    summary = backtest.summarize(backtest.value_captured(plan, trace.frame, kwh=kwh))
+    summary = backtest.summarize(
+        backtest.value_captured(plan, trace.frame, kwh=kwh, serve_home=serve_home)
+    )
     return DayResult(
         date=trace.date,
         peak_mwh=trace.peak_mwh,
@@ -82,16 +98,17 @@ def score_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayResult
         signal_usd=summary.signal_usd,
         naive_usd=summary.naive_usd,
         uplift_usd=summary.uplift_usd,
+        member_savings_usd=summary.member_savings_usd,
     )
 
 
-def evaluate(kwh: float = backtest.DEFAULT_KWH) -> list[DayResult]:
-    return [score_day(trace, kwh=kwh) for trace in load_holdout()]
+def evaluate(kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True) -> list[DayResult]:
+    return [score_day(trace, kwh=kwh, serve_home=serve_home) for trace in load_holdout()]
 
 
-def evaluate_tuning(kwh: float = backtest.DEFAULT_KWH) -> list[DayResult]:
+def evaluate_tuning(kwh: float = backtest.DEFAULT_KWH, serve_home: bool = True) -> list[DayResult]:
     """Same scoring on the tuning split, for the in-sample/out-of-sample comparison."""
-    return [score_day(trace, kwh=kwh) for trace in load_tuning()]
+    return [score_day(trace, kwh=kwh, serve_home=serve_home) for trace in load_tuning()]
 
 
 def as_frame(results: list[DayResult]) -> pd.DataFrame:
@@ -105,6 +122,7 @@ def as_frame(results: list[DayResult]) -> pd.DataFrame:
                 "signal_usd": r.signal_usd,
                 "naive_usd": r.naive_usd,
                 "uplift_usd": r.uplift_usd,
+                "member_savings_usd": r.member_savings_usd,
             }
             for r in results
         ]

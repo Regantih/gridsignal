@@ -61,6 +61,10 @@ class AgentCard:
     capabilities: dict[str, float] = field(default_factory=dict)
     health: Health = Health.HEALTHY
     last_heartbeat_s: int = 0
+    #: Who is allowed to dispatch this agent. A card names its control authority so
+    #: the mesh can never bid, award or reassign a battery belonging to another
+    #: tenant. Simulated tenancy, signed like every other field.
+    controller: str = "base"
     signature: str = ""
 
     def body(self) -> dict[str, object]:
@@ -72,6 +76,7 @@ class AgentCard:
             "capabilities": {k: round(float(v), 4) for k, v in sorted(self.capabilities.items())},
             "health": self.health.value,
             "last_heartbeat_s": self.last_heartbeat_s,
+            "controller": self.controller,
         }
 
     def canonical(self) -> str:
@@ -98,6 +103,7 @@ def battery_card(
     kwh_available: float,
     health: Health = Health.HEALTHY,
     last_heartbeat_s: int = 0,
+    controller: str = "base",
 ) -> AgentCard:
     """The card a home battery agent publishes."""
     return AgentCard(
@@ -107,4 +113,5 @@ def battery_card(
         capabilities={"kw_available": kw_available, "kwh_available": kwh_available},
         health=health,
         last_heartbeat_s=last_heartbeat_s,
+        controller=controller,
     )

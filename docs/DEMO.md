@@ -41,11 +41,26 @@ One operator approval is worth roughly nine thousand dollars on a scarcity eveni
 per fleet. Detection plus reallocation across 10,000 devices runs in well under a second
 (`tests/test_scale.py` prints the measured build / detect / reallocate split on every test run).
 
-## The same event, seen by the homeowner
+## Home-first dispatch
+
+The battery is an always-on infrastructure asset: it serves the grid while the grid is up and
+backs the member up when it is not — but the house is always paid first. Every simulated home
+draws its own load curve out of storage before a single kW is exported, so
+`export kW = discharge kW − home load kW`. The Control Room's **Home-first dispatch** panel shows
+that split live, broken down by unit type (legacy vs. simulated Base Core-style 40 kWh / 20 kW
+units, *per public interview, not official specs*) and by tenant, because the `LZ_WEST` units are
+controlled by a partner utility and the mesh never bids, awards or reassigns them.
+
+The **Storm reserve policy** panel prices the storm policy: raising the reserve from 20% to 50%
+takes kW off the export commitment and gives the member hours of backup back, and the panel
+states both sides of that trade before the operator applies it (and writes it to the audit log).
+
+## The same event, seen by the member
 
 The **Member App** view is the other half of the story: while the operator reads kW, incident
 severity and an approval gate, the member at 2646 Sabine St sees hours of backup still held for
-their house, what their battery earned in the event, and a notice in plain English — "We've lost
+their house, how much of the discharge is powering their home versus exported, what their battery
+earned in the event, and a notice in plain English — "We've lost
 contact with your battery … your battery is still running and still protecting your home" —
 that turns into "Resolved … a technician visit is scheduled" after the operator approves. Homes
 that absorbed the reallocated load see their slice of the recovered dollars under *Helped
@@ -54,6 +69,12 @@ protect*.
 The separation is deliberate: no incident IDs, no kW targets and no approval controls are exposed
 to the member. Backup hours assume a 1.2 kW essential household load and earnings assume a 60%
 member revenue share; both are labelled assumptions, not a Base Power tariff.
+
+Two more simulated member features sit on the same page: members with a small portable generator
+see the extra kWh and hours it adds to a long outage, and a **Neighbour mutual aid** card offers
+opted-in members the chance to send a little surplus to an opted-in neighbour who runs a medical
+device — only ever from energy the giver holds above their own reserve, which
+`tests/test_home.py` proves can never be breached.
 
 ## The same event, run as an agent mesh
 
@@ -212,8 +233,8 @@ runtime 4:57 (the Spain-style cascade at 2:45, the canary halt at 3:05 and the c
 | **3:05** | Agent Mesh → Rollout panel | "Orchestration is not only kW. The same fleet is a deployment target." Switch the Rollout panel to **bad build**: rings lab → 1% canary → 10% → 50% → 100%, each gated on heartbeat, charge/discharge response and backup reserve. "This build fails silently, only on the hot devices, and the heartbeat never stops — so the heartbeat gate passes it. The response gate halts it in the canary: 100 homes touched, 3 affected, all 100 rolled back, 420 simulated seconds to detect, across 10,000 devices. Nothing advances during a grid event, and every promotion past 10% needs a human." Scroll to **Install wave**: "400 new batteries joining mid-event — 10 rejected at the door because no installer check signed their card, the rest on probation until they pass the same gates, first eligible award at 300 s, zero kW to an unverified unit and zero taken off an existing commitment. All simulated." |
 | **3:20** | Grid Signals → insight card | "Open Grid Data: what the public data hides. Across the ERCOT scarcity days bundled here, only **47%** of a battery's capturable value was visible in the day-ahead curve. The $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. All 19 intervals that printed 5x their day-ahead hour fell on scarcity days; the 12 ordinary days never diverged." |
 | **3:36** | Grid Signals → congestion | "Second thing the data hides, this time across the map. All eight load zones plus the hub average, same 15 days. LZ_LCRA at 6pm prices **$39.82/MWh above the hub**, and **29.8%** of all zone-intervals sit more than $5 from it — but timing discharge to your own zone's price instead of the hub is worth only **$0.13 per battery per day**, best zone +$0.57. The congestion is large; what one battery collects by re-timing alone is not. Placement sketch: the next 1,000 batteries go mostly to Austin's LCRA zone and the marginal value falls as it saturates — a sketch on 15 days of prices, not a forecast and not a siting study." |
-| **3:52** | Grid Signals → held-out days | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen." |
-| **4:06** | Member App | "The same event from the homeowner's side: hours of whole-home backup still held, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |
+| **3:52** | Grid Signals → held-out days | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen. And since the battery now serves the house first, the same days are re-scored home-first: 6 of 7 again, mean +$0.45, plus $0.48 a day the member never spent — but on the scarcity day the export revenue collapses from $17.84 to nothing, because the house drank the energy a trading battery would have sold into a $4,981 spike. That is the trade, and it is on screen." |
+| **4:06** | Member App | "The same event from the member's side: the battery is powering their house first and exporting only the surplus, hours of whole-home backup still held — more if they own a generator — a neighbour mutual-aid card that can only ever give away energy above the giver's own reserve, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |
 | **4:20** | Control Room at scale | Set **Discharge first under congestion → LZ_HOUSTON** ("the zone order comes from that basis data; reserve and approval gate unchanged"), then sidebar → **Scarcity day**, **10,000 devices**; trigger and approve. "Real ERCOT scarcity prices, Base-scale fleet: **$8,971 at risk, $8,683 recovered** on one approval. Detection plus reallocation across 10,000 devices is ~138 ms; a 10,000-agent negotiation over 5,913 bids is ~22 ms." Show the architecture diagram in the README: ERCOT pipeline, agent mesh, Jev, human gate. |
 | **4:42** | Close | Click **Reset Demo**. "Deterministic, replayable, offline, no API key. The fleet's commitment survives a device failure — and a person still owns the decision." |
 

@@ -118,22 +118,58 @@ The sidebar **View** switch picks between the four pages:
 - **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
   and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
 - **Congestion dispatch preference** (incident column) — discharge one zone's batteries to their
-  headroom first, ordered by the bundled ERCOT basis; the target, the homeowner reserve and the
+  headroom first, ordered by the bundled ERCOT basis; the target, the member reserve and the
   approval gate are unchanged, and the choice is written to the audit log.
+- **Home-first dispatch** (panel under the overview) — every battery serves its own simulated
+  household load out of storage first and exports only the surplus, so
+  `export kW = discharge kW − home load kW`. The panel splits total discharge into what members'
+  homes took and what reached the grid, and breaks both down by unit type and by tenant.
+- **Member reserve floor** (panel below the map) — raise the reserve before a forecast storm and
+  the panel prices the trade: kW no longer exported, the revenue given up over the event window,
+  and the backup hours that buys. Applying it reallocates the fleet and writes a `reserve_policy`
+  entry to the audit log.
+
+#### Mixed fleet and control authority (simulated)
+
+The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
+Capacity and inverter power live on each agent card, and the Control Room reports revenue,
+export and backup hours by unit type. Those Base Core numbers are taken from a public interview
+with Base's COO and are **simulated, not official specifications**.
+
+Each card also names who controls the battery: **Base** (retail-choice markets) or a **utility
+partner** (non-retail-choice markets, where the battery is owned by Base but dispatched by the
+utility). `LZ_WEST` is modelled as the partner's territory. The mesh never bids, awards or
+reassigns a battery it does not control — utility units follow the partner's own dispatch
+schedule, appear as a separate tenant in the Control Room, and are excluded from incident
+cohorts and recovery, including during the chaos drills
+(`tests/test_home.py::test_the_operator_never_dispatches_another_tenants_battery`).
 
 ### Member App
 
 The same incident seen from one house, deliberately kept separate from the operator tooling:
-hours of whole-home backup still held in reserve, the dollars the battery earned in the event and
-the dollars it helped protect when a neighbour dropped out, plus a plain-English notice about the
-device issue and its resolution. Pick any home in the sidebar; BAT-042 is the one that fails.
+hours of whole-home backup still held in reserve, how much of the discharge is powering the house
+versus exported to the grid, the dollars the battery earned in the event and the dollars it helped
+protect when a neighbour dropped out, plus a plain-English notice about the device issue and its
+resolution. Pick any home in the sidebar; BAT-042 is the one that fails.
 Trigger the failure from the Control Room (or the sidebar controls on this page) and the member
 copy moves from "Your battery is healthy" to "We've lost contact with your battery" to
 "Resolved" — with no incident IDs, kW targets or approval controls exposed to the homeowner.
 
 Member-facing numbers use two explicit assumptions: a **1.2 kW essential household load** for
 backup hours and a **60% member revenue share** of the grid value their battery creates. Neither
-is a Base Power tariff.
+is a Base Power tariff. The UI says **members**, not customers.
+
+Two further member features, both simulated:
+
+- **Generator top-off.** Members who own a small portable generator (optional per member) see the
+  extra kWh and the extra backup hours it buys during a long outage, counted only while it has
+  fuel.
+- **Neighbour mutual aid.** During a neighbourhood island, members who opt in can send a little
+  surplus to an opted-in neighbour flagged as running a medical device. A share is only ever taken
+  from energy a giver holds **above their own reserve**, and the card shows who is sending what
+  and the backup hours it adds for the recipient. Nothing moves until both members confirm.
+  `tests/test_home.py::test_mutual_aid_helps_a_medical_member_without_spending_anyone_else_reserve`
+  proves no sharing member ever drops below reserve.
 
 ### Grid Signals
 
@@ -704,18 +740,37 @@ two splits can never share a date.
 
 All figures are **dollars per battery per day** on a 13.5 kWh / 5 kW battery (see Assumptions).
 
-| Date | Peak $/MWh | Regime | GridSignal $ | Naive $ | Uplift $ |
-|---|---:|---|---:|---:|---:|
-| 2023-04-06 | 86.13 | ordinary | 0.21 | 0.19 | **+0.02** |
-| 2024-05-08 | 4,981.40 | scarcity | 17.84 | 16.13 | **+1.71** |
-| 2024-12-20 | 73.13 | ordinary | 0.28 | 0.27 | **+0.01** |
-| 2025-04-07 | 3,860.63 | scarcity | 1.20 | −0.97 | **+2.17** |
-| 2025-05-03 | 76.33 | ordinary | 0.62 | 0.01 | **+0.61** |
-| 2026-09-23 | 97.76 | ordinary | 0.19 | 0.46 | **−0.27** |
-| 2026-09-24 | 108.74 | ordinary | 0.67 | 0.57 | **+0.10** |
+Since home-first dispatch landed, the battery serves its simulated house before it sells anything,
+so both columns below are reported: **grid-only** (the pure trading battery, the policy's original
+scorecard) and **home-first** (what the product actually does). Neither set of parameters was
+touched to produce the second column.
 
-**6 of 7 held-out days beat the naive schedule.** Mean +$0.62, median +$0.10, worst −$0.27, best
-+$2.17 per battery per day.
+| Date | Peak $/MWh | Regime | Grid-only $ | Grid-only uplift | Home-first $ | Member savings $ | Home-first uplift |
+|---|---:|---|---:|---:|---:|---:|---:|
+| 2023-04-06 | 86.13 | ordinary | 0.21 | **+0.02** | 0.13 | 0.08 | **+0.19** |
+| 2024-05-08 | 4,981.40 | scarcity | 17.84 | **+1.71** | −0.20 | 0.63 | **+0.00** |
+| 2024-12-20 | 73.13 | ordinary | 0.28 | **+0.01** | 0.02 | 0.26 | **+0.36** |
+| 2025-04-07 | 3,860.63 | scarcity | 1.20 | **+2.17** | 0.32 | 0.47 | **+1.86** |
+| 2025-05-03 | 76.33 | ordinary | 0.62 | **+0.61** | −0.06 | 0.32 | **+0.34** |
+| 2026-09-23 | 97.76 | ordinary | 0.19 | **−0.27** | −0.43 | 0.78 | **+0.11** |
+| 2026-09-24 | 108.74 | ordinary | 0.67 | **+0.10** | −0.14 | 0.84 | **+0.26** |
+
+**Grid-only: 6 of 7 days beat naive**, mean +$0.62, median +$0.10, worst −$0.27, best +$2.17.
+**Home-first: 6 of 7**, mean +$0.45, median +$0.26, worst $0.00, best +$1.86, with $0.48 a day of
+member savings on top.
+
+**Home-first dispatch costs export revenue, and the honest place to see it is 2024-05-08.** The
+grid-only battery earns $17.84 on that scarcity day; the home-first battery earns −$0.20 of export
+revenue and $0.63 of avoided purchases — a collapse, because the household load drains the stored
+energy the trading battery would have sold into a $4,981/MWh spike. The uplift column holds up
+better than the revenue column (the naive schedule loses money against the same load), and the
+home-first median is actually higher, but the scarcity-day revenue is gone. That is the trade the
+product makes deliberately: the member keeps their energy and their backup, and the fleet sells
+only the surplus. The scenario-day backtest shows the same shape — on 2023-09-06 the scarcity
+backtest falls from $40.16 to $12.33 of export revenue plus $8.79 of member savings.
+
+The frozen-policy reproducibility test still scores grid-only
+(`holdout.score_day(trace, serve_home=False)`), so the original numbers remain checkable.
 
 This is the result of anchoring the plan to the day-ahead curve. The previous real-time-only
 policy won 2 of 7 days (mean −$0.15, worst −$4.89) because it held charge waiting for spikes that
@@ -745,6 +800,11 @@ real Base Power device or fleet.
 | Starting state of charge | empty at 00:00 | `backtest.value_captured` |
 | Market participation | price taker settling at the RTM SPP; no bidding, no ancillary revenue, no degradation cost, no losses beyond round-trip efficiency | `backtest.py` |
 | Control Room event | 5 kW of capacity per affected device over a 2-hour window | `control_room/engine.py` |
+| Household load shape | synthetic summer-weekday profile, 0.8–2.3 kW, scaled 0.7x–1.4x per home | `load.py` |
+| Base Core-style unit | 40 kWh, 20 kW inverter, every 4th simulated device — per public interview, **not official specs** | `fleet.py` |
+| Member reserve floor | 20% of usable capacity, 50% under the storm policy | `home.py` |
+| Portable generator | 1.8 kW for 8 hours of fuel, on roughly 1 member in 11 | `fleet.py` |
+| Mutual-aid share | 0.25–2.0 kWh per giver, same zone, both opted in, recipient flagged medical | `home.py` |
 
 ## Known Limitations and Next Steps
 
@@ -754,6 +814,10 @@ real Base Power device or fleet.
   over a real event stream.
 - The spike forecast is a fixed-coefficient logistic score, not a trained model, and the backtest
   is a price-taker single-day replay: no bidding, no ancillary services, no degradation cost.
+- **Home load is synthetic.** The per-home profile is a shaped weekday curve hashed per device,
+  not metered data, so the export split and member savings move with that assumption.
+- The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in
+  the simulator: no partner utility, installer or member is represented, and nothing is dispatched.
 - **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive, but the
   median day is +$0.10 and most of the mean comes from two scarcity days. Day-ahead anchoring
   fixed the previous generalisation failure; it did not turn this into a revenue product.

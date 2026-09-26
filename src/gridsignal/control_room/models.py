@@ -14,6 +14,29 @@ class DeviceStatus(StrEnum):
     UNAVAILABLE = "unavailable"
 
 
+class UnitType(StrEnum):
+    """Simulated hardware generations in the fleet.
+
+    ``BASE_CORE`` models the larger unit Base describes in public interviews
+    (40 kWh, 20 kW). Simulated, and not an official specification.
+    """
+
+    LEGACY = "legacy"
+    BASE_CORE = "base_core"
+
+
+class Controller(StrEnum):
+    """Who is allowed to dispatch a battery.
+
+    In retail-choice markets the operator controls the unit; elsewhere a utility
+    partner controls it and the operator must never bid or reassign it. Simulated
+    tenancy model, not a description of any real commercial arrangement.
+    """
+
+    BASE = "base"
+    UTILITY = "utility"
+
+
 class Severity(StrEnum):
     LOW = "low"
     MEDIUM = "medium"
@@ -55,17 +78,47 @@ class Device:
     power_kw: float
     status: DeviceStatus = DeviceStatus.ONLINE
     last_telemetry_s: int = 0
+    #: Exported kW committed to the grid event, on top of the home's own load.
     assigned_kw: float = 0.0
+    unit_type: UnitType = UnitType.LEGACY
+    controller: Controller = Controller.BASE
+    #: Simulated household draw the battery serves before anything is exported.
+    home_load_kw: float = 0.0
+    #: Member opted this home into sharing surplus during a neighbourhood island.
+    mutual_aid: bool = False
+    #: A member who has told us they run a medical device at home.
+    medical_device: bool = False
+    #: Output of the member's own portable generator, 0 kW when they have none.
+    generator_kw: float = 0.0
+    #: Hours of fuel the member keeps for that generator.
+    generator_fuel_h: float = 0.0
 
     @property
     def is_dispatchable(self) -> bool:
         return self.status in (DeviceStatus.ONLINE, DeviceStatus.DEGRADED)
 
     @property
+    def is_operator_controlled(self) -> bool:
+        """Whether this tenant's batteries may be bid, awarded or reassigned here."""
+        return self.controller is Controller.BASE
+
+    @property
     def available_kwh(self) -> float:
         if not self.is_dispatchable:
             return 0.0
         return round(self.capacity_kwh * self.state_of_charge, 2)
+
+    @property
+    def discharge_kw(self) -> float:
+        """Total battery output: the home is served first, the rest is exported."""
+        if not self.is_dispatchable:
+            return 0.0
+        return round(self.home_load_kw + self.assigned_kw, 2)
+
+    @property
+    def export_kw(self) -> float:
+        """kW leaving the house, which is what the grid event counts."""
+        return self.assigned_kw if self.is_dispatchable else 0.0
 
 
 @dataclass
@@ -171,7 +224,39 @@ class FleetSnapshot:
 
     @property
     def committed_kw(self) -> float:
-        return round(sum(d.assigned_kw for d in self.devices if d.is_dispatchable), 1)
+        """Exported kW counting towards the operator's commitment.
+
+        Utility-controlled units follow their partner's schedule and are never part
+        of this number.
+        """
+        return round(
+            sum(
+                d.export_kw for d in self.devices if d.is_dispatchable and d.is_operator_controlled
+            ),
+            1,
+        )
+
+    @property
+    def home_load_kw(self) -> float:
+        """Simulated household draw the fleet's batteries are serving right now."""
+        return round(sum(d.home_load_kw for d in self.devices if d.is_dispatchable), 1)
+
+    @property
+    def discharge_kw(self) -> float:
+        """Everything the batteries are putting out: home load plus exports."""
+        return round(sum(d.discharge_kw for d in self.devices if d.is_dispatchable), 1)
+
+    @property
+    def partner_kw(self) -> float:
+        """Exported kW on the utility partner's own schedule, a separate tenant."""
+        return round(
+            sum(
+                d.export_kw
+                for d in self.devices
+                if d.is_dispatchable and not d.is_operator_controlled
+            ),
+            1,
+        )
 
     @property
     def open_incidents(self) -> int:

@@ -11,8 +11,10 @@ an append-only audit trail. Recovery only happens after an explicit human approv
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from gridsignal import home
 from gridsignal.control_room.models import (
     AuditEvent,
     Device,
@@ -26,11 +28,19 @@ from gridsignal.control_room.models import (
     Task,
     TaskStatus,
 )
-from gridsignal.fleet import DEFAULT_SEED, FLEET_SIZE, FOCUS_DEVICE_ID, build_fleet, gateway_ring
+from gridsignal.fleet import (
+    DEFAULT_SEED,
+    FLEET_SIZE,
+    FOCUS_DEVICE_ID,
+    UTILITY_PARTNER,
+    build_fleet,
+    gateway_ring,
+)
 from gridsignal.prices import PriceTrace, energy_value_usd, load_price_trace
 
-# The fleet commits 5 kW per device to the event, so the target scales with the fleet.
-TARGET_KW_PER_DEVICE = 5.0
+# Each home commits this many *exported* kW to the event — what is left after its own
+# load is served — so the target scales with the operator-controlled fleet.
+TARGET_KW_PER_DEVICE = 4.5
 GRID_EVENT_TARGET_KW = TARGET_KW_PER_DEVICE * FLEET_SIZE
 GRID_EVENT_HOURS = 2.0
 TELEMETRY_STALE_SECONDS = 120
@@ -44,6 +54,22 @@ OWNERS: dict[Role, str] = {
 
 class ApprovalError(RuntimeError):
     """Raised when a recovery plan is approved out of order."""
+
+
+@dataclass(frozen=True)
+class ReserveOutcome:
+    """The trade the operator is making when they move the member reserve floor."""
+
+    fraction: float
+    committed_kw_before: float
+    committed_kw_after: float
+    revenue_given_up_usd: float
+    backup_hours_before: float
+    backup_hours_after: float
+
+    @property
+    def backup_hours_gained(self) -> float:
+        return round(self.backup_hours_after - self.backup_hours_before, 1)
 
 
 def subject_for(device_id: str, ring_size: int) -> str:
@@ -66,6 +92,7 @@ class ControlRoomEngine:
         self.fleet_size = fleet_size
         self.prices = price_trace or load_price_trace()
         self.priority_zone: str | None = None
+        self.reserve_fraction = home.DEFAULT_RESERVE_FRACTION
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -79,11 +106,12 @@ class ControlRoomEngine:
         self.incidents: list[Incident] = []
         self.audit: list[AuditEvent] = []
         self._incident_seq = 0
+        self.mine: list[Device] = [d for d in self.devices if d.is_operator_controlled]
         self.grid_event = GridEvent(
             name="ERCOT peak-demand response window",
             zone=self.prices.location,
             status="active",
-            target_kw=TARGET_KW_PER_DEVICE * self.fleet_size,
+            target_kw=round(TARGET_KW_PER_DEVICE * len(self.mine), 1),
             price_mwh=window_price,
             started_at=window_start,
             ends_at=window_end,
@@ -98,10 +126,13 @@ class ControlRoomEngine:
             kind="baseline",
             summary="Fleet stable, dispatch plan committed for grid event",
             detail=(
-                f"{self.snapshot().committed_kw:.0f} kW committed against a "
+                f"{self.snapshot().committed_kw:.0f} kW exported against a "
                 f"{self.grid_event.target_kw:.0f} kW target across "
-                f"{len([d for d in self.devices if d.is_dispatchable])} dispatchable devices "
-                f"at ${self.grid_event.price_mwh:.2f}/MWh ({self.grid_event.price_source})."
+                f"{len([d for d in self.mine if d.is_dispatchable])} dispatchable devices, "
+                f"after serving {self.snapshot().home_load_kw:.0f} kW of member load first, "
+                f"at ${self.grid_event.price_mwh:.2f}/MWh ({self.grid_event.price_source}). "
+                f"{len(self.devices) - len(self.mine)} units are controlled by "
+                f"{UTILITY_PARTNER} and are not ours to dispatch."
             ),
         )
 
@@ -137,11 +168,21 @@ class ControlRoomEngine:
         return self.prices.window_price_mwh(self._clock, self.grid_event.ends_at)
 
     def _headroom_kw(self, device: Device) -> float:
-        if not device.is_dispatchable:
+        """Exportable kW: what the inverter and the stored energy allow after the home.
+
+        The house is served first and the member's reserve floor is untouchable, so
+        only the surplus above both is ever offered to the grid. Another tenant's
+        batteries are not ours to dispatch and always read zero here.
+        """
+        if not device.is_dispatchable or not device.is_operator_controlled:
             return 0.0
         # A degraded device is only trusted with half of its nameplate power.
         trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
-        return min(device.power_kw * trust, device.available_kwh)
+        hours = max(GRID_EVENT_HOURS, 1e-6)
+        reserve = home.reserve_kwh(device, self.reserve_fraction)
+        energy_kw = (device.available_kwh - reserve) / hours - device.home_load_kw
+        power_kw = device.power_kw * trust - device.home_load_kw
+        return round(max(min(power_kw, energy_kw), 0.0), 3)
 
     def _share(self, pool: list[Device], target: float) -> float:
         """Split ``target`` kW across ``pool`` in proportion to headroom."""
@@ -161,10 +202,10 @@ class ControlRoomEngine:
         fleet shares what is left. Returns the total kW committed; devices that are not
         dispatchable get 0 kW.
         """
-        for device in self.devices:
+        for device in self.mine:
             device.assigned_kw = 0.0
 
-        pool = [d for d in self.devices if self._headroom_kw(d) > 0]
+        pool = [d for d in self.mine if self._headroom_kw(d) > 0]
         total_headroom = sum(self._headroom_kw(d) for d in pool)
         if total_headroom <= 0:
             return 0.0
@@ -176,6 +217,8 @@ class ControlRoomEngine:
 
         committed = self._share(first, target)
         rest = [d for d in pool if d.zone != self.priority_zone]
+        if not rest:
+            return committed
         return round(committed + self._share(rest, target - committed), 2)
 
     def set_priority_zone(self, zone: str | None) -> float:
@@ -206,6 +249,66 @@ class ControlRoomEngine:
         )
         return committed
 
+    # ------------------------------------------------------------------ reserve
+
+    def reserve_outcome(self, fraction: float) -> ReserveOutcome:
+        """What raising the member reserve floor to ``fraction`` would cost and buy.
+
+        Compares the current allocation with the one the higher floor produces:
+        revenue given up over the rest of the event against the backup hours it
+        holds back for members. Nothing is applied.
+        """
+        before_fraction = self.reserve_fraction
+        before_kw = self.snapshot().committed_kw
+        before_hours = self._mean_backup_hours(before_fraction)
+        self.reserve_fraction = fraction
+        try:
+            after_kw = self._allocate_dispatch()
+            after_hours = self._mean_backup_hours(fraction)
+        finally:
+            self.reserve_fraction = before_fraction
+            self._allocate_dispatch()
+        hours = self.remaining_hours()
+        price = self.remaining_price_mwh()
+        given_up = round(max(before_kw - after_kw, 0.0), 2)
+        return ReserveOutcome(
+            fraction=fraction,
+            committed_kw_before=before_kw,
+            committed_kw_after=round(after_kw, 2),
+            revenue_given_up_usd=energy_value_usd(given_up, hours, price),
+            backup_hours_before=before_hours,
+            backup_hours_after=after_hours,
+        )
+
+    def _mean_backup_hours(self, fraction: float) -> float:
+        pool = [d for d in self.mine if d.is_dispatchable]
+        if not pool:
+            return 0.0
+        hours_left = self.remaining_hours()
+        estimates = [home.backup_estimate(d, hours_left, fraction).hours for d in pool]
+        return round(sum(estimates) / len(estimates), 1)
+
+    def set_reserve_floor(self, fraction: float) -> ReserveOutcome:
+        """Raise or lower the member reserve floor and reallocate what is left.
+
+        The operator does this before a forecast storm or other high-risk day: it
+        sells less and holds more backup for members. Simulated policy only.
+        """
+        outcome = self.reserve_outcome(fraction)
+        self.reserve_fraction = fraction
+        committed = self._allocate_dispatch()
+        self._log(
+            actor=OWNERS[Role.FLEET_OPERATOR],
+            kind="reserve_policy",
+            summary=f"Member backup reserve floor set to {fraction:.0%} of capacity",
+            detail=(
+                f"{committed:.0f} kW exported of a {self.grid_event.target_kw:.0f} kW target. "
+                f"${outcome.revenue_given_up_usd:,.2f} of event revenue given up to hold "
+                f"{outcome.backup_hours_gained:.1f} more hours of backup per member."
+            ),
+        )
+        return outcome
+
     # ------------------------------------------------------------------ failure
 
     def trigger_device_failure(self, device_id: str = FOCUS_DEVICE_ID) -> Incident:
@@ -227,7 +330,13 @@ class ControlRoomEngine:
         if not device.is_dispatchable:
             raise ApprovalError(f"{device_id} is already out of service, reset the demo first")
 
-        ring = [self.device(i) for i in gateway_ring(device_id, self.fleet_size)]
+        # Another tenant's batteries can sit on the same ring, but their kW was never
+        # ours to lose or to reassign, so the incident only covers our own.
+        ring = [
+            self.device(i)
+            for i in gateway_ring(device_id, self.fleet_size)
+            if self.device(i).is_operator_controlled
+        ]
         lost_kw = round(sum(d.assigned_kw for d in ring), 2)
         self._tick(45)
         window_hours = self.remaining_hours()

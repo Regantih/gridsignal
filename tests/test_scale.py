@@ -25,10 +25,18 @@ def test_gateway_ring_scales_with_the_fleet():
 @pytest.mark.parametrize("fleet_size", [48, 1_000, 10_000])
 def test_dollars_scale_with_the_fleet_and_recovery_still_covers_the_target(fleet_size):
     eng = ControlRoomEngine(fleet_size=fleet_size)
-    assert eng.grid_event.target_kw == TARGET_KW_PER_DEVICE * fleet_size
+    # The commitment is sized on the batteries this operator actually controls; the
+    # utility tenant's units are dispatched by their partner, not bid into this event.
+    assert eng.grid_event.target_kw == pytest.approx(TARGET_KW_PER_DEVICE * len(eng.mine), abs=0.1)
+    assert 0 < len(eng.mine) < fleet_size
 
     incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
-    assert len(incident.cohort) == max(fleet_size // GATEWAY_RING_SIZE, 1)
+    # The ring is fleet-wide, but the incident only covers the homes we operate; the
+    # partner's units on the same ring are their tenant's event, not ours to recover.
+    ring = gateway_ring(FOCUS_DEVICE_ID, fleet_size)
+    ours = {d.device_id for d in eng.mine}
+    assert set(incident.cohort) == {d for d in ring if d in ours}
+    assert 0 < len(incident.cohort) <= max(fleet_size // GATEWAY_RING_SIZE, 1)
     assert incident.dollars_at_risk > 0
     assert eng.snapshot().coverage_pct < 100.0  # nothing moves before approval
 
@@ -45,7 +53,9 @@ def test_bigger_fleets_put_more_money_on_the_line():
         return eng.trigger_device_failure(FOCUS_DEVICE_ID).dollars_at_risk
 
     small, large = at_risk(48), at_risk(10_000)
-    assert large > 100 * small
+    # One gateway ring takes out 1 home at demo scale and 208 at 10,000, of which the
+    # ones we control (roughly four in five) carry the commitment now at risk.
+    assert large > 80 * small
 
 
 def test_scarcity_prices_multiply_the_exposure_at_fleet_scale():

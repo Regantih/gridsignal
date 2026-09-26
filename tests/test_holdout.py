@@ -86,9 +86,12 @@ def test_scoring_uses_the_frozen_policy_constants() -> None:
         plan = dam.deviate_from_plan(detections, prob, trace.dam, **overrides)
         return backtest.summarize(backtest.value_captured(plan, trace.frame)).signal_usd
 
-    scored = holdout.score_day(trace)
+    # Scored grid-only, the day matches the frozen policy exactly.
+    scored = holdout.score_day(trace, serve_home=False)
     assert scored.signal_usd == dollars()
     assert scored.signal_usd != dollars(charge_hours=1, export_hours=1)
+    # Home-first runs the same plan but pays the house first, so it can only earn less.
+    assert holdout.score_day(trace).signal_usd <= scored.signal_usd
 
 
 def test_losing_days_are_reported_not_hidden(results: list[holdout.DayResult]) -> None:
@@ -97,9 +100,11 @@ def test_losing_days_are_reported_not_hidden(results: list[holdout.DayResult]) -
     assert summary.days_won == sum(r.won for r in results)
     assert summary.worst_uplift_usd == min(r.uplift_usd for r in results)
     assert summary.total_uplift_usd == pytest.approx(sum(r.uplift_usd for r in results), abs=0.01)
-    # the frozen policy still loses on some held-out days; the scorecard must keep them
+    # the frozen policy still fails to beat naive on some held-out days; keep them
     assert summary.days_won < summary.days
-    assert summary.worst_uplift_usd < 0
+    assert summary.worst_uplift_usd <= 0
+    # grid-only, before home load nets against export, it loses outright on a day
+    assert holdout.summarize(holdout.evaluate(serve_home=False)).worst_uplift_usd < 0
 
 
 def test_frame_columns_and_rows(results: list[holdout.DayResult]) -> None:
@@ -112,6 +117,7 @@ def test_frame_columns_and_rows(results: list[holdout.DayResult]) -> None:
         "signal_usd",
         "naive_usd",
         "uplift_usd",
+        "member_savings_usd",
     ]
     assert len(frame) == len(results)
 

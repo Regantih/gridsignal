@@ -14,6 +14,7 @@ Two properties matter more than the protocol itself:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from gridsignal.mesh.cards import AgentKind, CardStatus, Health
@@ -111,9 +112,11 @@ class Coordinator:
 
     agent_id = "coordinator-01"
 
-    def __init__(self, registry: AgentRegistry, bus: MessageBus) -> None:
+    def __init__(self, registry: AgentRegistry, bus: MessageBus, controller: str = "base") -> None:
         self.registry = registry
         self.bus = bus
+        # The tenant this coordinator speaks for; cards naming anyone else are off limits.
+        self.controller = controller
         self.calls: dict[str, CallForCapacity] = {}
         self.awards: dict[str, AwardSet] = {}
         # Executed kW per agent, the ledger that makes double approval a no-op.
@@ -168,8 +171,15 @@ class Coordinator:
         ):
             if card.agent_id in call.excluded:
                 continue
+            if card.controller != self.controller:
+                # Another tenant's battery: never bid, awarded or reassigned here,
+                # even when it is healthy and sitting on spare kW.
+                continue
             spare_kwh = max(card.capability("kwh_available") - BACKUP_RESERVE_KWH, 0.0)
-            kw = round(min(card.capability("kw_available"), spare_kwh / max(call.hours, 1e-6)), 3)
+            # Round the bid *down*: rounding to the nearest milliwatt would let a bid
+            # dip a fraction of a kWh into the homeowner's reserve.
+            room_kw = spare_kwh / max(call.hours, 1e-6)
+            kw = math.floor(min(card.capability("kw_available"), room_kw) * 1000) / 1000
             if kw < MIN_BID_KW:
                 continue
             bid = Bid(

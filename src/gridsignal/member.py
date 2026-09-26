@@ -1,8 +1,11 @@
 """What a Base member sees at home while the operator works the same incident.
 
 The operator view is about the fleet; this is about one house. It answers the three
-questions a homeowner actually has during a grid event: will my lights stay on, what
-did my battery earn, and is something wrong with my equipment.
+questions a member actually has during a grid event: will my lights stay on, what did
+my battery earn, and is something wrong with my equipment.
+
+The battery serves the house first and exports only the surplus, so what this member
+earns is priced on exported kW, never on the energy their own home just used.
 
 Assumptions (not measured data): a home draws ``ESSENTIAL_LOAD_KW`` on backup and the
 member keeps ``MEMBER_REVENUE_SHARE`` of what their battery earns in the event.
@@ -12,12 +15,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from gridsignal import home
 from gridsignal.control_room.engine import ControlRoomEngine
-from gridsignal.control_room.models import Device, DeviceStatus, Incident, IncidentStatus
+from gridsignal.control_room.models import DeviceStatus, Incident, IncidentStatus
 from gridsignal.fleet import FOCUS_DEVICE_ID
+from gridsignal.load import ESSENTIAL_LOAD_KW
 from gridsignal.prices import energy_value_usd
 
-ESSENTIAL_LOAD_KW = 1.2  # fridge, lights, internet, a few outlets
 MEMBER_REVENUE_SHARE = 0.6  # member's cut of the grid-event value their battery creates
 
 
@@ -32,6 +36,15 @@ class MemberSummary:
     committed_kwh: float
     backup_kwh: float
     backup_hours: float
+    backup_hours_with_generator: float
+    generator_kwh: float
+    reserve_kwh: float
+    # Home-first dispatch: discharge = what the house takes + what is exported
+    home_load_kw: float
+    export_kw: float
+    discharge_kw: float
+    unit_type: str
+    controller: str
     # Money
     grid_value_usd: float
     earned_usd: float
@@ -46,6 +59,10 @@ class MemberSummary:
     def total_usd(self) -> float:
         return round(self.earned_usd + self.protected_usd, 2)
 
+    @property
+    def generator_hours(self) -> float:
+        return round(self.backup_hours_with_generator - self.backup_hours, 1)
+
 
 def _incident_for(engine: ControlRoomEngine, device_id: str) -> Incident | None:
     """The most recent incident this home was caught up in, if any."""
@@ -55,21 +72,13 @@ def _incident_for(engine: ControlRoomEngine, device_id: str) -> Incident | None:
     return None
 
 
-def _backup(device: Device, hours_left: float) -> tuple[float, float, float, float]:
-    """Split stored energy into what the grid event may take and what backs up the home."""
-    stored = round(device.capacity_kwh * device.state_of_charge, 2)
-    committed = round(min(device.assigned_kw * hours_left, stored), 2)
-    backup_kwh = round(max(stored - committed, 0.0), 2)
-    return stored, committed, backup_kwh, round(backup_kwh / ESSENTIAL_LOAD_KW, 1)
-
-
 def _notice(
     incident: Incident | None,
     affected: bool,
     backup_hours: float,
     degraded: bool = False,
 ) -> tuple[str, str, str]:
-    """Plain-English status for the homeowner: no jargon, no incident IDs."""
+    """Plain-English status for the member: no jargon, no incident IDs."""
     if (incident is None or not affected) and degraded:
         return (
             "Your battery is reporting slowly",
@@ -116,10 +125,13 @@ def member_summary(
     """Build one home's summary from the same simulation the operator is looking at."""
     device = engine.device(device_id)
     hours_left = engine.remaining_hours()
-    stored, committed_kwh, backup_kwh, backup_hours = _backup(device, hours_left)
+    estimate = home.backup_estimate(
+        device, hours_left, engine.reserve_fraction, load_kw=ESSENTIAL_LOAD_KW
+    )
+    backup_hours = estimate.hours
 
     price = engine.grid_event.price_mwh
-    grid_value = energy_value_usd(device.assigned_kw, engine.grid_event.duration_hours, price)
+    grid_value = energy_value_usd(device.export_kw, engine.grid_event.duration_hours, price)
     earned = round(grid_value * share, 2)
 
     incident = _incident_for(engine, device_id)
@@ -142,10 +154,18 @@ def member_summary(
     return MemberSummary(
         device_id=device.device_id,
         site=device.site,
-        stored_kwh=stored,
-        committed_kwh=committed_kwh,
-        backup_kwh=backup_kwh,
+        stored_kwh=estimate.stored_kwh,
+        committed_kwh=estimate.committed_kwh,
+        backup_kwh=estimate.backup_kwh,
         backup_hours=backup_hours,
+        backup_hours_with_generator=estimate.hours_with_generator,
+        generator_kwh=estimate.generator_kwh,
+        reserve_kwh=estimate.reserve_kwh,
+        home_load_kw=device.home_load_kw if device.is_dispatchable else 0.0,
+        export_kw=device.export_kw,
+        discharge_kw=device.discharge_kw,
+        unit_type=device.unit_type.value,
+        controller=device.controller.value,
         grid_value_usd=grid_value,
         earned_usd=earned,
         protected_usd=protected,
@@ -154,6 +174,29 @@ def member_summary(
         body=body,
         next_step=next_step,
     )
+
+
+def aid_candidate(engine: ControlRoomEngine) -> str | None:
+    """A member in this simulation who would be offered neighbour mutual aid.
+
+    The recipient runs a medical device, has opted in, and would run out before the
+    island is expected to end — the only case where neighbours are asked to share.
+    """
+    short = [
+        d
+        for d in engine.mine
+        if d.medical_device
+        and d.mutual_aid
+        and d.available_kwh < home.MEDICAL_BACKUP_HOURS * ESSENTIAL_LOAD_KW
+    ]
+    if not short:
+        return None
+    return min(short, key=lambda d: (d.available_kwh, d.device_id)).device_id
+
+
+def aid_plan(engine: ControlRoomEngine, recipient_id: str) -> home.AidPlan | None:
+    """Simulated mutual-aid plan for one recipient, nothing applied to the fleet."""
+    return home.mutual_aid_plan(engine.mine, recipient_id, engine.reserve_fraction)
 
 
 def neighbours(

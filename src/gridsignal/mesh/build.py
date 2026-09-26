@@ -40,19 +40,21 @@ def zone_id(zone: str) -> str:
 
 
 def spare_kw(device: Device, hours: float) -> float:
-    """Power the device could add beyond its current commitment, energy permitting."""
-    if not device.is_dispatchable:
+    """Exportable power beyond the current commitment, after the home is served."""
+    if not device.is_dispatchable or not device.is_operator_controlled:
         return 0.0
     trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
     energy_limit = spare_kwh(device, hours) / max(hours, 1e-6)
-    return round(max(min(device.power_kw * trust, energy_limit) - device.assigned_kw, 0.0), 3)
+    power_limit = device.power_kw * trust - device.home_load_kw
+    return round(max(min(power_limit, energy_limit) - device.assigned_kw, 0.0), 3)
 
 
 def spare_kwh(device: Device, hours: float) -> float:
-    """Stored energy not already promised to the event."""
-    if not device.is_dispatchable:
+    """Stored energy promised neither to the event nor to the home over the window."""
+    if not device.is_dispatchable or not device.is_operator_controlled:
         return 0.0
-    return round(max(device.available_kwh - device.assigned_kw * hours, 0.0), 3)
+    used = (device.assigned_kw + device.home_load_kw) * hours
+    return round(max(device.available_kwh - used, 0.0), 3)
 
 
 def card_for(device: Device, hours: float) -> AgentCard:
@@ -63,6 +65,7 @@ def card_for(device: Device, hours: float) -> AgentCard:
         kw_available=spare_kw(device, hours),
         kwh_available=spare_kwh(device, hours),
         health=HEALTH_OF[device.status],
+        controller=device.controller.value,
     )
     return AgentCard(
         agent_id=card.agent_id,
@@ -78,6 +81,7 @@ def card_for(device: Device, hours: float) -> AgentCard:
         },
         health=card.health,
         last_heartbeat_s=card.last_heartbeat_s,
+        controller=card.controller,
     )
 
 
