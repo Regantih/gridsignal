@@ -336,6 +336,7 @@ def run_scenario(
     approver: str | None = None,
     approve: bool = True,
     check_deliverability: bool = True,
+    reserve_fraction: float | None = None,
 ) -> RunResult:
     """Replay one YAML scenario end to end.
 
@@ -351,6 +352,10 @@ def run_scenario(
     hold its award for the whole window. It exists only for the counterfactual in
     :mod:`gridsignal.deliverability`, which measures what the check is worth.
 
+    ``reserve_fraction`` overrides the member backup floor the fleet dispatches and
+    bids under. It exists for :mod:`gridsignal.backup_ledger`, which runs every
+    scenario a second time with the floor removed to show what the floor is worth.
+
     With ``approve=False`` the run stops at the approval gate: the award is proposed and
     logged but nothing is committed, which is what the Control Room shows before the
     operator clicks Approve.
@@ -362,6 +367,8 @@ def run_scenario(
     human_approver = approver or f"{scenario.approver} (scripted approver)"
     trace = load_price_scenario(scenario.price_scenario)
     engine = ControlRoomEngine(seed=scenario.seed, price_trace=trace, fleet_size=scenario.batteries)
+    if reserve_fraction is not None:
+        engine.set_reserve_floor(reserve_fraction)
     hours = engine.remaining_hours()
     price_mwh = engine.remaining_price_mwh()
     devices = engine.devices
@@ -370,7 +377,7 @@ def run_scenario(
         key=derived_signing_key(scenario.seed), stale_after_s=scenario.stale_after_s
     )
     bus = MessageBus()
-    register_fleet(registry, devices, hours, bus)
+    register_fleet(registry, devices, hours, bus, reserve_fraction)
     coordinator: Coordinator = LLMCoordinator(
         registry,
         bus,

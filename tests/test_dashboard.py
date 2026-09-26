@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from gridsignal import degradation, holdout, judgment_report, why
+from gridsignal import backup_ledger, degradation, holdout, judgment_report, why
 from gridsignal.control_room.engine import ControlRoomEngine
 from gridsignal.jev import incident as jev_incident
 
@@ -507,6 +507,24 @@ def test_a_ten_thousand_device_fault_answers_quickly_once_the_pack_is_warm() -> 
     assert incident.lost_kw > 0
     assert verdict.action is not None and not decision.gate_clear
     assert elapsed < 2.0, f"{elapsed:.2f}s"
+
+
+def test_the_backup_ledger_card_shows_the_promise_and_the_counterfactual(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    """The default Control Room carries the member's promise, audited and stress-tested."""
+    app = rendered_views["Control Room"]
+    text = markdown_text(app) + " ".join(c.value for c in app.caption)
+    assert "Backup promise ledger" in text
+    labels = {m.label: m.value for m in app.metric}
+    assert labels["Intervals that took backup"] == "0"
+    assert int(labels["Same walk, floor removed"].replace(",", "")) > 0
+    frames = [df for df in app.dataframe if "Held h without the floor" in list(df.value.columns)]
+    assert len(frames) == 1
+    held = frames[0].value
+    assert len(held) == backup_ledger.EVENT_STEPS
+    assert set(held["Promise kept"]) == {"yes"}
+    assert held["Held h"].min() >= held["Held h without the floor"].min()
 
 
 #: Panels the demo script does not narrate. They exist, but not on the default screen.

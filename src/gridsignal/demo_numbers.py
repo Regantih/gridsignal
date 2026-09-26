@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 
 from gridsignal import (
     ancillary,
+    backup_ledger,
     business,
     holdout,
     insight,
@@ -84,7 +85,19 @@ def member_beat(fleet_size: int = DEMO_FLEET) -> Beat:
             f"{neighbour.home_load_kw:,.1f} kW before {neighbour.export_kw:,.1f} kW is exported, "
             f"${neighbour.earned_usd:,.2f} earned",
             f"affected home {FOCUS_DEVICE_ID}: {affected.headline}",
+            backup_ledger_line(),
         ),
+    )
+
+
+def backup_ledger_line() -> str:
+    """The promise audited everywhere, and what the same walk does without the floor."""
+    proof = backup_ledger.cached_prove()
+    return (
+        f"backup promise: {proof.guarded.violations} intervals took member backup across "
+        f"{proof.guarded.intervals:,} audited intervals; the same walk with the floor "
+        f"removed takes it in {proof.unguarded.violations:,} "
+        f"({proof.unguarded.taken_kwh:,.1f} kWh)"
     )
 
 
@@ -195,7 +208,12 @@ def canonical() -> dict[str, str]:
     pilot = ancillary.holdout_summary(ancillary.BASE_CORE)
     unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
     models = business.compare()
+    promise = backup_ledger.cached_prove()
     return {
+        "backup_intervals_audited": f"{promise.guarded.intervals:,}",
+        "backup_violations": str(promise.guarded.violations),
+        "backup_unguarded_violations": f"{promise.unguarded.violations:,}",
+        "backup_unguarded_kwh": f"{promise.unguarded.taken_kwh:,.1f}",
         "break_even_battery_month_usd": f"{models.break_even_battery_month_usd:,.2f}",
         "break_even_month_usd": f"{models.break_even_month_usd:,.2f}",
         "break_even_kw_month_usd": f"{models.break_even_kw_month_usd:,.2f}",

@@ -19,6 +19,11 @@ DEFAULT_POWER_KW = 20.0
 LEGACY_KWH = 13.5
 LEGACY_POWER_KW = 5.0
 ROUND_TRIP_EFFICIENCY = 0.90
+# Share of the pack the member is promised for an outage. Every settlement in this
+# repo holds it back by default, so no study quotes a dollar the product would not
+# have been allowed to earn. Kept equal to ``home.DEFAULT_RESERVE_FRACTION``, which is
+# the same promise on the fleet side; ``tests/test_backup_ledger.py`` asserts they match.
+RESERVE_SHARE = 0.20
 # The strategy every battery owner runs without a signal: cheap overnight charge,
 # evening export, same clock times regardless of what the market is doing.
 NAIVE_CHARGE_HOURS = range(1, 5)
@@ -94,10 +99,9 @@ def value_captured(
     restores the earlier behaviour, where the house drank the battery dry all afternoon.
 
     ``backup_kwh`` is energy the member is promised for an outage: no export and no
-    ordinary home load may take the pack below it. The arbitrage studies leave it at
-    zero, which is what makes them a study of the price signal rather than a product;
-    anything that offers into a market passes the member's reserve here, and
-    :mod:`gridsignal.guardrails` refuses the offer if it did not.
+    ordinary home load may take the pack below it. The product runs it at
+    ``RESERVE_SHARE`` of the pack; the price studies leave it at zero so the signal is
+    measured on its own, and :mod:`gridsignal.backup_ledger` walks both.
     """
     frame = prices.reset_index(drop=True)[["interval_start", "interval_end", "spp"]].copy()
     plan = signals.reset_index(drop=True)

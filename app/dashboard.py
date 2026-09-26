@@ -18,6 +18,7 @@ from streamlit.delta_generator import DeltaGenerator
 
 from gridsignal import (
     ancillary,
+    backup_ledger,
     congestion,
     degradation,
     drills,
@@ -302,6 +303,18 @@ def holdout_as_first_scored() -> list[holdout.DayResult]:
     return holdout.evaluate(same_interval_price=True)
 
 
+@st.cache_data(show_spinner=False)
+def backup_proof() -> backup_ledger.Proof:
+    """The backup promise audited across every path, with and without the floor."""
+    return backup_ledger.cached_prove()
+
+
+@st.cache_data(show_spinner=False)
+def focus_backup_member() -> tuple[str, str]:
+    """The day and member whose promise the floor is doing the most work for."""
+    return backup_ledger.focus_member()
+
+
 def engine() -> ControlRoomEngine:
     """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
     key = (
@@ -327,6 +340,7 @@ def prewarm() -> None:
         return
     st.session_state.prewarmed = True
     threading.Thread(target=judgment_report.cached_build, daemon=True).start()
+    threading.Thread(target=backup_proof, daemon=True).start()
 
 
 def pill(text: str, color: str) -> str:
@@ -579,6 +593,70 @@ def render_home_first(eng: ControlRoomEngine) -> None:
             "dispatch these units and this control room never can. Their export here is a "
             "simulated stand-in, reserve-first like the rest, not a partner schedule."
         )
+
+
+def render_backup_ledger(eng: ControlRoomEngine) -> None:
+    """The member's backup promise, interval by interval, and what the floor is worth."""
+    proof = backup_proof()
+    guarded, bare = proof.guarded, proof.unguarded
+    day, member_id = focus_backup_member()
+    held = backup_ledger.member_day(member_id, day)
+    without = {row.interval: row for row in backup_ledger.member_day(member_id, day, False)}
+
+    st.markdown("<div class='gs-kicker'>Backup promise ledger</div>", True)
+    cols = st.columns(4)
+    metric(
+        cols[0],
+        "Promised per member",
+        f"{backup_ledger.PROMISE_SHARE:.0%}",
+        note=(
+            f"{held[0].promised_hours:,.1f} h of essential load for {member_id}; "
+            f"fleet floor now {eng.reserve_fraction:.0%}"
+        ),
+    )
+    metric(
+        cols[1],
+        "Intervals audited",
+        f"{guarded.intervals:,}",
+        note=f"{guarded.members:,} members, market days, this event and every scenario",
+    )
+    metric(
+        cols[2],
+        "Intervals that took backup",
+        f"{guarded.violations}",
+        note="with the floor enforced",
+    )
+    metric(
+        cols[3],
+        "Same walk, floor removed",
+        f"{bare.violations:,}",
+        note=f"{bare.taken_kwh:,.0f} kWh of member backup sold",
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Interval": row.interval,
+                    "Promised h": row.promised_hours,
+                    "Held h": row.held_hours,
+                    "Held h without the floor": without[row.interval].held_hours,
+                    "Promise kept": "yes" if row.kept else "no",
+                }
+                for row in held
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    caption(
+        f"Every interval of the {day} grid event for {member_id}, the home this "
+        "day's dispatch "
+        "leans on hardest. Zero breaches is only worth reading because the same walk "
+        "with the floor removed and nothing else changed does breach: "
+        f"{bare.violations} intervals across {bare.runs_breached} runs. Simulated "
+        "fleet and household load, real cached ERCOT prices; reproduce with "
+        "python -m gridsignal.backup_ledger."
+    )
 
 
 def render_surplus(eng: ControlRoomEngine) -> None:
@@ -2939,6 +3017,8 @@ def main() -> None:
         render_telemetry_import()
     st.divider()
     render_home_first(eng)
+    st.divider()
+    render_backup_ledger(eng)
     st.divider()
     if advanced():
         render_fleet_replay()

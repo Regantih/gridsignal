@@ -329,6 +329,26 @@ and no ordinary household load can take a pack below the member's promised energ
 arbitrage studies keep `backup_kwh=0` — they are a study of the price signal, not a product, and
 say so.
 
+#### Backup promise ledger
+
+`python -m gridsignal.backup_ledger` is the receipt for that promise. A fifth of every pack is the
+member's, held for an outage — on a Base Core-style 40 kWh unit, 8.0 kWh, about 6.7 hours of
+essential household load at 1.2 kW. The ledger walks every path that moves a member's stored
+energy and records, per member and per interval, how much was promised, how much was standing
+there, and how much (if any) was delivered out of the promise: the market backtest on both pack
+sizes and both dispatch models across the held-out days, the Control Room's dispatch across the
+grid event on both price days, and every award in every bundled chaos scenario. **648 simulated
+members, 957 runs, 4,454 intervals, 0 that took a member's backup.**
+
+The pack starts a market day empty and fills, so a low state of charge is not itself a breach:
+what the promise forbids is *delivering* energy that had to come out of the floor, and that is the
+only thing counted. Zero is worth nothing on its own, so the same walk runs again with the floor
+removed and nothing else changed: **335 intervals breach, across 286 runs, spending 1,564.9 kWh of
+promised backup** — the guard is load-bearing, not a property of the schedule. The worst unguarded
+run on each path is printed beside the totals. Simulated fleet and household load, real cached
+ERCOT prices; on screen as **Control Room → Backup promise ledger**, tested in
+`tests/test_backup_ledger.py`.
+
 #### Base's two business models, scored on the same simulated fleet
 
 Base has described two ways the same battery earns: a **retail-choice** model, where Base is the

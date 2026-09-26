@@ -50,6 +50,7 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("ancillary co-optimization", ("-m", "gridsignal.ancillary")),
     ("market guardrails", ("-m", "gridsignal.guardrails")),
     ("retail-choice vs utility-partner", ("-m", "gridsignal.business")),
+    ("backup promise ledger", ("-m", "gridsignal.backup_ledger")),
     ("deliverability report", ("-m", "gridsignal.deliverability_report")),
     ("degradation-aware dispatch", ("-m", "gridsignal.degradation")),
     (

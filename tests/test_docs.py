@@ -168,6 +168,11 @@ CLAIMS: tuple[tuple[str, str], ...] = (
         r"|a scarcity day\'s capturable|the value a battery could have captured)",
         "scarcity_visible_share",
     ),
+    # The backup promise: the audited walk and the same walk with the floor removed, so
+    # the zero can never be quoted without the counterfactual that makes it mean something.
+    (r"([\d,]+) intervals, 0 that took a member\'s backup", "backup_intervals_audited"),
+    (r"([\d,]+) intervals breach, across", "backup_unguarded_violations"),
+    (r"spending ([\d,]+\.\d) kWh of\s+promised backup", "backup_unguarded_kwh"),
     # The scenario day is uplift over the naive schedule, so the gross side is checked too
     # and neither can be quoted without the other drifting.
     (r"\$([\d,]+\.\d\d) of export revenue", "scenario_battery_revenue_usd"),
