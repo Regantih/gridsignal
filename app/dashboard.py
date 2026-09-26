@@ -10,6 +10,7 @@ import plotly.express as px
 import streamlit as st
 
 from gridsignal import holdout, member, pipeline
+from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
     Device,
@@ -495,15 +496,20 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
 
 
 def render_signal_chart(plan: pd.DataFrame) -> None:
-    """Price, the declining reservation price, and the action taken each interval."""
+    """Real-time price, the day-ahead curve it is judged against, and the action taken."""
+    reference, label = (
+        ("dam_mwh", "day-ahead $/MWh")
+        if "dam_mwh" in plan.columns
+        else ("reservation_mwh", "reservation price")
+    )
     fig = px.line(plan, x="interval_start", y="spp", height=320, log_y=True)
     fig.update_traces(line={"color": "#64748b", "width": 1.5}, name="$/MWh")
     fig.add_scatter(
         x=plan["interval_start"],
-        y=plan["reservation_mwh"],
+        y=plan[reference],
         mode="lines",
         line={"color": "#a78bfa", "width": 1, "dash": "dot"},
-        name="reservation price",
+        name=label,
     )
     for action, color in SIGNAL_COLOR.items():
         rows = plan[plan["signal"] == action]
@@ -554,7 +560,7 @@ def render_money_chart(ledger: pd.DataFrame) -> None:
 def render_holdout() -> None:
     """Out-of-sample scorecard: the same frozen policy on days it never saw."""
     results = holdout_run()
-    st.subheader("Held-out days (thresholds frozen, never tuned on these)")
+    st.subheader("Held-out days (parameters frozen, never tuned on these)")
     if not results:
         st.caption(
             "No held-out days bundled. Run python scripts/fetch_holdout.py "
@@ -610,9 +616,11 @@ def render_holdout() -> None:
     st.caption(
         usd(
             "Every figure is per battery per day on real cached LZ_HOUSTON 15-minute RTM "
-            "settlement prices. The policy thresholds were written against the two "
-            "scenario days above and were not adjusted after seeing these results, so "
-            "losing days are shown as they came out."
+            "settlement prices. Windows are planned from the day-ahead curve published "
+            "the afternoon before; real time only overrides the plan. The policy "
+            "parameters were fitted on the two scenario days plus data/tuning and were "
+            "not adjusted after seeing these results, so losing days are shown as they "
+            "came out."
         )
     )
 
@@ -707,6 +715,58 @@ def render_member(eng: ControlRoomEngine) -> None:
         )
 
 
+def signed_usd(amount: float) -> str:
+    """Dollars with the sign outside the symbol, as a person would write it."""
+    return f"{'-' if amount < 0 else '+'}${abs(amount):,.2f}"
+
+
+def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> None:
+    """One scenario day next to the held-out record — never the single day on its own.
+
+    The scarcity day is the biggest number in the project and the least representative
+    one, so it is rendered beside the out-of-sample mean, median and win rate.
+    """
+    out = holdout.summarize(holdout_run())
+    scenario_card = (
+        "<div class='gs-kicker'>This scenario day, if the fleet followed the signals</div>"
+        f"<div style='font-size:3.1rem;font-weight:700;color:#4ade80;line-height:1.2'>"
+        f"${summary.fleet_usd(fleet_size):,.0f}</div>"
+        f"<div class='gs-body'>on {date} across {fleet_size:,} simulated batteries "
+        f"— ${summary.uplift_usd:,.2f} per battery per day</div>"
+    )
+    if out.days:
+        holdout_card = (
+            f"<div class='gs-kicker'>Across {out.days} held-out days the policy never saw</div>"
+            f"<div style='font-size:3.1rem;font-weight:700;color:#38bdf8;line-height:1.2'>"
+            f"{signed_usd(out.mean_uplift_usd)}</div>"
+            f"<div class='gs-body'>mean uplift per battery per day — median "
+            f"{signed_usd(out.median_uplift_usd)}, beats naive on {out.days_won} of "
+            f"{out.days} days (worst {signed_usd(out.worst_uplift_usd)})</div>"
+        )
+    else:
+        holdout_card = (
+            "<div class='gs-kicker'>Held-out days</div>"
+            "<div class='gs-body'>None bundled — run python scripts/fetch_holdout.py.</div>"
+        )
+
+    left, right = st.columns(2, gap="large")
+    left.markdown(
+        f"<div class='gs-card' style='text-align:center'>{scenario_card}</div>",
+        unsafe_allow_html=True,
+    )
+    right.markdown(
+        f"<div class='gs-card' style='text-align:center'>{holdout_card}</div>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        usd(
+            "The scenario-day figure is one extreme day and is never the claim on its own: "
+            "the held-out average beside it is what the frozen policy does on days it was "
+            "never tuned on, and it can lose money on an individual day."
+        )
+    )
+
+
 def render_grid_signals(scenario: str, fleet_size: int) -> None:
     """Spike detection, spike forecast, dispatch signals and what they were worth."""
     result = signals_run(scenario)
@@ -714,15 +774,7 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     trace = result.trace
 
     st.subheader("Backtest: GridSignal vs. a naive fixed schedule")
-    st.markdown(
-        f"<div class='gs-card' style='text-align:center'>"
-        f"<div class='gs-kicker'>Extra revenue if the fleet followed the signals</div>"
-        f"<div style='font-size:3.1rem;font-weight:700;color:#4ade80;line-height:1.2'>"
-        f"${summary.fleet_usd(fleet_size):,.0f}</div>"
-        f"<div class='gs-body'>on {trace.date} across {fleet_size:,} simulated batteries "
-        f"— ${summary.uplift_usd:,.2f} per battery per day</div></div>",
-        unsafe_allow_html=True,
-    )
+    render_headline(summary, trace.date, fleet_size)
 
     cols = st.columns(4)
     cols[0].metric("GridSignal", f"${summary.signal_usd:,.2f}", delta="per battery")
@@ -761,9 +813,10 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
 
     with st.expander("Interval-by-interval signal log"):
         plan = result.plan
+        columns = ["interval", "spp", "dam_mwh", "z", "spike_prob", "planned", "signal", "reason"]
         st.dataframe(
             plan.assign(interval=plan["interval_start"].dt.strftime("%H:%M"))[
-                ["interval", "spp", "z", "spike_prob", "signal", "reason"]
+                [c for c in columns if c in plan.columns or c == "interval"]
             ],
             hide_index=True,
             use_container_width=True,

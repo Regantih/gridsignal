@@ -10,5 +10,7 @@ data/processed/*
 # Bundled ERCOT price sample so the demo runs offline.
 !data/processed/*_sample.parquet
 !data/processed/*_sample.json
+!data/processed/*_sample_dam.parquet
+!data/processed/*_sample_dam.json
 .streamlit/secrets.toml
 .DS_Store

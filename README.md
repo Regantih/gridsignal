@@ -101,15 +101,19 @@ is a Base Power tariff.
 
 ### Grid Signals
 
-An offline analytics view over the same bundled ERCOT day: rolling-baseline spike detection, a
-spike-probability forecast, charge/hold/export signals for a 13.5 kWh / 5 kW battery, and a
-backtest against a naive 1–5am charge / 5–9pm export schedule. The headline number is the extra
-revenue at the selected fleet scale ($28,100/day across 10,000 batteries on the 2023-09-06
-scarcity day). Signals are advisory; nothing is dispatched.
+An offline analytics view over the same bundled ERCOT day. The policy is **day-ahead anchored**:
+charge and export windows are planned from the ERCOT DAM curve for that trade date — published
+the afternoon before, so planning from it is not lookahead — and the real-time spike detector
+only overrides the plan where real time has diverged from it (sell into a spike the day-ahead
+curve never priced, refuse to buy a spike, wait out a dud export). Signals are advisory; nothing
+is dispatched.
 
-Below the charts the same view shows the **held-out scorecard** — the identical policy replayed on
-seven real LZ_HOUSTON days it was never tuned on, including the days it loses on (see
-[Held-out results](#held-out-results-out-of-sample)).
+The headline shows two numbers side by side and never the first one alone: the scenario day at
+the selected fleet scale ($65,500/day across 10,000 batteries on the 2023-09-06 scarcity day) and
+the **held-out record** — mean +$0.62, median +$0.10 per battery per day, beating the naive
+schedule on 6 of 7 days it was never tuned on (see
+[Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
+representative day in the set; the held-out average is the honest claim.
 
 Same numbers from the CLI:
 
@@ -145,7 +149,10 @@ flowchart LR
         G[gridstatus<br/>public ERCOT MIS] --> P[ingest.py] --> Q[(Parquet store)]
         Q --> PR
         Q --> DT[detect.py<br/>rolling-baseline spikes] --> FC[forecast.py<br/>spike probability]
-        FC --> SG[signals.py<br/>charge / hold / export] --> BT[backtest.py<br/>$ vs naive schedule]
+        Q --> DM[dam.py<br/>day-ahead charge/export plan]
+        FC --> SG[signals.py<br/>real-time detections]
+        SG --> DM
+        DM --> BT[backtest.py<br/>$ vs naive schedule]
         BT --> D
     end
 ```
@@ -159,18 +166,23 @@ flowchart LR
 | `src/gridsignal/prices.py` | Named price scenarios, cached-trace loading, peak-window selection, kW to dollars |
 | `src/gridsignal/detect.py` | Rolling trailing-median baseline with a MAD spread; flags spike intervals and groups them into windows |
 | `src/gridsignal/forecast.py` | Causal spike-probability score from the z-score, its ramp and the price-over-baseline level |
-| `src/gridsignal/signals.py` | Declining reservation price turning prices plus spike probability into charge/hold/export |
+| `src/gridsignal/signals.py` | Real-time-only fallback policy: declining reservation price turning prices plus spike probability into charge/hold/export |
+| `src/gridsignal/dam.py` | Plans the day from the ERCOT day-ahead curve and applies the real-time deviation rules on top; the frozen parameters live here |
 | `src/gridsignal/backtest.py` | Battery settlement ledger (SoC, cashflow) for the signals and for a naive fixed schedule |
 | `src/gridsignal/pipeline.py` | `run(scenario)` wiring detect → forecast → signals → backtest, plus a CLI |
 | `src/gridsignal/member.py` | Member-facing summary for one home: backup hours, earned/protected dollars, plain-English notice |
 | `src/gridsignal/holdout.py` | Replays the frozen policy over the bundled held-out days and scores it against the naive schedule |
 | `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
+| `scripts/fetch_tuning.py` | Caches the tuning split, chosen so it can never overlap the held-out dates |
+| `scripts/fetch_dam.py` | Caches the day-ahead curve and provenance for every bundled trade date |
+| `scripts/tune_policy.py` | Grid search for the frozen policy parameters, run on the tuning split only |
 | `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
 | `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
 | `tests/test_prices.py`, `tests/test_ingest.py` | Scenario loading, peak-window selection, dollar conversion, cache provenance |
 | `tests/test_scale.py` | Gateway-ring scaling, scarcity pricing, and a 10,000-device detect-plus-reallocate benchmark |
 | `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_signals.py`, `tests/test_backtest.py`, `tests/test_pipeline.py` | The analytics pipeline: spike detection, look-ahead safety, dispatch policy, settlement math, end-to-end run |
-| `tests/test_holdout.py` | Held-out set integrity: ≥5 real days with provenance, no tuned-on day scored, frozen thresholds, losing days kept in the totals |
+| `tests/test_holdout.py` | Split integrity: ≥5 real held-out days with provenance, tuning and held-out dates disjoint, frozen parameters, losing days kept in the totals |
+| `tests/test_dam.py` | Day-ahead plan shape, hour-to-interval alignment, each deviation rule, no-lookahead, DAM provenance |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 
@@ -192,6 +204,8 @@ Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal
 | Real-time settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2026-09-22 (96 intervals, peak $199.74/MWh). Cached at `data/processed/lz_houston_rtm_spp_sample.parquet` with provenance in the sidecar `.json`; refresh with `python -m gridsignal.ingest --date <YYYY-MM-DD>` |
 | Scarcity-day settlement prices | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2023-09-06 — the highest-priced LZ_HOUSTON day of 2023 (96 intervals, peak $5,147.65/MWh, day average $788.49/MWh). The archive restates some intervals, so repeated intervals are averaged into one row. Cached at `data/processed/lz_houston_rtm_spp_scarcity_sample.parquet` with a sidecar `.json`; refresh with `python -m gridsignal.ingest --scarcity-year <YYYY>` |
 | Held-out evaluation days | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive and [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report via `gridstatus` | **Real data.** Seven LZ_HOUSTON REAL_TIME_15_MIN days, 96 intervals each, cached under `data/holdout/` with a sidecar `.json` per day; refresh with `python scripts/fetch_holdout.py` |
+| Tuning days | same ERCOT sources via `gridstatus` | **Real data.** Six LZ_HOUSTON REAL_TIME_15_MIN days under `data/tuning/`, chosen by the quantile rule in `scripts/fetch_tuning.py` so they never collide with the held-out dates. These plus the two scenario days are the only days any parameter may be fitted on; refresh with `python scripts/fetch_tuning.py` |
+| Day-ahead settlement point prices | ERCOT MIS [NP4-190-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD) and the DAM historical archive via `gridstatus` | **Real data.** LZ_HOUSTON, DAY_AHEAD_HOURLY, 24 hours for every bundled trade date, cached beside each real-time trace as `*_dam.parquet` with a sidecar `*_dam.json`; refresh with `python scripts/fetch_dam.py`. DAM results clear the afternoon **before** the trade day, which is why the plan may use them |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
@@ -200,34 +214,41 @@ historical scarcity trace is pricing context only — it is not replayed as a re
 
 ## Held-out results (out of sample)
 
-The charge/hold/export thresholds were written against the two scenario days above, so scoring
-them on those same days says nothing. These seven days are held out: the policy had never seen
-them, the thresholds were frozen before scoring, and **nothing was retuned after seeing these
-numbers** — the losing days are printed as they came out.
+Parameters are fitted on the **tuning split only** — the two scenario days plus the six days in
+`data/tuning/` — by the grid search in `scripts/tune_policy.py`, which maximises *median* uplift
+per battery per day so that one scarcity day cannot buy a parameter set that bleeds on ordinary
+days. The winning values are frozen in `gridsignal.dam` and asserted by a test. These seven
+held-out days were then scored **once**, and the losing day is printed as it came out.
 
 Day selection is a rule, not a hand-pick (`scripts/fetch_holdout.py`): for each year the ERCOT
 archive parses, take that year's highest-priced LZ_HOUSTON day and its median-peak day; 2023's
-peak day is excluded because the policy was written against it. The archive does not parse 2026
-yet, so the two most recent complete trade days from the daily report are used instead.
+peak day is excluded because it is a scenario day. The archive does not parse 2026 yet, so the
+two most recent complete trade days from the daily report are used instead. The tuning split
+(`scripts/fetch_tuning.py`) takes the 75th and 25th percentile of daily peak in each year, so the
+two splits can never share a date.
 
 All figures are **dollars per battery per day** on a 13.5 kWh / 5 kW battery (see Assumptions).
 
 | Date | Peak $/MWh | Regime | GridSignal $ | Naive $ | Uplift $ |
 |---|---:|---|---:|---:|---:|
-| 2023-04-06 | 86.13 | ordinary | 0.06 | 0.19 | **−0.13** |
-| 2024-05-08 | 4,981.40 | scarcity | 11.24 | 16.13 | **−4.89** |
-| 2024-12-20 | 73.13 | ordinary | −0.34 | 0.27 | **−0.61** |
-| 2025-04-07 | 3,860.63 | scarcity | 5.15 | −0.97 | **+6.12** |
-| 2025-05-03 | 76.33 | ordinary | 0.43 | 0.01 | **+0.42** |
-| 2026-09-23 | 97.76 | ordinary | −0.63 | 0.46 | **−1.09** |
-| 2026-09-24 | 108.74 | ordinary | −0.33 | 0.57 | **−0.90** |
+| 2023-04-06 | 86.13 | ordinary | 0.21 | 0.19 | **+0.02** |
+| 2024-05-08 | 4,981.40 | scarcity | 17.84 | 16.13 | **+1.71** |
+| 2024-12-20 | 73.13 | ordinary | 0.28 | 0.27 | **+0.01** |
+| 2025-04-07 | 3,860.63 | scarcity | 1.20 | −0.97 | **+2.17** |
+| 2025-05-03 | 76.33 | ordinary | 0.62 | 0.01 | **+0.61** |
+| 2026-09-23 | 97.76 | ordinary | 0.19 | 0.46 | **−0.27** |
+| 2026-09-24 | 108.74 | ordinary | 0.67 | 0.57 | **+0.10** |
 
-**2 of 7 held-out days beat the naive schedule.** Mean −$0.15, median −$0.61, worst −$4.89, best
-+$6.12 per battery per day. Read honestly: the in-sample uplift does not survive out of sample.
-The policy's edge is concentrated in scarcity days where the spike lands outside the naive export
-window (2025-04-07), and it gives value back on ordinary days by holding charge for a spike that
-never arrives. A deployable version needs a trained probability model and a cost for holding, not
-a retune against this table — retuning on it would destroy the only out-of-sample evidence here.
+**6 of 7 held-out days beat the naive schedule.** Mean +$0.62, median +$0.10, worst −$0.27, best
++$2.17 per battery per day.
+
+This is the result of anchoring the plan to the day-ahead curve. The previous real-time-only
+policy won 2 of 7 days (mean −$0.15, worst −$4.89) because it held charge waiting for spikes that
+never came; planning the windows from a price curve the operator genuinely has in advance removes
+most of that guesswork, and the real-time detector now only has to catch the divergence. Read it
+conservatively all the same: the median day is worth ten cents, one held-out day still loses, and
+most of the mean comes from two scarcity days — a fleet-level claim built on the scarcity day
+alone would be dishonest.
 
 Reproduce with `python -m gridsignal.holdout`.
 
@@ -258,9 +279,11 @@ real Base Power device or fleet.
   over a real event stream.
 - The spike forecast is a fixed-coefficient logistic score, not a trained model, and the backtest
   is a price-taker single-day replay: no bidding, no ancillary services, no degradation cost.
-- **The policy does not yet generalise**: it loses to the naive schedule on 5 of 7 held-out days
-  (above). The honest read is that the in-sample numbers are in-sample, and the next real step is
-  a trained spike model plus an opportunity cost for holding charge — not threshold tweaking.
+- **The out-of-sample edge is small and concentrated**: 6 of 7 held-out days beat naive, but the
+  median day is +$0.10 and most of the mean comes from two scarcity days. Day-ahead anchoring
+  fixed the previous generalisation failure; it did not turn this into a revenue product.
+- The day-ahead plan is a top-k hour selection, not an optimiser: no state-of-charge-aware
+  dynamic program, no forecast error model on the DAM-to-RTM basis.
 - Load and fuel-mix ingest are implemented but not yet used by either view.
 - ERCOT's public SPP report only keeps roughly the last week online, so `--date` must be recent;
   scarcity days come from the yearly historical archive instead. Both bundled samples are the

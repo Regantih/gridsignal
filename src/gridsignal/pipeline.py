@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from gridsignal import backtest, detect, forecast, signals
+from gridsignal import backtest, dam, detect, forecast
 from gridsignal.backtest import BacktestSummary
 from gridsignal.prices import DEFAULT_SCENARIO, SCENARIOS, PriceTrace, load_scenario
 
@@ -33,7 +33,7 @@ def run(
     trace = load_scenario(scenario)
     detections = detect.detect_spikes(trace.frame, z=z)
     spike_prob = forecast.forecast_spike_probability(forecast.build_features(detections))
-    plan = signals.make_signals(detections, spike_prob)
+    plan = dam.signals_for(detections, spike_prob, trace.dam)
     ledger = backtest.value_captured(plan, trace.frame, kwh=kwh)
     return PipelineResult(
         trace=trace,

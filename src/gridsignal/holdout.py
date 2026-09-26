@@ -1,9 +1,10 @@
 """Score the frozen signal policy on days it was never tuned on.
 
-The policy thresholds in :mod:`gridsignal.signals` were written against the two
-bundled scenario days. Anything in ``data/holdout/`` is a real LZ_HOUSTON day the
-policy has never seen; :func:`evaluate` replays it with the same frozen constants
-and reports what the signals earned against the naive schedule, losses included.
+The policy parameters in :mod:`gridsignal.dam` were fitted on the two bundled scenario
+days plus ``data/tuning/`` and nothing else. Anything in ``data/holdout/`` is a real
+LZ_HOUSTON day the policy has never seen; :func:`evaluate` replays it with the same
+frozen constants and reports what the signals earned against the naive schedule,
+losses included.
 """
 
 from __future__ import annotations
@@ -13,28 +14,46 @@ from pathlib import Path
 
 import pandas as pd
 
-from gridsignal import backtest, detect, forecast, signals
-from gridsignal.prices import PriceTrace, load_price_trace
+from gridsignal import backtest, dam, detect, forecast
+from gridsignal.prices import DAM_SUFFIX, PriceTrace, load_price_trace
 
-HOLDOUT_DIR = Path(__file__).resolve().parents[2] / "data" / "holdout"
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+HOLDOUT_DIR = DATA_DIR / "holdout"
+TUNING_DIR = DATA_DIR / "tuning"
 
 
 def slug_for(date: str) -> str:
     return f"lz_houston_rtm_spp_{date.replace('-', '')}"
 
 
+def rtm_paths(directory: Path) -> list[Path]:
+    """Real-time traces in a split directory, oldest first (day-ahead siblings skipped)."""
+    return sorted(
+        p for p in directory.glob("lz_houston_rtm_spp_*.parquet") if not p.stem.endswith(DAM_SUFFIX)
+    )
+
+
 def holdout_paths() -> list[Path]:
     """Bundled held-out days, oldest first."""
-    return sorted(HOLDOUT_DIR.glob("lz_houston_rtm_spp_*.parquet"))
+    return rtm_paths(HOLDOUT_DIR)
 
 
 def load_holdout() -> list[PriceTrace]:
     return [load_price_trace(p) for p in holdout_paths()]
 
 
+def tuning_paths() -> list[Path]:
+    """Bundled tuning days — the only real days parameters may be fitted on."""
+    return rtm_paths(TUNING_DIR)
+
+
+def load_tuning() -> list[PriceTrace]:
+    return [load_price_trace(p) for p in tuning_paths()]
+
+
 @dataclass(frozen=True)
 class DayResult:
-    """What the frozen policy earned on one held-out day, per battery."""
+    """What the frozen policy earned on one day, per battery."""
 
     date: str
     peak_mwh: float
@@ -53,7 +72,7 @@ def score_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayResult
     """Run detect -> forecast -> signals -> backtest on one day, thresholds untouched."""
     detections = detect.detect_spikes(trace.frame)
     prob = forecast.forecast_spike_probability(forecast.build_features(detections))
-    plan = signals.make_signals(detections, prob)
+    plan = dam.signals_for(detections, prob, trace.dam)
     summary = backtest.summarize(backtest.value_captured(plan, trace.frame, kwh=kwh))
     return DayResult(
         date=trace.date,
@@ -68,6 +87,11 @@ def score_day(trace: PriceTrace, kwh: float = backtest.DEFAULT_KWH) -> DayResult
 
 def evaluate(kwh: float = backtest.DEFAULT_KWH) -> list[DayResult]:
     return [score_day(trace, kwh=kwh) for trace in load_holdout()]
+
+
+def evaluate_tuning(kwh: float = backtest.DEFAULT_KWH) -> list[DayResult]:
+    """Same scoring on the tuning split, for the in-sample/out-of-sample comparison."""
+    return [score_day(trace, kwh=kwh) for trace in load_tuning()]
 
 
 def as_frame(results: list[DayResult]) -> pd.DataFrame:

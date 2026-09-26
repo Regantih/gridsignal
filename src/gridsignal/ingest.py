@@ -20,6 +20,8 @@ PROCESSED = ROOT / "data" / "processed"
 
 DEFAULT_LOCATION = "LZ_HOUSTON"
 DEFAULT_MARKET = "REAL_TIME_15_MIN"
+DAM_MARKET = "DAY_AHEAD_HOURLY"
+DAM_SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD"
 SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD"
 # The daily MIS report above only retains about a week, so scarcity days come from the
 # historical RTM settlement point price archive.
@@ -72,6 +74,55 @@ def normalize_prices(df: pd.DataFrame) -> pd.DataFrame:
         .round({"spp": 2})
         .sort_values("interval_start")
         .reset_index(drop=True)
+    )
+
+
+def fetch_dam_prices(
+    date: str,
+    location: str = DEFAULT_LOCATION,
+) -> pd.DataFrame:
+    """Day-ahead hourly settlement point prices for one load zone on one trade date.
+
+    DAM results are published the afternoon before the trade day, so a plan built from
+    this curve is information the operator genuinely has in advance.
+    """
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_spp(date=date, market=DAM_MARKET, location_type="Load Zone")
+    return _zone_frame(raw, location, f"no {DAM_MARKET} prices for {location} on {date}")
+
+
+def fetch_rtm_year(year: int, location: str = DEFAULT_LOCATION) -> pd.DataFrame:
+    """A whole year of real-time settlement prices from ERCOT's historical archive."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_rtm_spp(year)
+    return _zone_frame(raw, location, f"no historical RTM prices for {location} in {year}")
+
+
+def fetch_dam_year(year: int, location: str = DEFAULT_LOCATION) -> pd.DataFrame:
+    """A whole year of day-ahead settlement prices from ERCOT's historical archive."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_dam_spp(year)
+    return _zone_frame(raw, location, f"no historical DAM prices for {location} in {year}")
+
+
+def _zone_frame(raw: pd.DataFrame, location: str, message: str) -> pd.DataFrame:
+    zone = raw[raw["Location"] == location]
+    if zone.empty:
+        raise ValueError(message)
+    return normalize_prices(
+        zone.rename(
+            columns={
+                "Interval Start": "interval_start",
+                "Interval End": "interval_end",
+                "SPP": "spp",
+            }
+        )
     )
 
 

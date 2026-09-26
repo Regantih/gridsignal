@@ -17,6 +17,11 @@ approval gate, quarantine and reassignment — and appends every transition to a
    `python -m gridsignal.ingest --date <YYYY-MM-DD>`. Load and fuel mix are not implemented yet.
 2. Detect: rolling-baseline spike detection, scarcity windows, inter-zone spreads.
 3. Forecast: spike probability for the next few hours by zone.
-4. Signals: charge / hold / export per interval.
-5. Backtest: dollars captured vs. a naive schedule.
-6. Dashboard: member view plus an operator view for Base.
+4. Plan: `dam.py` picks the charge and export hours from the day-ahead curve cached alongside
+   each real-time trace (`*_dam.parquet`, fetched by `scripts/fetch_dam.py`). DAM clears the
+   afternoon before the trade day, so the plan uses only information the operator has in advance.
+5. Signals: charge / hold / export per interval — the day-ahead plan, overridden only where real
+   time diverges from it. `signals.py` is the real-time-only fallback for a day with no curve.
+6. Backtest: dollars captured vs. a naive schedule, scored once on `data/holdout/` with the
+   parameters fitted on `data/tuning/` plus the two scenario days.
+7. Dashboard: member view plus an operator view for Base.

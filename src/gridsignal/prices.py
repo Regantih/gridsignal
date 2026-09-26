@@ -16,6 +16,7 @@ import pandas as pd
 PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
 SAMPLE_PRICES = PROCESSED / "lz_houston_rtm_spp_sample.parquet"
 SCARCITY_PRICES = PROCESSED / "lz_houston_rtm_spp_scarcity_sample.parquet"
+DAM_SUFFIX = "_dam"
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,10 @@ class PriceTrace:
     date: str
     source: str
     frame: pd.DataFrame
+    # Day-ahead hourly curve for the same date, when one is bundled alongside the
+    # real-time trace. Published the afternoon before, so planning from it is not
+    # lookahead.
+    dam: pd.DataFrame | None = None
 
     @property
     def peak_mwh(self) -> float:
@@ -97,18 +102,29 @@ def energy_value_usd(kw: float, hours: float, price_mwh: float) -> float:
     return round(kw * hours * price_mwh / 1000.0, 2)
 
 
+def dam_path_for(path: Path) -> Path:
+    """Where the day-ahead curve for a real-time trace is cached."""
+    return path.with_name(f"{path.stem}{DAM_SUFFIX}{path.suffix}")
+
+
+def _read_trace_frame(path: Path) -> pd.DataFrame:
+    frame = pd.read_parquet(path)
+    frame["interval_start"] = pd.to_datetime(frame["interval_start"]).dt.tz_localize(None)
+    frame["interval_end"] = pd.to_datetime(frame["interval_end"]).dt.tz_localize(None)
+    return frame.sort_values("interval_start").reset_index(drop=True)
+
+
 def load_price_trace(path: Path | None = None) -> PriceTrace:
-    """Load the cached price trace and its provenance sidecar."""
+    """Load the cached price trace, its provenance sidecar and any day-ahead curve."""
     path = path or SAMPLE_PRICES
     if not path.exists():
         raise FileNotFoundError(
             f"no cached price trace at {path}; run python -m gridsignal.ingest --date <YYYY-MM-DD>"
         )
 
-    frame = pd.read_parquet(path)
-    frame["interval_start"] = pd.to_datetime(frame["interval_start"]).dt.tz_localize(None)
-    frame["interval_end"] = pd.to_datetime(frame["interval_end"]).dt.tz_localize(None)
-    frame = frame.sort_values("interval_start").reset_index(drop=True)
+    frame = _read_trace_frame(path)
+    dam_path = dam_path_for(path)
+    dam = _read_trace_frame(dam_path) if dam_path.exists() else None
 
     meta_path = path.with_suffix(".json")
     meta = json.loads(meta_path.read_text()) if meta_path.exists() else {}
@@ -118,6 +134,7 @@ def load_price_trace(path: Path | None = None) -> PriceTrace:
         date=meta.get("date", str(frame["interval_start"].iloc[0].date())),
         source=meta.get("source", "ERCOT MIS"),
         frame=frame,
+        dam=dam,
     )
 
 

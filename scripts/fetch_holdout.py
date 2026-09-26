@@ -11,7 +11,6 @@ those days come from the daily MIS report instead (``RECENT_DAYS``).
 
 from __future__ import annotations
 
-import gridstatus
 import pandas as pd
 
 from gridsignal import ingest
@@ -21,20 +20,6 @@ TUNED_ON = "2023-09-06"
 # gridstatus cannot parse the 2026 yearly archive yet; these are the trade days the
 # daily report still retained, excluding the tuned-on 2026-09-22.
 RECENT_DAYS = ("2026-09-23", "2026-09-24")
-
-
-def year_frame(year: int) -> pd.DataFrame:
-    raw = gridstatus.Ercot().get_rtm_spp(year)
-    zone = raw[raw["Location"] == ingest.DEFAULT_LOCATION]
-    return ingest.normalize_prices(
-        zone.rename(
-            columns={
-                "Interval Start": "interval_start",
-                "Interval End": "interval_end",
-                "SPP": "spp",
-            }
-        )
-    )
 
 
 def pick_days(frame: pd.DataFrame) -> list[str]:
@@ -56,7 +41,7 @@ def main() -> None:
     HOLDOUT_DIR.mkdir(parents=True, exist_ok=True)
     for year in (2023, 2024, 2025):
         try:
-            frame = year_frame(year)
+            frame = ingest.fetch_rtm_year(year)
         except Exception as exc:  # noqa: BLE001 - the archive may not cover a year yet
             print(f"{year}: skipped ({exc})")
             continue

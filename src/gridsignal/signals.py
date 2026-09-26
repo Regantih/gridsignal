@@ -46,7 +46,11 @@ def make_signals(
     retention: float = RETENTION,
     spike_threshold: float = SPIKE_THRESHOLD,
 ) -> pd.DataFrame:
-    """Recommend charge / hold / export per interval for a home-battery fleet.
+    """Recommend charge / hold / export per interval from real-time prices alone.
+
+    This is the fallback for a day with no day-ahead curve bundled; when there is one,
+    :func:`gridsignal.dam.signals_for` plans the day from it instead and uses these
+    real-time detections only to deviate.
 
     Two gates must open before energy leaves a battery: the price clears the declining
     :func:`reservation_price`, *and* either it is within ``retention`` of today's best
