@@ -232,15 +232,33 @@ def sweep_app(port: int) -> list[Result]:
     def box(page: Page, label: str) -> Locator:
         return page.get_by_test_id("stSelectbox").filter(has_text=label).first
 
+    def open_box(page: Page, label: str) -> None:
+        """Open a selectbox's option list.
+
+        A click that lands while the page is still settling, or under the sticky
+        header the browser scrolled the widget beneath, leaves the list closed and
+        no error behind, so the click is retried rather than waited on once.
+        """
+        combobox = box(page, label).get_by_role("combobox")
+        for attempt in range(4):
+            combobox.scroll_into_view_if_needed()
+            combobox.click()
+            try:
+                page.get_by_role("option").first.wait_for(timeout=10_000)
+                return
+            except PlaywrightTimeout:
+                if attempt == 3:
+                    raise
+                page.keyboard.press("Escape")
+
     def select_every_option(page: Page, label: str, name: str, limit: int = 6) -> None:
         """Every option of a selectbox runs different code, so every option is clicked."""
-        box(page, label).get_by_role("combobox").click()
-        page.get_by_role("option").first.wait_for(timeout=30_000)
+        open_box(page, label)
         options = page.get_by_role("option").all_inner_texts()[:limit]
         page.keyboard.press("Escape")
         print(f"  ({len(options)} options under {label!r})")
         for option in options:
-            box(page, label).get_by_role("combobox").click()
+            open_box(page, label)
             page.get_by_role("option", name=option, exact=True).first.click()
             check(page, f"{name}: {option}")
 
