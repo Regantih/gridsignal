@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from gridsignal import demo_numbers
+from gridsignal import demo_numbers, replay
 from gridsignal.drills import available_drills
 from gridsignal.mesh.scenarios import available_scenarios
 
@@ -148,3 +148,13 @@ def test_headline_numbers_in_every_doc_match_the_one_command(pattern: str, claim
                 f"{name} quotes {quoted!r} for {claim}, gridsignal.demo_numbers says {expected!r}"
             )
     assert found, f"no document states the {claim} claim any more"
+
+
+def test_replay_figures_in_the_docs_come_from_the_replay_itself() -> None:
+    """README and JUDGING_MAP quote the full-fleet replay; the run has to still say so."""
+    result = replay.run()
+    for name in ("README.md", "docs/JUDGING_MAP.md"):
+        text = (DOCS.parent / name).read_text()
+        assert f"${result.dollars_recovered:,.0f}" in text
+        assert f"${result.protected_usd_per_fault_minute:,.0f}" in text
+        assert f"{result.phantom_kw_rejected:,.0f} kW" in text

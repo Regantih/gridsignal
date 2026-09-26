@@ -46,6 +46,7 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "pipeline scarcity at fleet scale",
         ("-m", "gridsignal.pipeline", "--scenario", "scarcity", "--devices", "10000"),
     ),
+    ("replay at fleet scale", ("-m", "gridsignal.replay")),
     (
         "rollout bad build",
         ("-m", "gridsignal.rollout", "scenarios/rollout_bad_build.yaml", "--no-trace"),

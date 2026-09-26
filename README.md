@@ -158,6 +158,31 @@ Prices are real cached ERCOT prints; the fleet, the feeder cap and the wear cost
 Tests: `tests/test_control_room.py` (offer, named reasons, reserve floor after offering, a cheap
 window held with the price named, and the per-zone feeder cap).
 
+#### Full-fleet scarcity replay (one demo scene)
+
+A panel under the home-first split replays the whole fleet against the real **2023-09-06
+LZ_HOUSTON** scarcity day and injects three faults inside the price peak at once: the gateway
+firmware ring behind `BAT-042` goes dark, 3% of homes stop reporting, and 12 agents re-publish
+edited cards claiming 480 kW they do not have. One command reproduces it:
+
+```bash
+python -m gridsignal.replay          # 10,000 batteries; --devices to scale down
+```
+
+| 10,000 simulated batteries, real $4,222.48/MWh peak over 1.97 h | Result |
+|---|---:|
+| kW lost to the three faults | 1,638 kW |
+| At risk with no orchestration (the kW never comes back) | $13,618 |
+| Protected after one human approval | $13,618 (100%) |
+| Dollars protected per minute of fault | $3,982 / min (3.4 simulated min) |
+| Spoofed capacity refused on signature | 480 kW, 12 cards |
+| Wall-clock runtime | 0.7 s |
+
+The prices are real cached ERCOT settlement prints; the batteries, the faults and the spoofing
+are simulated. Stale homes are dropped from the commitment rather than assumed good, spoofed
+cards fail their HMAC and never reach the coordinator, and the reassignment itself waits for the
+operator's approval click. Tests: `tests/test_replay.py`.
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
@@ -604,6 +629,7 @@ fleet would detect or respond in the field.
 | Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
 | Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
 | Jev decision round trip | recorded live median | 326 ms (rules fallback: microseconds) |
+| Full-fleet scarcity replay: 3 faults at the peak + recovery (`python -m gridsignal.replay`) | 10,000 devices | ~0.7 s |
 
 ## Deploying to Streamlit Community Cloud
 

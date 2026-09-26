@@ -656,6 +656,34 @@ class ControlRoomEngine:
             ),
         ]
 
+    def inject_stale_telemetry(self, share: float = 0.03) -> float:
+        """A wave of homes stops reporting: their capacity can no longer be counted.
+
+        Simulated. Nothing is known to be wrong with those batteries — the point is
+        that unverifiable capacity must leave the commitment rather than be assumed
+        good. Returns the kW that dropped out.
+        """
+        pool = [d for d in self.mine if d.is_dispatchable]
+        step = max(int(1 / share), 1) if share > 0 else 0
+        hit = pool[::step] if step else []
+        dropped = round(sum(d.assigned_kw for d in hit), 2)
+        for device in hit:
+            device.status = DeviceStatus.OFFLINE
+            device.last_telemetry_s = TELEMETRY_STALE_SECONDS + 41
+            device.assigned_kw = 0.0
+        self._tick(30)
+        self._log(
+            actor="telemetry-monitor",
+            kind="detection",
+            summary=f"Stale telemetry wave: {len(hit):,} homes stopped reporting",
+            detail=(
+                f"No heartbeat for {TELEMETRY_STALE_SECONDS + 41}s (threshold "
+                f"{TELEMETRY_STALE_SECONDS}s). {dropped:,.0f} kW of committed capacity can no "
+                "longer be confirmed and is removed from the commitment rather than assumed."
+            ),
+        )
+        return dropped
+
     # ------------------------------------------------------------------ recovery
 
     @property

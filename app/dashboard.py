@@ -21,6 +21,7 @@ from gridsignal import (
     install,
     member,
     pipeline,
+    replay,
     rollout,
 )
 from gridsignal.backtest import BacktestSummary
@@ -170,6 +171,12 @@ def install_run(path: str) -> install.InstallResult:
     """Replay the install wave joining the mesh during a live event."""
     scenario = install.load_install(path)
     return install.run_install_wave(scenario, trace=install.trace_path(scenario))
+
+
+@st.cache_data(show_spinner=False)
+def replay_run(fleet_size: int) -> replay.ReplayResult:
+    """The full-fleet scarcity replay: three faults at the peak, one approval."""
+    return replay.run(fleet_size)
 
 
 @st.cache_data(show_spinner=False)
@@ -418,6 +425,46 @@ def render_surplus(eng: ControlRoomEngine) -> None:
         f"At ${offer.price_mwh:,.2f}/MWh against a ${eng.offer_floor_usd_mwh():,.2f}/MWh "
         "wear floor. Feeder export caps and member reserve are simulated assumptions; "
         "reproduce with `python -m gridsignal.surplus`."
+    )
+
+
+def render_fleet_replay() -> None:
+    """One scene: 10,000 batteries, the real scarcity day, three faults at the peak."""
+    st.markdown("<div class='gs-kicker'>Full-fleet scarcity replay</div>", True)
+    result = replay_run(replay.FLEET_SIZE)
+    cols = st.columns(4)
+    cols[0].metric("Batteries replayed", f"{result.fleet_size:,}")
+    cols[1].metric("At risk at the peak", f"${result.dollars_at_risk:,.0f}")
+    cols[2].metric(
+        "Protected",
+        f"${result.dollars_recovered:,.0f}",
+        delta=f"${result.dollars_unprotected:,.0f} not recovered",
+        delta_color="off",
+    )
+    cols[3].metric(
+        "Per minute of fault",
+        f"${result.protected_usd_per_fault_minute:,.0f}",
+        delta=f"{result.fault_minutes:.1f} simulated min",
+        delta_color="off",
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"Fault at the peak": f.name, "What happens": f.detail, "kW dropped": round(f.kw)}
+                for f in result.faults
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        f"Real cached ERCOT {result.location} {result.date} settlement prices "
+        f"(${result.price_mwh:,.0f}/MWh across the {result.window_hours:.2f} h peak window); "
+        "the devices, the faults and the spoofed cards are simulated. Without orchestration "
+        f"the {result.kw_lost:,.0f} kW stays lost for the rest of the window. "
+        f"{result.rejected_cards} spoofed cards claiming {result.phantom_kw_rejected:,.0f} kW "
+        f"were refused on signature. {result.runtime_s:.1f}s wall clock; reproduce with "
+        "`python -m gridsignal.replay`."
     )
 
 
@@ -2054,6 +2101,8 @@ def main() -> None:
     render_overview(eng)
     st.divider()
     render_home_first(eng)
+    st.divider()
+    render_fleet_replay()
     st.divider()
     left, right = st.columns([3, 2], gap="large")
     with left:
