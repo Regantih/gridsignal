@@ -27,7 +27,7 @@ from gridsignal import (
     rollout,
 )
 from gridsignal.backtest import BacktestSummary
-from gridsignal.control_room import ControlRoomEngine
+from gridsignal.control_room import ControlRoomEngine, workflow
 from gridsignal.control_room.engine import OWNERS
 from gridsignal.control_room.models import (
     Device,
@@ -862,6 +862,141 @@ def render_audit(eng: ControlRoomEngine) -> None:
             f"<div class='gs-body'>{event.detail}</div></div>",
             unsafe_allow_html=True,
         )
+
+
+STAGE_COLOR = {
+    "detect": "#f59e0b",
+    "diagnose": "#0ea5e9",
+    "approve": "#7c3aed",
+    "reassign": "#2563eb",
+    "recover": "#16a34a",
+}
+
+
+def render_alarm_grouping(eng: ControlRoomEngine) -> None:
+    """What a per-device monitor would page about, and what the operator reads instead."""
+    st.markdown("<div class='gs-kicker'>Alarms grouped into incidents</div>", True)
+    report = workflow.group_alarms(eng.alarms)
+    if not report.alarms:
+        st.markdown(
+            "<div class='gs-card'><div class='gs-body'>No alarms. Trigger the gateway "
+            "failure in Demo Controls to see grouping.</div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+    cols = st.columns(3)
+    cols[0].metric("Raw alarms", f"{report.alarms:,}")
+    cols[1].metric("Incidents to work", f"{report.incidents:,}")
+    cols[2].metric(
+        "Alarms per incident",
+        f"{report.after:,.1f}",
+        delta=f"{report.before:.1f} before grouping",
+        delta_color="off",
+    )
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Gateway ring": g.ring,
+                    "Alarms": g.alarms,
+                    "Devices": len(g.device_ids),
+                    "Symptoms": ", ".join(k.replace("_", " ") for k in g.kinds),
+                    "kW": round(g.kw),
+                }
+                for g in report.groups
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(f"{report.headline}. Reproduce with `python -m gridsignal.workflow`.")
+
+
+def render_timeline(eng: ControlRoomEngine) -> None:
+    """The incident as one story: detect, diagnose, approve, reassign, recover, dollars."""
+    st.markdown("<div class='gs-kicker'>Incident timeline</div>", True)
+    snap = eng.snapshot()
+    incident = snap.incidents[-1] if snap.incidents else None
+    steps = workflow.timeline(eng.audit, incident)
+    if not steps:
+        st.markdown(
+            "<div class='gs-card'><div class='gs-body'>Nothing has happened yet.</div></div>",
+            unsafe_allow_html=True,
+        )
+        return
+    for step in steps:
+        st.markdown(
+            f"<div class='gs-card' style='padding:.6rem .9rem'>"
+            f"{pill(step.stage.upper(), STAGE_COLOR[step.stage])} "
+            f"<span class='gs-kicker'>{step.elapsed} · {step.actor}</span>"
+            f"<div class='gs-title' style='margin:.15rem 0'>{step.summary}</div>"
+            f"<div class='gs-body'>{step.detail}</div></div>",
+            unsafe_allow_html=True,
+        )
+    if incident is not None:
+        st.markdown(
+            f"<div class='gs-card'>{pill('DOLLARS', '#16a34a')}"
+            f"<div class='gs-title' style='margin-top:.35rem'>"
+            f"{usd(f'${incident.dollars_at_risk:,.0f}')} at risk · "
+            f"{usd(f'${incident.dollars_recovered:,.0f}')} recovered</div>"
+            f"<div class='gs-body'>{incident.impact}</div></div>",
+            unsafe_allow_html=True,
+        )
+
+
+def render_override(eng: ControlRoomEngine) -> None:
+    """Any award can be changed by hand — with a reason, and the reason is logged."""
+    st.markdown("<div class='gs-kicker'>Override an award</div>", True)
+    choices = [d for d in eng.devices if d.is_operator_controlled][:25]
+    if not choices:
+        return
+    device_id = st.selectbox(
+        "Battery",
+        [d.device_id for d in choices],
+        format_func=lambda i: f"{i} — {eng.device(i).assigned_kw:,.2f} kW awarded",
+        key="override_device",
+    )
+    kw = st.number_input("New award (kW)", min_value=0.0, step=0.5, value=0.0, key="override_kw")
+    reason = st.text_input("Reason (required, goes in the audit trail)", key="override_reason")
+    if st.button("Override award", key="override_submit"):
+        try:
+            record = eng.override_award(device_id, float(kw), reason)
+        except workflow.OverrideError as exc:
+            st.error(str(exc))
+        else:
+            st.success(
+                f"{record.device_id}: {record.kw_before:,.2f} kW → {record.kw_after:,.2f} kW "
+                f"({record.delta_kw:+,.2f} kW), logged with your reason."
+            )
+    if eng.overrides:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "At": f"{o.at:%H:%M:%S}",
+                        "Battery": o.device_id,
+                        "kW before": o.kw_before,
+                        "kW after": o.kw_after,
+                        "Operator": o.operator,
+                        "Reason": o.reason,
+                    }
+                    for o in eng.overrides
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+
+def render_workflow(eng: ControlRoomEngine) -> None:
+    """One operator surface: grouped alarms, the timeline, and a logged override."""
+    st.subheader("Operator workflow")
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        render_timeline(eng)
+    with right:
+        render_alarm_grouping(eng)
+        render_override(eng)
 
 
 def render_scenario_controls() -> None:
@@ -2295,6 +2430,8 @@ def main() -> None:
         render_dispatch_priority(eng)
         render_incident(eng)
         render_tasks(eng)
+    st.divider()
+    render_workflow(eng)
     st.divider()
     render_audit(eng)
 

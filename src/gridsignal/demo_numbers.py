@@ -17,6 +17,7 @@ from dataclasses import dataclass, replace
 
 from gridsignal import holdout, insight, pipeline
 from gridsignal.control_room import ControlRoomEngine
+from gridsignal.control_room.workflow import group_alarms
 from gridsignal.fleet import FOCUS_DEVICE_ID
 from gridsignal.prices import load_scenario
 from gridsignal.rollout import APPROVAL_ABOVE_SHARE, RING_SHARES, load_rollout, run_rollout
@@ -41,6 +42,7 @@ def control_room_beat(fleet_size: int = DEMO_FLEET) -> Beat:
     target_kw = eng.grid_event.target_kw
     incident = eng.trigger_device_failure(FOCUS_DEVICE_ID)
     at_risk_pct = eng.snapshot().coverage_pct
+    grouped = group_alarms(eng.alarms)
     eng.approve_recovery()
     snap = eng.snapshot()
     return Beat(
@@ -53,6 +55,8 @@ def control_room_beat(fleet_size: int = DEMO_FLEET) -> Beat:
             f"dollars: ${incident.dollars_at_risk:,.0f} at risk, "
             f"${incident.dollars_recovered:,.0f} recovered after one approval, "
             f"coverage back to {snap.coverage_pct:.0f}%",
+            f"operator workflow: {grouped.alarms:,} raw alarms grouped into "
+            f"{grouped.incidents} incident to work",
         ),
     )
 

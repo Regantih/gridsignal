@@ -30,10 +30,18 @@ from gridsignal.control_room.models import (
     Task,
     TaskStatus,
 )
+from gridsignal.control_room.workflow import (
+    CAPACITY_DROPPED,
+    TELEMETRY_LOST,
+    Alarm,
+    OverrideError,
+    OverrideRecord,
+)
 from gridsignal.fleet import (
     DEFAULT_SEED,
     FLEET_SIZE,
     FOCUS_DEVICE_ID,
+    GATEWAY_RING_SIZE,
     UTILITY_PARTNER,
     build_fleet,
     gateway_ring,
@@ -149,6 +157,8 @@ class ControlRoomEngine:
         self._by_id = {d.device_id: d for d in self.devices}
         self.incidents: list[Incident] = []
         self.audit: list[AuditEvent] = []
+        self.alarms: list[Alarm] = []
+        self.overrides: list[OverrideRecord] = []
         self._incident_seq = 0
         self.mine: list[Device] = [d for d in self.devices if d.is_operator_controlled]
         self.grid_event = GridEvent(
@@ -193,6 +203,28 @@ class ControlRoomEngine:
 
     def device(self, device_id: str) -> Device:
         return self._by_id[device_id]
+
+    def _raise_alarms(self, devices: list[Device], lost: dict[str, float]) -> None:
+        """What a per-device monitor would page about: one alarm per device per symptom.
+
+        Grouping these back into incidents is :mod:`gridsignal.control_room.workflow`'s
+        job; the engine only records them as they happen.
+        """
+        for device in devices:
+            ring = int(device.device_id.split("-")[1]) % GATEWAY_RING_SIZE
+            self.alarms.append(
+                Alarm(at=self._clock, device_id=device.device_id, ring=ring, kind=TELEMETRY_LOST)
+            )
+            if lost.get(device.device_id, 0.0) > 0:
+                self.alarms.append(
+                    Alarm(
+                        at=self._clock,
+                        device_id=device.device_id,
+                        ring=ring,
+                        kind=CAPACITY_DROPPED,
+                        kw=lost[device.device_id],
+                    )
+                )
 
     def snapshot(self) -> FleetSnapshot:
         return FleetSnapshot(
@@ -542,6 +574,7 @@ class ControlRoomEngine:
             if self.device(i).is_operator_controlled
         ]
         lost_kw = round(sum(d.assigned_kw for d in ring), 2)
+        lost_by_device = {d.device_id: d.assigned_kw for d in ring}
         self._tick(45)
         window_hours = self.remaining_hours()
         price_mwh = self.remaining_price_mwh()
@@ -550,6 +583,7 @@ class ControlRoomEngine:
             member.status = DeviceStatus.OFFLINE
             member.last_telemetry_s = TELEMETRY_STALE_SECONDS + 18
             member.assigned_kw = 0.0
+        self._raise_alarms(ring, lost_by_device)
         others = (
             ""
             if len(ring) == 1
@@ -666,11 +700,13 @@ class ControlRoomEngine:
         step = max(int(1 / share), 1) if share > 0 else 0
         hit = pool[::step] if step else []
         dropped = round(sum(d.assigned_kw for d in hit), 2)
+        lost_by_device = {d.device_id: d.assigned_kw for d in hit}
         for device in hit:
             device.status = DeviceStatus.OFFLINE
             device.last_telemetry_s = TELEMETRY_STALE_SECONDS + 41
             device.assigned_kw = 0.0
         self._tick(30)
+        self._raise_alarms(hit, lost_by_device)
         self._log(
             actor="telemetry-monitor",
             kind="detection",
@@ -761,6 +797,64 @@ class ControlRoomEngine:
             detail=self.human_summary(),
         )
         return incident
+
+    # ------------------------------------------------------------------ override
+
+    def override_award(
+        self,
+        device_id: str,
+        kw: float,
+        reason: str,
+        operator: str = OWNERS[Role.FLEET_OPERATOR],
+    ) -> OverrideRecord:
+        """Change one battery's award by hand, and require a reason for it.
+
+        The operator has context the engine does not — a member who called in, a
+        street the crew is working on. What they may not do is override the physics:
+        the new award is still capped by the battery's exportable headroom, which
+        already holds the member's backup reserve back, and another tenant's
+        batteries are not theirs to touch. Every override is logged with its reason.
+        """
+        if not reason.strip():
+            raise OverrideError("an override needs a reason; it goes in the audit trail")
+        device = self.device(device_id)
+        if not device.is_operator_controlled:
+            raise OverrideError(f"{device_id} is controlled by {UTILITY_PARTNER}, not ours")
+        if kw < 0:
+            raise OverrideError("an award cannot be negative")
+        headroom = self._headroom_kw(device)
+        if kw > headroom + 1e-9:
+            raise OverrideError(
+                f"{device_id} can export {headroom:.2f} kW at most with the member's "
+                f"backup reserve held back, not {kw:.2f} kW"
+            )
+
+        before = device.assigned_kw
+        device.assigned_kw = round(kw, 2)
+        self._tick(10)
+        record = OverrideRecord(
+            at=self._clock,
+            operator=operator,
+            device_id=device_id,
+            kw_before=before,
+            kw_after=device.assigned_kw,
+            reason=reason.strip(),
+        )
+        self.overrides.append(record)
+        self._log(
+            actor=operator,
+            kind="override",
+            summary=(
+                f"{device_id} award overridden by hand: {before:.2f} kW -> "
+                f"{device.assigned_kw:.2f} kW"
+            ),
+            detail=(
+                f"Reason: {record.reason}. Fleet now commits "
+                f"{self.snapshot().committed_kw:,.0f} kW of a "
+                f"{self.grid_event.target_kw:,.0f} kW target."
+            ),
+        )
+        return record
 
     # ------------------------------------------------------------------ summary
 

@@ -66,6 +66,7 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("simulate every scenario", ("-m", "gridsignal.simulate", "--all")),
     ("surplus", ("-m", "gridsignal.surplus")),
+    ("operator workflow", ("-m", "gridsignal.workflow", "--devices", "10000", "--stale-wave")),
     ("jev.evaluate", ("-m", "gridsignal.jev.evaluate")),
     ("jev.record (no key)", ("-m", "gridsignal.jev.record")),
 )
@@ -249,6 +250,12 @@ def sweep_app(port: int) -> list[Result]:
             page.get_by_text("Use online map tiles", exact=False).first.click()
             check(page, f"Control Room: online map tiles {state}")
         select_every_option(page, "Discharge first", "Control Room: congestion priority")
+        # The override form: the refused path (no reason) and the accepted one.
+        click(page, "Override award", "Control Room: override with no reason")
+        page.get_by_label("Reason (required, goes in the audit trail)").fill(
+            "sweep: hold this battery back"
+        )
+        click(page, "Override award", "Control Room: override award")
         open_every_expander(page, "Control Room")
         click(page, "Reset Demo", "Control Room: reset")
 

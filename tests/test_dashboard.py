@@ -205,3 +205,27 @@ def test_the_member_app_does_not_claim_protection_while_contact_is_lost() -> Non
     assert "cannot confirm" in text
     labels = " ".join(m.label for m in app.metric)
     assert "last reported" in labels
+
+
+def test_control_room_shows_the_timeline_and_logs_an_override_with_its_reason() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    next(b for b in app.button if "Trigger" in b.label).click().run()
+    next(b for b in app.button if "Approve Recovery" in b.label).click().run()
+    assert not app.exception, app.exception
+
+    text = markdown_text(app)
+    for stage in ("DETECT", "DIAGNOSE", "REASSIGN", "RECOVER", "DOLLARS"):
+        assert stage in text
+    assert "raw alarms grouped into" in text
+
+    override = next(b for b in app.button if b.label == "Override award")
+    override.click().run()
+    assert app.error and "reason" in app.error[0].value
+
+    app.text_input("override_reason").set_value("crew on the street").run()
+    next(b for b in app.button if b.label == "Override award").click().run()
+    assert not app.exception, app.exception
+    assert any("logged with your reason" in s.value for s in app.success)
+    logged = [df.value for df in app.dataframe if "Reason" in df.value.columns]
+    assert logged and "crew on the street" in set(logged[0]["Reason"])

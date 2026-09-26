@@ -269,6 +269,34 @@ low count is the honest finding — the bid filter already keeps most awards del
 the check catches the case it structurally misses, the second award. Everything here is a
 simulated fleet on bundled ERCOT prices. Tests: `tests/test_deliverability.py`.
 
+#### Operator workflow: one incident, not a wall of alarms
+
+A gateway ring going dark is one event, but a per-device monitor pages about it once per
+device per symptom. **Control Room → Operator workflow** turns that back into work an
+operator can actually do:
+
+- **Grouped alarms.** Alarms are grouped by the thing that failed — one gateway ring,
+  within a two-minute window — so a second failure on the same ring later is still its own
+  incident and is never hidden inside the first.
+- **One timeline.** The append-only audit trail is read out as the stages an operator
+  cares about: detect → diagnose → approve → reassign → recover, timed from detection,
+  with the dollars at risk and recovered at the end.
+- **Override any award, with a reason.** The operator can change any battery's award by
+  hand; the reason is required and is written into the same audit trail. What they cannot
+  override is the physics or the tenant boundary: the new award is still capped by
+  exportable headroom above the member's backup reserve, and a battery the partner utility
+  controls is refused.
+
+```bash
+python -m gridsignal.workflow --devices 10000 --stale-wave   # grouping, timeline, logged override
+```
+
+At 10,000 simulated devices, the dark ring raises **332 raw alarms from 166 batteries**
+(telemetry lost, capacity dropped) that group into **1 incident** — 332 alarms per incident
+read as one, instead of 332 pages. Add a fleet-wide stale-telemetry wave and the same
+grouping gives **808 alarms → 48 incidents (16.8 per incident)**, one per affected ring,
+rather than one per alarm. Tests: `tests/test_workflow.py`.
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
