@@ -13,10 +13,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from gridsignal import (
+    ancillary,
     congestion,
     drills,
     holdout,
     home,
+    ingest,
     insight,
     install,
     member,
@@ -171,6 +173,17 @@ def install_run(path: str) -> install.InstallResult:
     """Replay the install wave joining the mesh during a live event."""
     scenario = install.load_install(path)
     return install.run_install_wave(scenario, trace=install.trace_path(scenario))
+
+
+@st.cache_data(show_spinner=False)
+def ancillary_day() -> ancillary.DayValue:
+    """The scarcity day split between energy and ancillary for one Base Core-style unit."""
+    return ancillary.scarcity_day(ancillary.BASE_CORE)
+
+
+@st.cache_data(show_spinner=False)
+def ancillary_holdout() -> ancillary.SplitSummary:
+    return ancillary.holdout_summary(ancillary.BASE_CORE)
 
 
 @st.cache_data(show_spinner=False)
@@ -1630,6 +1643,93 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
     )
 
 
+def render_ancillary(fleet_size: int) -> None:
+    """What the same battery earns for capacity it never has to move."""
+    scarcity = ancillary_day()
+    summary = ancillary_holdout()
+    meta = ancillary.as_provenance(ancillary._trace_path(signals_run("scarcity").trace))
+
+    st.subheader("Ancillary co-optimization: energy and capacity from one battery")
+    st.markdown(
+        "<div class='gs-card gs-insight'>"
+        "<div class='gs-kicker'>Capacity nobody is selling</div>"
+        f"<div class='gs-huge'>${summary.mean_uplift_usd:,.2f}</div>"
+        "<div class='gs-lead'>per battery per held-out day, on top of energy</div>"
+        f"<div class='gs-body'>{ancillary.headline(summary)}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(4)
+    cols[0].metric(
+        "Scarcity day, energy",
+        f"${scarcity.energy_usd:,.2f}",
+        delta="per battery",
+        delta_color="off",
+    )
+    cols[1].metric(
+        "Scarcity day, ancillary",
+        f"${scarcity.ancillary_usd:,.2f}",
+        delta=f"+{scarcity.uplift_usd:,.2f} vs energy alone",
+    )
+    cols[2].metric(
+        "Held-out fleet uplift",
+        f"${summary.fleet_usd(fleet_size):,.0f}/day",
+        delta=f"{fleet_size:,} simulated batteries",
+        delta_color="off",
+    )
+    cols[3].metric(
+        "Backup reserve violations",
+        f"{summary.reserve_violations}",
+        delta=f"{summary.days} held-out days",
+        delta_color="off",
+    )
+
+    split = pd.DataFrame(
+        [
+            {"Product": product.label, "Held-out $": summary.by_product[product.key]}
+            for product in ancillary.PRODUCTS
+        ]
+    )
+    left, right = st.columns([2, 3], gap="large")
+    with left:
+        st.dataframe(
+            split.style.format({"Held-out $": "{:,.2f}"}), hide_index=True, use_container_width=True
+        )
+    with right:
+        awards = pd.DataFrame(
+            [
+                {
+                    "Hour": f"{a.hour:02d}:00",
+                    "Product": next(p.label for p in ancillary.PRODUCTS if p.key == a.product),
+                    "kW": a.kw,
+                    "$/MW-h": a.price_mw_h,
+                    "$": a.usd,
+                }
+                for a in scarcity.awards
+            ]
+        )
+        st.dataframe(
+            awards.style.format({"kW": "{:,.2f}", "$/MW-h": "{:,.2f}", "$": "{:,.2f}"}),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(f"{scarcity.battery}, {scarcity.date}: every hour it sold capacity.")
+
+    st.caption(
+        usd(
+            "Real ERCOT day-ahead ancillary clearing prices "
+            f"({meta.get('source', ingest.AS_SOURCE_URL)}, fetched "
+            f"{meta.get('fetched_at', 'n/a')[:10]}), in "
+            f"{meta.get('units', '$/MW per hour of capacity held')}. Capacity payments only: "
+            "deployment energy is not modelled, and every battery, load profile and award is "
+            "simulated. An award is only offered when the state of charge can sustain it for "
+            "the product's full duration above the member's backup reserve. "
+            "Reproduce: python -m gridsignal.ancillary"
+        )
+    )
+
+
 def render_grid_signals(scenario: str, fleet_size: int) -> None:
     """Spike detection, spike forecast, dispatch signals and what they were worth."""
     result = signals_run(scenario)
@@ -1637,6 +1737,7 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     trace = result.trace
 
     render_insight()
+    render_ancillary(fleet_size)
 
     st.subheader("Backtest: GridSignal vs. a naive fixed schedule")
     render_headline(summary, trace.date, fleet_size)

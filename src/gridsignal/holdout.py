@@ -15,7 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from gridsignal import backtest, dam, detect, forecast, paths
-from gridsignal.prices import DAM_SUFFIX, PriceTrace, load_price_trace
+from gridsignal.prices import AS_SUFFIX, DAM_SUFFIX, PriceTrace, load_price_trace
 
 DATA_DIR = paths.DATA_DIR
 HOLDOUT_DIR = DATA_DIR / "holdout"
@@ -27,9 +27,14 @@ def slug_for(date: str) -> str:
 
 
 def rtm_paths(directory: Path) -> list[Path]:
-    """Real-time traces in a split directory, oldest first (day-ahead siblings skipped)."""
+    """Real-time traces in a split directory, oldest first.
+
+    Day-ahead and ancillary siblings live next to each trace under the same prefix and
+    are not days of their own.
+    """
+    siblings = (DAM_SUFFIX, AS_SUFFIX)
     return sorted(
-        p for p in directory.glob("lz_houston_rtm_spp_*.parquet") if not p.stem.endswith(DAM_SUFFIX)
+        p for p in directory.glob("lz_houston_rtm_spp_*.parquet") if not p.stem.endswith(siblings)
     )
 
 

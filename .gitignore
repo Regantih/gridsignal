@@ -12,6 +12,8 @@ data/processed/*
 !data/processed/*_sample.json
 !data/processed/*_sample_dam.parquet
 !data/processed/*_sample_dam.json
+!data/processed/*_sample_as.parquet
+!data/processed/*_sample_as.json
 .streamlit/secrets.toml
 .DS_Store
 data/traces/

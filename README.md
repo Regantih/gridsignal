@@ -183,6 +183,39 @@ are simulated. Stale homes are dropped from the commitment rather than assumed g
 cards fail their HMAC and never reach the coordinator, and the reassignment itself waits for the
 operator's approval click. Tests: `tests/test_replay.py`.
 
+#### Ancillary co-optimization (energy and capacity from one battery)
+
+A home battery spends most of the day holding still. ERCOT pays for that: five day-ahead
+ancillary products buy the *ability* to move, not the movement. GridSignal sells the capacity the
+energy plan leaves idle, subject to the same backup reserve and to a deliverability rule — an
+award is only offered when the state of charge can sustain it for the product's full duration
+(Reg Up/RRS 1 h, ECRS 2 h, Non-Spin 4 h) above the member's reserve, and only one product is sold
+per hour so no kW is promised twice. Where day-ahead capacity pays more than the day-ahead energy
+curve, the export is withheld and the energy is rented instead; both prices are published before
+the trade day, so nothing here uses hindsight.
+
+```bash
+python -m gridsignal.ancillary       # real ERCOT AS clearing prices, simulated battery
+```
+
+| 7 held-out days, per battery per day | Legacy 13.5 kWh / 5 kW | Base Core-style 40 kWh / 20 kW |
+|---|---:|---:|
+| Energy (home-first, as scored before) | −$0.06 | $2.61 |
+| Ancillary capacity | $0.88 | $3.59 |
+| Uplift over energy alone | +$0.88 | +$3.59 |
+| Backup reserve violations | 0 | 0 |
+
+On the 2023-09-06 scarcity day the Base Core-style unit earns $88.44 of energy plus $27.76 of
+capacity ($116.20 total). Scaled to 10,000 simulated batteries the held-out uplift is
+$35,900/day — but the honest headline is **which** product pays: 88% of it is **Reg Down**, money
+for having room to charge, not energy to sell. The hours that clear highest for reserves are the
+scarcity evenings, and that is exactly when a home battery has already emptied itself into the
+price spike and has nothing left to pledge.
+
+Prices are real ERCOT day-ahead clearing prices; capacity payments only (deployment energy is not
+modelled), and every battery, load profile and award is simulated. Tests:
+`tests/test_ancillary.py`.
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
@@ -797,6 +830,7 @@ Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal
 | Tuning days | same ERCOT sources via `gridstatus` | **Real data.** Six LZ_HOUSTON REAL_TIME_15_MIN days under `data/tuning/`, chosen by the quantile rule in `scripts/fetch_tuning.py` so they never collide with the held-out dates. These plus the two scenario days are the only days any parameter may be fitted on; refresh with `python scripts/fetch_tuning.py` |
 | Day-ahead settlement point prices | ERCOT MIS [NP4-190-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD) and the DAM historical archive via `gridstatus` | **Real data.** LZ_HOUSTON, DAY_AHEAD_HOURLY, 24 hours for every bundled trade date, cached beside each real-time trace as `*_dam.parquet` with a sidecar `*_dam.json`; refresh with `python scripts/fetch_dam.py`. DAM results clear the afternoon **before** the trade day, which is why the plan may use them |
 | All-zone settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report and [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** All eight load zones (`LZ_WEST`, `LZ_NORTH`, `LZ_HOUSTON`, `LZ_SOUTH`, `LZ_AEN`, `LZ_CPS`, `LZ_LCRA`, `LZ_RAYBN`) plus the hub average `HB_HUBAVG`, REAL_TIME_15_MIN, 96 intervals for each of the same 15 bundled trade dates. One file per date under `data/zones/zones_rtm_spp_<YYYYMMDD>.parquet` with a sidecar `.json` carrying market, locations, date, source and `fetched_at`; refresh with `python scripts/fetch_zones.py` |
+| Ancillary clearing prices | ERCOT MIS [NP4-188-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-188-CD) daily DAM clearing prices for capacity and the [NP4-181-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER) historical annual archive (report type 13091) via `gridstatus`, public and credential-free | **Real data.** ERCOT system-wide Reg Up, Reg Down, RRS, ECRS and Non-Spin, DAM hourly, 24 hours for every bundled trade date, in $/MW per hour of capacity held. Cached beside each real-time trace as `*_as.parquet` with a sidecar `*_as.json` carrying market, location, date, source URL, `fetched_at`, products and units; refresh with `python scripts/fetch_as_prices.py`. ECRS did not exist before 2023-06-10, so it is zero on earlier dates rather than imputed |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still

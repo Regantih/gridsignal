@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import zipfile
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
+import requests
 
 from gridsignal import paths
 
@@ -28,6 +31,31 @@ SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP6
 # The daily MIS report above only retains about a week, so scarcity days come from the
 # historical RTM settlement point price archive.
 HISTORICAL_SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER"
+
+# Ancillary service market clearing prices for capacity, cleared in the day-ahead market.
+AS_MARKET = "DAM_ANCILLARY"
+AS_SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP4-188-CD"
+# The daily report keeps about a month; older trade dates come from the yearly archive.
+AS_HISTORICAL_SOURCE_URL = (
+    "https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER"
+)
+AS_HISTORICAL_REPORT_ID = 13091
+#: ERCOT ancillary products, keyed by the column name this repo uses.
+AS_PRODUCTS = ("regup", "regdn", "rrs", "ecrs", "nonspin")
+_AS_DAILY_COLUMNS = {
+    "Regulation Up": "regup",
+    "Regulation Down": "regdn",
+    "Responsive Reserves": "rrs",
+    "ERCOT Contingency Reserve Service": "ecrs",
+    "Non-Spinning Reserves": "nonspin",
+}
+_AS_ARCHIVE_COLUMNS = {
+    "REGUP": "regup",
+    "REGDN": "regdn",
+    "RRS": "rrs",
+    "ECRS": "ecrs",
+    "NSPIN": "nonspin",
+}
 
 
 class MissingDependencyError(RuntimeError):
@@ -156,6 +184,89 @@ def fetch_scarcity_day(
     days = frame["interval_start"].dt.date
     peak_day = days[frame["spp"].idxmax()]
     return str(peak_day), frame[days == peak_day].reset_index(drop=True)
+
+
+def normalize_as_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """Tidy ancillary clearing prices to ``interval_start`` plus one column per product.
+
+    Prices are $/MW per hour of capacity held. ECRS only exists from June 2023, so its
+    column is zero-filled on earlier days rather than dropped.
+    """
+    frame = df.copy()
+    for column in AS_PRODUCTS:
+        if column not in frame:
+            frame[column] = 0.0
+    frame["interval_start"] = pd.to_datetime(frame["interval_start"]).dt.tz_localize(None)
+    frame[list(AS_PRODUCTS)] = (
+        frame[list(AS_PRODUCTS)].apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    )
+    return (
+        frame[["interval_start", *AS_PRODUCTS]]
+        .groupby("interval_start", as_index=False)
+        .mean()
+        .round(2)
+        .sort_values("interval_start")
+        .reset_index(drop=True)
+    )
+
+
+def fetch_as_prices(date: str) -> pd.DataFrame:
+    """Day-ahead ancillary clearing prices for one recent trade date (public MIS report)."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_as_prices(date=date)
+    if raw.empty:
+        raise ValueError(f"no ancillary clearing prices published for {date}")
+    return normalize_as_prices(
+        raw.rename(columns={"Interval Start": "interval_start", **_AS_DAILY_COLUMNS})
+    )
+
+
+def fetch_as_year(year: int) -> pd.DataFrame:
+    """A whole year of ancillary clearing prices from ERCOT's historical archive."""
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    doc = gridstatus.Ercot()._get_document(  # noqa: SLF001 - no public historical AS helper
+        report_type_id=AS_HISTORICAL_REPORT_ID,
+        constructed_name_contains=f"{year}.zip",
+    )
+
+    payload = requests.get(doc.url, timeout=180)
+    payload.raise_for_status()
+    archive = zipfile.ZipFile(io.BytesIO(payload.content))
+    raw = pd.read_csv(io.BytesIO(archive.read(archive.namelist()[0])))
+    raw.columns = [c.strip() for c in raw.columns]
+    # "Hour Ending" is 01:00..24:00 local, so the interval starts an hour earlier.
+    hour_end = raw["Hour Ending"].astype(str).str.slice(0, 2).astype(int)
+    raw["interval_start"] = pd.to_datetime(
+        raw["Delivery Date"], format="%m/%d/%Y"
+    ) + pd.to_timedelta(hour_end - 1, unit="h")
+    return normalize_as_prices(raw.rename(columns=_AS_ARCHIVE_COLUMNS))
+
+
+def save_as_prices(df: pd.DataFrame, date: str, path: Path, source: str) -> Path:
+    """Cache one day of ancillary clearing prices with a provenance sidecar."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_parquet(path, index=False)
+    path.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "location": "ERCOT system-wide",
+                "market": AS_MARKET,
+                "date": date,
+                "source": source,
+                "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
+                "intervals": int(len(df)),
+                "products": list(AS_PRODUCTS),
+                "units": "$/MW per hour of capacity held",
+            },
+            indent=2,
+        )
+        + "\n"
+    )
+    return path
 
 
 def fetch_load(start: str, end: str) -> pd.DataFrame:
