@@ -207,6 +207,7 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
     home_first = holdout.summarize(holdout.evaluate())
     run = replay.run(fleet_size=fleet_size)
     split = ancillary.holdout_summary(ANCILLARY_UNIT)
+    unrestricted = ancillary.holdout_summary(ANCILLARY_UNIT, rules=ancillary.ALL_PRODUCTS)
     top_day, top_share = split.top_day_share
     legacy = next(
         r
@@ -243,12 +244,15 @@ def evidence_section(fleet_size: int = DEMO_FLEET) -> Section:
                 "python -m gridsignal.replay",
             ),
             Claim(
-                "Ancillary value is real but concentrated",
+                "Ancillary value is real, concentrated, and capped by the pilot rules",
                 f"median ${split.median_uplift_usd:,.2f} per battery per day",
-                f"On a {split.battery} the mean is ${split.mean_uplift_usd:,.2f}; "
-                f"{top_day} alone carries "
-                f"{top_share:.0%} of the total uplift across {split.days} held-out "
-                f"days. Quote the median, not the mean.",
+                f"On a {split.battery} bidding only what ERCOT's ADER pilot allows an "
+                f"aggregation of home batteries to sell (ECRS and Non-Spin, 90 MW each "
+                f"per QSE) the mean is ${split.mean_uplift_usd:,.2f} and {top_day} alone "
+                f"carries {top_share:.0%} of the total across {split.days} held-out days. "
+                f"Unrestricted the same days pay a median of "
+                f"${unrestricted.median_uplift_usd:,.2f} \u2014 a comparison, not an offer: "
+                f"Reg Down is where that money is and an ADER may not sell it.",
                 "python -m gridsignal.ancillary",
             ),
             Claim(
@@ -310,10 +314,12 @@ def limits(fleet_size: int = DEMO_FLEET) -> tuple[str, ...]:
     if flag is not None:
         out.insert(
             3,
-            f"Offers are priced as a price taker. At {fleet_size:,} batteries the Reg "
-            f"Down offer is {flag.fleet_mw:,.0f} MW against {flag.procured_mw:,.0f} MW "
-            f"ERCOT published for {flag.date}: {flag.share:.0%} of the product, so "
-            f"treat the ancillary dollars as an upper bound.",
+            f"Offers are priced as a price taker. In the unrestricted comparison a "
+            f"{fleet_size:,}-battery Reg Down offer is {flag.fleet_mw:,.0f} MW against "
+            f"{flag.procured_mw:,.0f} MW ERCOT published for {flag.date}: "
+            f"{flag.share:.0%} of the product. The pilot-restricted offer is held to "
+            f"90 MW per product by the governing document, and either way the "
+            f"ancillary dollars are an upper bound.",
         )
     return tuple(out)
 

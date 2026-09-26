@@ -266,6 +266,12 @@ def ancillary_holdout() -> ancillary.SplitSummary:
 
 
 @st.cache_data(show_spinner=False)
+def ancillary_unrestricted() -> ancillary.SplitSummary:
+    """The same days scored against all five products: a comparison, never the claim."""
+    return ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
+
+
+@st.cache_data(show_spinner=False)
 def replay_run(fleet_size: int) -> replay.ReplayResult:
     """The full-fleet scarcity replay: three faults at the peak, one approval."""
     return replay.run(fleet_size)
@@ -2145,7 +2151,7 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
 
 
 def _price_taker_note(fleet_size: int) -> str:
-    """How the simulated fleet's Reg Down offer sizes up against what ERCOT procures."""
+    """How the unrestricted comparison's Reg Down offer sizes up against ERCOT's plan."""
     flag = ancillary.procurement_flag(devices=fleet_size)
     if flag is None:
         return (
@@ -2154,7 +2160,8 @@ def _price_taker_note(fleet_size: int) -> str:
             "is an upper bound."
         )
     return (
-        f"Price-taker check: {fleet_size:,} simulated batteries would offer "
+        f"Price-taker check on the unrestricted comparison: {fleet_size:,} simulated "
+        f"batteries would offer "
         f"{flag.fleet_mw:,.0f} MW into Reg Down against {flag.procured_mw:,.0f} MW ERCOT "
         f"procured in that hour on {flag.date} ({flag.share:.0%}), so a fleet this size would "
         "move the price it is paid; fleet dollars are an upper bound, not a forecast."
@@ -2165,20 +2172,30 @@ def render_ancillary(fleet_size: int) -> None:
     """What the same battery earns for capacity it never has to move."""
     scarcity = ancillary_day()
     summary = ancillary_holdout()
+    unrestricted = ancillary_unrestricted()
     meta = ancillary.as_provenance(ancillary._trace_path(signals_run("scarcity").trace))
+    caps = ancillary.pilot_cap_kw(devices=fleet_size)
 
     st.subheader("Ancillary co-optimization: energy and capacity from one battery")
     st.markdown(
         "<div class='gs-card gs-insight'>"
         "<div class='gs-kicker'>Capacity nobody is selling</div>"
-        f"<div class='gs-huge'>${summary.mean_uplift_usd:,.2f}</div>"
-        "<div class='gs-lead'>per battery per held-out day, on top of energy</div>"
-        f"<div class='gs-body'>{ancillary.headline(summary)}</div>"
+        f"<div class='gs-huge'>${summary.median_uplift_usd:,.2f}</div>"
+        "<div class='gs-lead'>median held-out day per battery, inside the ADER pilot rules</div>"
+        f"<div class='gs-body'>{ancillary.headline(summary, unrestricted)}</div>"
         "</div>",
         unsafe_allow_html=True,
     )
+    caption(
+        f"Offers are restricted to what ERCOT's {ancillary.ADER_PILOT.name} allows an "
+        f"aggregation of home batteries to sell: ECRS and Non-Spin only, "
+        f"{ancillary.ADER_PILOT.system_mw['ecrs']:,.0f} MW each system-wide with no QSE above "
+        f"{ancillary.ADER_PILOT.qse_share:.0%} of that, which is "
+        f"{caps['ecrs']:,.1f} kW per battery across {fleet_size:,} "
+        f"batteries (governing document, 3 Jun 2026: {ancillary.ADER_PILOT.source})."
+    )
 
-    cols = st.columns(4)
+    cols = st.columns(5)
     metric(
         cols[0],
         "Scarcity day, energy",
@@ -2199,6 +2216,12 @@ def render_ancillary(fleet_size: int) -> None:
     )
     metric(
         cols[3],
+        "Outside the pilot rules",
+        money(unrestricted.median_uplift_usd),
+        note=f"comparison only: all five products, mean ${unrestricted.mean_uplift_usd:,.2f}",
+    )
+    metric(
+        cols[4],
         "Backup reserve violations",
         f"{summary.reserve_violations}",
         note=f"{summary.days} held-out days",
@@ -2206,27 +2229,37 @@ def render_ancillary(fleet_size: int) -> None:
 
     split = pd.DataFrame(
         [
-            {"Product": product.label, "Held-out $": summary.by_product[product.key]}
+            {
+                "Product": product.label,
+                "Allowed": "yes" if ancillary.ADER_PILOT.allows(product) else "no",
+                "Held-out $": summary.by_product[product.key],
+                "Held-out $, unrestricted": unrestricted.by_product[product.key],
+            }
             for product in ancillary.PRODUCTS
         ]
     )
     left, right = st.columns([2, 3], gap="large")
     with left:
         st.dataframe(
-            split.style.format({"Held-out $": "{:,.2f}"}), hide_index=True, use_container_width=True
+            split.style.format({"Held-out $": "{:,.2f}", "Held-out $, unrestricted": "{:,.2f}"}),
+            hide_index=True,
+            use_container_width=True,
         )
         per_day = pd.DataFrame(
             [
                 {
                     "Held-out day": day.date,
                     "Uplift $": day.uplift_usd,
-                    "Reg Down $": day.by_product["regdn"],
+                    "ECRS $": day.by_product["ecrs"],
+                    "Non-Spin $": day.by_product["nonspin"],
                 }
                 for day in sorted(summary.per_day, key=lambda d: d.date)
             ]
         )
         st.dataframe(
-            per_day.style.format({"Uplift $": "{:,.2f}", "Reg Down $": "{:,.2f}"}),
+            per_day.style.format(
+                {"Uplift $": "{:,.2f}", "ECRS $": "{:,.2f}", "Non-Spin $": "{:,.2f}"}
+            ),
             hide_index=True,
             use_container_width=True,
         )

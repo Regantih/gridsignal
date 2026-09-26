@@ -47,6 +47,50 @@ def test_co_optimization_never_sells_the_member_backup(scarcity):
         assert day.reserve_violations == 0
 
 
+def test_only_the_products_the_ader_pilot_allows_are_offered(scarcity):
+    """Phase 3.3 lets an aggregation of home batteries sell ECRS and Non-Spin, nothing else."""
+    assert ancillary.ADER_PILOT.products == ("ecrs", "nonspin")
+    for battery in (ancillary.LEGACY, ancillary.BASE_CORE):
+        day = ancillary.co_optimize(scarcity, battery)
+        assert day.rules == ancillary.ADER_PILOT.name
+        assert {a.product for a in day.awards} <= set(ancillary.ADER_PILOT.products)
+    unrestricted = ancillary.co_optimize(
+        scarcity, ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS
+    )
+    assert {a.product for a in unrestricted.awards} - set(ancillary.ADER_PILOT.products)
+
+
+def test_no_offer_exceeds_the_per_qse_mw_cap_shared_across_the_fleet(scarcity):
+    """100 MW system-wide per product, no QSE above 90% of it, split over the fleet."""
+    caps = ancillary.pilot_cap_kw()
+    assert caps == {"ecrs": 9.0, "nonspin": 9.0}
+    for devices in (1_000, 10_000):
+        day = ancillary.co_optimize(scarcity, ancillary.BASE_CORE, devices=devices)
+        cap_kw = ancillary.ADER_PILOT.per_battery_kw("ecrs", devices)
+        assert all(a.kw <= cap_kw + 1e-9 for a in day.awards)
+        fleet_mw = max((a.kw for a in day.awards), default=0.0) * devices / 1000.0
+        assert fleet_mw <= ancillary.ADER_PILOT.qse_cap_mw("ecrs") + 1e-6
+
+
+def test_the_pilot_caps_cost_most_of_the_unrestricted_value():
+    """The honest finding: the product that pays is the one an ADER may not offer."""
+    restricted = ancillary.holdout_summary(ancillary.BASE_CORE)
+    unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
+    assert restricted.median_uplift_usd < unrestricted.median_uplift_usd
+    assert restricted.by_product["regdn"] == 0.0
+    assert unrestricted.by_product["regdn"] > 0.5 * sum(unrestricted.by_product.values())
+
+
+def test_the_day_ercot_reserves_cleared_high_is_rescored_inside_the_rules():
+    """2024-05-08 carried the old headline; under the pilot rules it is ECRS and Non-Spin."""
+    summary = ancillary.holdout_summary(ancillary.BASE_CORE)
+    day = next(d for d in summary.per_day if d.date == "2024-05-08")
+    assert {a.product for a in day.awards} <= {"ecrs", "nonspin"}
+    assert day.by_product["ecrs"] > 0
+    assert day.uplift_usd > summary.median_uplift_usd
+    assert summary.top_day_share[0] == "2024-05-08"
+
+
 def test_awards_respect_the_inverter(scarcity):
     for battery in (ancillary.LEGACY, ancillary.BASE_CORE):
         day = ancillary.co_optimize(scarcity, battery)
@@ -89,7 +133,7 @@ def test_a_product_is_only_bid_when_its_duration_can_be_met():
     battery = ancillary.Battery("Tiny unit", kwh=5.0, power_kw=5.0)
     row = pd.Series({"regup": 0.0, "rrs": 0.0, "ecrs": 0.0, "nonspin": 100.0, "regdn": 0.0})
     best = ancillary._best_product(
-        row, battery, sellable_kwh=4.0, headroom_kwh=0.0, available_kw=5.0
+        row, battery, sellable_kwh=4.0, headroom_kwh=0.0, available_kw=5.0, devices=1
     )
     assert best is not None
     product, kw, _ = best
@@ -115,9 +159,10 @@ def test_co_optimization_is_deterministic(scarcity):
 def test_cli_reports_the_source_and_the_split(capsys):
     assert ancillary.main() == 0
     out = capsys.readouterr().out
-    assert "ercot.com" in out
+    assert "ercot.com/mktrules/pilots/ader" in out
     assert "backup reserve violations: 0" in out
-    assert "Reg Down" in out
+    assert "Offers restricted to the ERCOT ADER pilot" in out
+    assert "Comparison only, NOT available to an ADER" in out
 
 
 def test_the_mean_is_reported_next_to_the_median_it_hides():
@@ -129,14 +174,19 @@ def test_the_mean_is_reported_next_to_the_median_it_hides():
     assert summary.median_uplift_usd < summary.mean_uplift_usd
 
 
-def test_the_headline_names_the_day_that_carries_the_value():
+def test_the_headline_leads_with_the_median_and_labels_the_unrestricted_number():
     summary = ancillary.holdout_summary(ancillary.BASE_CORE)
+    unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
     date, share = summary.top_day_share
     assert share > 0.5
-    text = ancillary.headline(summary)
+    text = ancillary.headline(summary, unrestricted)
     assert date in text
-    assert "concentrated in rare days" in text
-    assert f"{summary.median_uplift_usd:,.2f}" in text
+    median = f"${summary.median_uplift_usd:,.2f}"
+    mean = f"${summary.mean_uplift_usd:,.2f}"
+    assert text.index(median) < text.index(mean)
+    assert "rare-day money" in text
+    assert text.index("ADER pilot rules") < text.index("all five products")
+    assert f"${unrestricted.median_uplift_usd:,.2f}" in text
 
 
 def test_a_median_of_an_even_number_of_days_averages_the_middle_pair():
@@ -176,5 +226,6 @@ def test_cli_prints_the_per_day_split_and_the_price_taker_check(capsys):
     out = capsys.readouterr().out
     assert "uplift per held-out day" in out
     assert "median day" in out
-    assert "Price-taker check" in out
+    assert "Pilot registration check" in out
+    assert "Price-taker check on the unrestricted comparison" in out
     assert "upper bound" in out

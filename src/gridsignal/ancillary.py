@@ -8,9 +8,17 @@ provenance sidecar. Everything the battery does with them is simulated.
 The energy leg is the frozen signal policy from :mod:`gridsignal.dam` — unchanged, so
 the held-out scoring stays comparable. Ancillary bids then take the inverter capacity
 that plan leaves idle, and outbid the export when the capacity price beats the energy
-price for that hour. Two constraints are hard: the member's backup reserve is never
-offered, and a product is only bid when the battery could actually sustain it for the
-product's duration.
+price for that hour. Three constraints are hard: the member's backup reserve is never
+offered, a product is only bid when the battery could actually sustain it for the
+product's duration, and — the default — the offer stays inside the rules of ERCOT's
+ADER pilot, which is the only route an aggregation of home batteries has into these
+markets today.
+
+The pilot rules are read off the governing document, not assumed; see :data:`ADER_PILOT`
+for the clauses and the link. An aggregation of home batteries may sell ECRS and
+Non-Spin and nothing else, under system-wide caps. Scoring the same days against all
+five products is kept as a clearly labelled comparison, because it is what the pilot
+rules cost: the products a home battery is *not* allowed to sell are where the money was.
 
 Simulation assumptions, documented because they set the numbers:
 
@@ -48,6 +56,9 @@ FLEET_DEVICES = 10_000
 AS_PLAN_DIR = DATA_DIR / "as_plan"
 #: Above this share of a product's procured MW, calling the fleet a price taker is not honest.
 PRICE_TAKER_SHARE = 0.05
+#: ERCOT's ADER pilot page, where the governing document and the AS qualification
+#: procedure below are published.
+ADER_PILOT_URL = "https://www.ercot.com/mktrules/pilots/ader"
 
 
 @dataclass(frozen=True)
@@ -62,12 +73,82 @@ class Product:
     sustain_h: float
 
 
+@dataclass(frozen=True)
+class PilotRules:
+    """The market rules an aggregation of home batteries has to bid inside.
+
+    Quoted from ERCOT's *ADER Pilot Project Governing Document Phase 3.3* (3 Jun 2026)
+    and the *ADER Telemetry Validation, SCED and AS Qualification Procedure 3.0*
+    (27 Feb 2026), both at :data:`ADER_PILOT_URL`. Nothing here is modelled: these are
+    the numbers in the document.
+    """
+
+    name: str
+    #: Product keys this aggregation may offer.
+    products: tuple[str, ...]
+    #: System-wide MW cap per product across every ADER in the pilot.
+    system_mw: dict[str, float]
+    #: Share of a system-wide cap one QSE may register (Phase 3.3 §3: "no QSE will be
+    #: allowed to register more than 90% of these system-wide limits").
+    qse_share: float
+    #: System-wide cap on registered ADER capacity, all products.
+    registered_system_mw: float
+    #: Smallest aggregation the pilot accepts, and the largest single premise.
+    min_aggregation_kw: float
+    max_premise_kw: float
+    source: str
+
+    def allows(self, product: Product) -> bool:
+        return product.key in self.products
+
+    def qse_cap_mw(self, product_key: str) -> float:
+        """MW of one product this fleet's QSE may register, or infinity when uncapped."""
+        cap = self.system_mw.get(product_key)
+        return float("inf") if cap is None else cap * self.qse_share
+
+    def per_battery_kw(self, product_key: str, devices: int) -> float:
+        """The QSE cap shared evenly across the fleet, in kW per battery."""
+        cap = self.qse_cap_mw(product_key)
+        return float("inf") if cap == float("inf") or devices <= 0 else cap * 1000.0 / devices
+
+
 PRODUCTS: tuple[Product, ...] = (
     Product("regup", "Reg Up", "discharge", 1.0),
     Product("rrs", "RRS", "discharge", 1.0),
     Product("ecrs", "ECRS", "discharge", 2.0),
     Product("nonspin", "Non-Spin", "discharge", 4.0),
     Product("regdn", "Reg Down", "charge", 1.0),
+)
+
+#: What an aggregation of home batteries is actually allowed to sell today. Phase 3.3
+#: §3 limits ADERs to "no more than 100 MW of Non-Spinning Reserve (Non-Spin)
+#: system-wide and no more than 100 MW of ERCOT Contingency Reserve Service (ECRS)
+#: system-wide", inside a 500 MW system-wide registration cap, with no QSE registering
+#: more than 90% of those limits; §2 requires each aggregation to offer at least 100 kW
+#: and each premise 1 MW or less. Reg Up, Reg Down and RRS are not ADER products: RRS is
+#: something ERCOT "will consider" for ADERs that provide frequency response, and the
+#: qualification procedure only covers Non-Spin and ECRS.
+ADER_PILOT = PilotRules(
+    name="ERCOT ADER pilot, Phase 3.3",
+    products=("ecrs", "nonspin"),
+    system_mw={"ecrs": 100.0, "nonspin": 100.0},
+    qse_share=0.90,
+    registered_system_mw=500.0,
+    min_aggregation_kw=100.0,
+    max_premise_kw=1_000.0,
+    source=ADER_PILOT_URL,
+)
+
+#: Every product, ignoring who is allowed to sell them. A comparison, never a claim.
+ALL_PRODUCTS = PilotRules(
+    name="all five AS products, outside the pilot rules",
+    products=tuple(p.key for p in PRODUCTS),
+    system_mw={},
+    qse_share=1.0,
+    registered_system_mw=float("inf"),
+    min_aggregation_kw=0.0,
+    max_premise_kw=float("inf"),
+    source=ADER_PILOT_URL,
 )
 
 
@@ -114,6 +195,8 @@ class DayValue:
     awards: tuple[HourAward, ...]
     held_hours: int
     reserve_violations: int
+    #: The rule set the offer was built under, so a number can never lose its caveat.
+    rules: str = ADER_PILOT.name
 
     @property
     def total_usd(self) -> float:
@@ -199,7 +282,12 @@ def _day_ahead_price(trace: PriceTrace) -> dict[int, float]:
 
 
 def _hold_hours(
-    trace: PriceTrace, plan: pd.DataFrame, battery: Battery, as_prices: pd.DataFrame
+    trace: PriceTrace,
+    plan: pd.DataFrame,
+    battery: Battery,
+    as_prices: pd.DataFrame,
+    rules: PilotRules,
+    devices: int,
 ) -> set[int]:
     """Hours where renting the stored energy as capacity beats selling it as energy.
 
@@ -225,7 +313,9 @@ def _hold_hours(
     for hour in sorted(exports):
         if hour not in prices.index:
             continue
-        best = _best_product(prices.loc[hour], battery, sellable_kwh, 0.0, battery.power_kw)
+        best = _best_product(
+            prices.loc[hour], battery, sellable_kwh, 0.0, battery.power_kw, rules, devices
+        )
         if not best:
             continue
         _, kw, price = best
@@ -268,18 +358,22 @@ def co_optimize(
     trace: PriceTrace,
     battery: Battery = LEGACY,
     as_prices: pd.DataFrame | None = None,
+    rules: PilotRules = ADER_PILOT,
+    devices: int = FLEET_DEVICES,
 ) -> DayValue:
     """Sell the capacity the energy plan leaves idle, and outbid it when that pays more.
 
     Returns the day's split between energy and ancillary for one battery, plus the
     hourly awards and a count of reserve violations (which must always be zero).
+    ``rules`` decides which products the aggregation may offer and how many kW of each
+    it may register; ``devices`` is the fleet the per-QSE MW caps are shared across.
     """
     if as_prices is None:
         as_prices = load_as_prices(_trace_path(trace))
 
     plan = _plan(trace)
     energy_only = _settle(trace, plan, battery)
-    held = _hold_hours(trace, plan, battery, as_prices)
+    held = _hold_hours(trace, plan, battery, as_prices, rules, devices)
     ledger = _hour_rows(_settle(trace, _withhold(plan, trace, held), battery))
     prices = as_prices.set_index(as_prices["interval_start"].dt.hour)
     energy_only_usd = round(float(energy_only["signal_usd"].sum()), 2)
@@ -305,7 +399,9 @@ def co_optimize(
             energy_usd += hour_energy_usd
             continue
 
-        best = _best_product(prices.loc[hour], battery, sellable_kwh, headroom_kwh, idle_kw)
+        best = _best_product(
+            prices.loc[hour], battery, sellable_kwh, headroom_kwh, idle_kw, rules, devices
+        )
         energy_usd += hour_energy_usd
         if not best:
             continue
@@ -334,6 +430,7 @@ def co_optimize(
         awards=tuple(awards),
         held_hours=len(held),
         reserve_violations=violations,
+        rules=rules.name,
     )
 
 
@@ -343,12 +440,16 @@ def _best_product(
     sellable_kwh: float,
     headroom_kwh: float,
     available_kw: float,
+    rules: PilotRules = ADER_PILOT,
+    devices: int = FLEET_DEVICES,
 ) -> tuple[Product, float, float] | None:
-    """Highest-paying product the battery can actually deliver this hour."""
+    """Highest-paying product the battery may offer and can actually deliver this hour."""
     if available_kw <= 0:
         return None
     best: tuple[Product, float, float] | None = None
     for product in PRODUCTS:
+        if not rules.allows(product):
+            continue
         price = float(row.get(product.key, 0.0) or 0.0)
         if price <= 0:
             continue
@@ -356,7 +457,12 @@ def _best_product(
             deliverable = sellable_kwh / product.sustain_h
         else:
             deliverable = headroom_kwh / product.sustain_h
-        kw = min(available_kw, deliverable, battery.power_kw)
+        kw = min(
+            available_kw,
+            deliverable,
+            battery.power_kw,
+            rules.per_battery_kw(product.key, devices),
+        )
         if kw <= 0:
             continue
         value = kw * price
@@ -394,6 +500,7 @@ class SplitSummary:
     reserve_violations: int
     #: Every scored day, so the concentration of the value is visible, not averaged away.
     per_day: tuple[DayValue, ...] = ()
+    rules: str = ADER_PILOT.name
 
     @property
     def total_usd(self) -> float:
@@ -435,9 +542,14 @@ class SplitSummary:
         return round(self.mean_uplift_usd * devices, 2)
 
 
-def evaluate(traces: list[PriceTrace], battery: Battery = LEGACY) -> SplitSummary:
+def evaluate(
+    traces: list[PriceTrace],
+    battery: Battery = LEGACY,
+    rules: PilotRules = ADER_PILOT,
+    devices: int = FLEET_DEVICES,
+) -> SplitSummary:
     """Co-optimize each day and total the split. Held-out days are scored as before."""
-    days = [co_optimize(trace, battery) for trace in traces]
+    days = [co_optimize(trace, battery, rules=rules, devices=devices) for trace in traces]
     split: dict[str, float] = {p.key: 0.0 for p in PRODUCTS}
     for day in days:
         for key, usd in day.by_product.items():
@@ -452,15 +564,24 @@ def evaluate(traces: list[PriceTrace], battery: Battery = LEGACY) -> SplitSummar
         held_hours=sum(d.held_hours for d in days),
         reserve_violations=sum(d.reserve_violations for d in days),
         per_day=tuple(days),
+        rules=rules.name,
     )
 
 
-def holdout_summary(battery: Battery = LEGACY) -> SplitSummary:
-    return evaluate(holdout.load_holdout(), battery)
+def holdout_summary(
+    battery: Battery = LEGACY,
+    rules: PilotRules = ADER_PILOT,
+    devices: int = FLEET_DEVICES,
+) -> SplitSummary:
+    return evaluate(holdout.load_holdout(), battery, rules=rules, devices=devices)
 
 
-def scarcity_day(battery: Battery = LEGACY) -> DayValue:
-    return co_optimize(load_scenario("scarcity"), battery)
+def scarcity_day(
+    battery: Battery = LEGACY,
+    rules: PilotRules = ADER_PILOT,
+    devices: int = FLEET_DEVICES,
+) -> DayValue:
+    return co_optimize(load_scenario("scarcity"), battery, rules=rules, devices=devices)
 
 
 @dataclass(frozen=True)
@@ -495,7 +616,7 @@ def procurement_flag(
         plan = load_as_plan(trace.date)
         if plan is None:
             continue
-        day = co_optimize(trace, battery)
+        day = co_optimize(trace, battery, rules=ALL_PRODUCTS)
         by_hour: dict[int, float] = {}
         for award in day.awards:
             if award.product == "regdn":
@@ -512,18 +633,35 @@ def procurement_flag(
     return None
 
 
-def headline(summary: SplitSummary) -> str:
-    """What the ancillary split says that the energy-only view does not."""
-    total = sum(summary.by_product.values())
-    share = summary.by_product["regdn"] / total if total else 0.0
+def pilot_cap_kw(rules: PilotRules = ADER_PILOT, devices: int = FLEET_DEVICES) -> dict[str, float]:
+    """kW per battery each allowed product is capped at once the QSE cap is shared out."""
+    return {key: round(rules.per_battery_kw(key, devices), 3) for key in rules.products}
+
+
+def headline(summary: SplitSummary, comparison: SplitSummary | None = None) -> str:
+    """What the ancillary split says that the energy-only view does not.
+
+    Leads with the median because the mean is one day, and with the pilot-restricted
+    number because that is the only one a fleet of home batteries could bid today.
+    """
     top_date, top_share = summary.top_day_share
+    text = (
+        f"Inside the ADER pilot rules a home battery may sell ECRS and Non-Spin and "
+        f"nothing else, and the typical held-out day pays "
+        f"${summary.median_uplift_usd:,.2f} per battery \u2014 mean "
+        f"${summary.mean_uplift_usd:,.2f}, with {top_date} alone carrying {top_share:.0%} "
+        f"of the total. This is rare-day money, not income to count on."
+    )
+    if comparison is None:
+        return text
+    total = sum(comparison.by_product.values())
+    regdn = comparison.by_product["regdn"] / total if total else 0.0
     return (
-        f"Selling the capacity the energy plan leaves idle adds "
-        f"${summary.mean_uplift_usd:,.2f} per battery per day on the held-out days, and "
-        f"{share:.0%} of it is Reg Down \u2014 paid for room to charge, not energy to sell. "
-        f"The value is concentrated in rare days: the median day is only "
-        f"${summary.median_uplift_usd:,.2f} and {top_date} alone carries {top_share:.0%} "
-        f"of the total, so this is not income to count on every day."
+        f"{text} Scored against all five products the same days pay a median of "
+        f"${comparison.median_uplift_usd:,.2f} and a mean of "
+        f"${comparison.mean_uplift_usd:,.2f}, {regdn:.0%} of it Reg Down \u2014 so the rules, "
+        f"not the battery, are what stands between a home fleet and the ancillary money: "
+        f"the product that pays is the one an ADER is not allowed to offer."
     )
 
 
@@ -537,6 +675,17 @@ def lines() -> list[str]:
         f"({meta.get('units', '$/MW per hour')}), source {meta.get('source', ingest.AS_SOURCE_URL)}"
     )
     out.append("Capacity payments only; deployment energy not modelled. Fleet is simulated.")
+    caps = pilot_cap_kw()
+    allowed = ", ".join(_product_label(key) for key in ADER_PILOT.products)
+    out.append(
+        f"Offers restricted to the {ADER_PILOT.name} (Governing Document, 3 Jun 2026, and the "
+        f"AS Qualification Procedure 3.0): {allowed}"
+        f" only, {ADER_PILOT.system_mw['ecrs']:,.0f} MW each system-wide and no QSE above "
+        f"{ADER_PILOT.qse_share:.0%} of that, so {FLEET_DEVICES:,} batteries share "
+        f"{ADER_PILOT.qse_cap_mw('ecrs'):,.0f} MW = {caps['ecrs']:.1f} kW each; aggregation "
+        f"≥ {ADER_PILOT.min_aggregation_kw:,.0f} kW, each premise ≤ "
+        f"{ADER_PILOT.max_premise_kw / 1000:,.0f} MW. Source {ADER_PILOT.source}"
+    )
     out.append("")
 
     out.append(
@@ -561,8 +710,9 @@ def lines() -> list[str]:
         out.append(
             f"{battery.label}: {summary.days} held-out days, energy ${summary.energy_usd:,.2f}, "
             f"ancillary ${summary.ancillary_usd:,.2f}, "
-            f"mean uplift ${summary.mean_uplift_usd:,.2f}/battery/day "
-            f"({summary.fleet_usd():,.0f}/day across {FLEET_DEVICES:,} batteries)"
+            f"median uplift ${summary.median_uplift_usd:,.2f}/battery/day "
+            f"(mean ${summary.mean_uplift_usd:,.2f}, "
+            f"${summary.fleet_usd():,.0f}/day across {FLEET_DEVICES:,} batteries)"
         )
         out.append(f"  split: {split or 'nothing cleared above zero'}")
         out.append(
@@ -577,17 +727,46 @@ def lines() -> list[str]:
     out.append("")
 
     core = holdout_summary(BASE_CORE)
-    out.append(f"{BASE_CORE.label}, uplift per held-out day (Reg Down is the bulk of it):")
-    out.append(f"{'date':<14}{'uplift $':>10}{'Reg Down $':>13}{'mean Reg Down $/MW-h':>24}")
+    out.append(f"{BASE_CORE.label}, uplift per held-out day inside the pilot rules:")
+    out.append(f"{'date':<14}{'uplift $':>10}{'ECRS $':>10}{'Non-Spin $':>12}{'mean $/MW-h':>14}")
     for day in sorted(core.per_day, key=lambda d: d.date):
-        regdn_awards = [a for a in day.awards if a.product == "regdn"]
-        mean_price = (
-            sum(a.price_mw_h for a in regdn_awards) / len(regdn_awards) if regdn_awards else 0.0
-        )
+        prices = [a.price_mw_h for a in day.awards]
+        mean_price = sum(prices) / len(prices) if prices else 0.0
         out.append(
-            f"{day.date:<14}{day.uplift_usd:>10.2f}"
-            f"{day.by_product['regdn']:>13.2f}{mean_price:>24.2f}"
+            f"{day.date:<14}{day.uplift_usd:>10.2f}{day.by_product['ecrs']:>10.2f}"
+            f"{day.by_product['nonspin']:>12.2f}{mean_price:>14.2f}"
         )
+    out.append("")
+
+    registered_mw = FLEET_DEVICES * BASE_CORE.power_kw / 1000.0
+    out.append(
+        f"Pilot registration check: {FLEET_DEVICES:,} simulated {BASE_CORE.label}s at "
+        f"{BASE_CORE.power_kw:,.0f} kW is {registered_mw:,.0f} MW of response capability, "
+        f"{registered_mw / ADER_PILOT.registered_system_mw:.0%} of the "
+        f"{ADER_PILOT.registered_system_mw:,.0f} MW the pilot allows to be registered "
+        f"system-wide, and its ECRS and Non-Spin offers are each held to "
+        f"{ADER_PILOT.qse_cap_mw('ecrs'):,.0f} MW ({caps['ecrs']:.1f} kW per battery). One "
+        f"fleet this size is a large share of a pilot sized for all of ERCOT."
+    )
+    out.append("")
+
+    unrestricted = holdout_summary(BASE_CORE, rules=ALL_PRODUCTS)
+    out.append(
+        f"Comparison only, NOT available to an ADER — the same {unrestricted.days} days scored "
+        f"against {ALL_PRODUCTS.name}: median ${unrestricted.median_uplift_usd:,.2f}, mean "
+        f"${unrestricted.mean_uplift_usd:,.2f}/battery/day, split "
+        + ", ".join(
+            f"{p.label} ${unrestricted.by_product[p.key]:,.2f}"
+            for p in PRODUCTS
+            if unrestricted.by_product[p.key]
+        )
+    )
+    out.append(
+        f"  The pilot rules cost "
+        f"${unrestricted.mean_uplift_usd - core.mean_uplift_usd:,.2f}/battery/day of the mean "
+        f"({1 - core.mean_uplift_usd / unrestricted.mean_uplift_usd:.0%}), almost all of it "
+        f"Reg Down, which an aggregation of home batteries may not offer."
+    )
     out.append("")
 
     flag = procurement_flag()
@@ -600,7 +779,7 @@ def lines() -> list[str]:
     else:
         verdict = "plausible" if flag.price_taker_credible else "NOT credible"
         out.append(
-            f"Price-taker check ({flag.date}, ERCOT published AS plan): "
+            f"Price-taker check on the unrestricted comparison ({flag.date}, published AS plan): "
             f"{FLEET_DEVICES:,} simulated batteries would offer {flag.fleet_mw:,.0f} MW into "
             f"Reg Down in the peak hour against {flag.procured_mw:,.0f} MW procured "
             f"({flag.share:.0%}) \u2014 price-taker assumption {verdict}. A fleet this size "
@@ -608,8 +787,12 @@ def lines() -> list[str]:
             "an upper bound, not a forecast."
         )
     out.append("")
-    out.append(headline(core))
+    out.append(headline(core, unrestricted))
     return out
+
+
+def _product_label(key: str) -> str:
+    return next(p.label for p in PRODUCTS if p.key == key)
 
 
 def main() -> int:

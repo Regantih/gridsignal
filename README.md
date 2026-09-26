@@ -204,44 +204,56 @@ per hour so no kW is promised twice. Where day-ahead capacity pays more than the
 curve, the export is withheld and the energy is rented instead; both prices are published before
 the trade day, so nothing here uses hindsight.
 
+**Bids are restricted to what the ERCOT ADER pilot actually allows**, which is the only route an
+aggregation of home batteries has into these markets today. From the *ADER Pilot Project
+Governing Document Phase 3.3* (3 June 2026) and the *ADER Telemetry Validation, SCED and AS
+Qualification Procedure 3.0* (27 February 2026), both published at
+[ercot.com/mktrules/pilots/ader](https://www.ercot.com/mktrules/pilots/ader): an ADER may offer
+**Non-Spin and ECRS only**, each capped at **100 MW system-wide**, with no QSE registering more
+than **90%** of either limit; total registered ADER capacity is capped at **500 MW system-wide**;
+an aggregation must offer at least 100 kW and each premise 1 MW or less. Those numbers are
+encoded in `ADER_PILOT` in `src/gridsignal/ancillary.py` and enforced per bid: 90 MW shared
+across 10,000 simulated batteries is **9.0 kW each**, and Reg Up, Reg Down and RRS are simply not
+offered.
+
 ```bash
 python -m gridsignal.ancillary       # real ERCOT AS clearing prices, simulated battery
 ```
 
-| 7 held-out days, per battery per day | Legacy 13.5 kWh / 5 kW | Base Core-style 40 kWh / 20 kW |
+| 7 held-out days, per battery per day, **inside the ADER pilot rules** | Legacy 13.5 kWh / 5 kW | Base Core-style 40 kWh / 20 kW |
 |---|---:|---:|
-| Energy (home-first, as scored before) | −$0.06 | $2.61 |
-| Ancillary capacity | $0.88 | $3.59 |
-| Uplift over energy alone, **mean** | +$0.88 | +$3.59 |
-| Uplift over energy alone, **median day** | +$0.17 | +$0.74 |
+| Uplift over energy alone, **median day** | +$0.03 | **+$0.14** |
+| Uplift over energy alone, mean | +$0.03 | +$0.29 |
+| Ancillary capacity, 7 days | $0.24 | $2.03 |
 | Backup reserve violations | 0 | 0 |
 
-**The mean is one day.** Per held-out day, Base Core-style unit:
+**Lead with the median: the mean is one day.** Per held-out day, Base Core-style unit, ECRS and
+Non-Spin only:
 
-| Day | Uplift | Reg Down | Mean Reg Down price |
-|---|---:|---:|---:|
-| 2023-04-06 | $2.59 | $2.36 | $6.68/MW-h |
-| **2024-05-08** | **$19.23** | **$17.50** | **$99.33/MW-h** |
-| 2024-12-20 | $0.55 | $0.48 | $1.31/MW-h |
-| 2025-04-07 | $1.09 | $0.85 | $3.19/MW-h |
-| 2025-05-03 | $0.74 | $0.46 | $1.88/MW-h |
-| 2026-09-23 | $0.58 | $0.37 | $2.08/MW-h |
-| 2026-09-24 | $0.38 | $0.19 | $1.32/MW-h |
+| Day | Uplift | ECRS | Non-Spin | Mean cleared price |
+|---|---:|---:|---:|---:|
+| 2023-04-06 | $0.03 | $0.00 | $0.04 | $0.98/MW-h |
+| **2024-05-08** | **$1.40** | **$1.28** | $0.11 | **$11.42/MW-h** |
+| 2024-12-20 | $0.02 | $0.00 | $0.01 | $0.71/MW-h |
+| 2025-04-07 | $0.14 | $0.13 | $0.00 | $4.80/MW-h |
+| 2025-05-03 | $0.20 | $0.04 | $0.16 | $3.96/MW-h |
+| 2026-09-23 | $0.14 | $0.00 | $0.12 | $1.66/MW-h |
+| 2026-09-24 | $0.10 | $0.00 | $0.10 | $1.39/MW-h |
 
-2024-05-08 alone carries **76%** of the held-out uplift. Ancillary capacity is not a daily
-annuity for a home battery: it is a rare-day product, and any business case built on the mean
-is built on one May afternoon.
+2024-05-08 — the day ECRS and Non-Spin cleared far above the rest — still carries **69%** of the
+held-out uplift under the pilot rules. Ancillary capacity is not a daily annuity for a home
+battery: it is a rare-day product, and a business case built on the mean is built on one May
+afternoon. On the 2023-09-06 scarcity day the Base Core-style unit earns $88.44 of energy plus
+$2.42 of pilot-eligible capacity.
 
-On the 2023-09-06 scarcity day the Base Core-style unit earns $88.44 of energy plus $27.76 of
-capacity ($116.20 total). Scaled to 10,000 simulated batteries the held-out uplift is
-$35,900/day — **as a price taker, which at that size is not credible**: 10,000 × 20 kW is
-200 MW, and against ERCOT's published AS plan for the checked day that is 51% of the 392 MW of
-Reg Down procured in the peak hour. A fleet that large moves the price it is being paid, so the
-fleet-scale figure is an upper bound, not a forecast; the CLI prints the check and says so.
-The honest headline is **which** product pays: 88% of it is **Reg Down**, money
-for having room to charge, not energy to sell. The hours that clear highest for reserves are the
-scarcity evenings, and that is exactly when a home battery has already emptied itself into the
-price spike and has nothing left to pledge.
+**Comparison only, not an offer.** Scoring the same days against all five products — which no
+aggregation of home batteries may do today — gives a median of $0.74 and a mean of $3.59 per
+battery per day, 88% of it **Reg Down**, money for having room to charge. The pilot rules cost
+$3.30/battery/day of that mean (**92%**): the product that pays is the one an ADER is not allowed
+to sell. That comparison also fails its own price-taker test at fleet scale — 10,000 × 20 kW is
+200 MW against the 392 MW of Reg Down ERCOT procured in the checked hour (51%) — and 200 MW is
+itself 40% of the 500 MW the pilot allows to be registered system-wide. The CLI prints every one
+of these checks.
 
 Prices are real ERCOT day-ahead clearing prices; capacity payments only (deployment energy is not
 modelled), and every battery, load profile and award is simulated. Tests:
@@ -1182,12 +1194,12 @@ real Base Power device or fleet.
 - The spike forecast is a fixed-coefficient logistic score, not a trained model, and the energy
   backtest is a price-taker single-day replay: no bidding, no degradation cost, and ancillary
   capacity scored in a separate ledger (`ancillary.py`) rather than inside the energy numbers.
-- **The ancillary uplift is concentrated in rare days and assumes a price taker.** The
-  +$3.59/battery/day held-out mean for a Base Core-style unit has a median of $0.74, and
-  2024-05-08 alone carries 76% of it (Reg Down averaged $99.33/MW-h that day against $1–$7 on
-  the others). At fleet scale the assumption also breaks: 10,000 × 20 kW is 200 MW, 51% of the
-  392 MW of Reg Down ERCOT procured in the checked hour, so the fleet-scale dollars are an upper
-  bound — a fleet that size moves the price it is paid. Both checks print in
+- **The ancillary uplift is small, concentrated in rare days, and capped by the pilot rules.**
+  Inside ERCOT's ADER pilot (ECRS and Non-Spin only, 90 MW per QSE per product) the held-out
+  median for a Base Core-style unit is +$0.14/battery/day and the mean +$0.29, with 2024-05-08
+  alone carrying 69% of it. The unrestricted +$3.59 mean is kept only as a labelled comparison;
+  it is 92% Reg Down, which an ADER may not offer, and at fleet scale it fails its own
+  price-taker check (200 MW against 392 MW procured, 51%). Every check prints in
   `python -m gridsignal.ancillary`.
 - **Home load is synthetic.** The per-home profile is a shaped weekday curve hashed per device,
   not metered data, so the export split and member savings move with that assumption.

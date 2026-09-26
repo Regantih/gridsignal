@@ -65,9 +65,9 @@ so the numbers argue that the *mechanism* is right, not that the magnitudes are.
 **For.** The Why view states problem, approach, evidence and limits on one screen with every
 figure recomputed from the module that produces it and the reproducing command printed beside
 it; `python -m gridsignal.why` prints the same page. The limits are on that screen rather than
-buried: tuning did not meaningfully improve held-out agreement (+1 episode of 48), the fleet's
-ancillary offer is 51% of ERCOT's published Reg Down plan so the price-taker assumption fails,
-and seven held-out days is a small sample.
+buried: tuning did not meaningfully improve held-out agreement (+1 episode of 48), the
+unrestricted ancillary comparison offers 51% of ERCOT's published Reg Down plan so its
+price-taker assumption fails, and seven held-out days is a small sample.
 
 **Against.** The strongest "why" — that this is worth an operator's day — is argued from a
 simulation of Base rather than from anything Base has said it needs.
@@ -78,7 +78,9 @@ simulation of Base rather than from anything Base has said it needs.
 day's capturable value is visible in the day-ahead curve, $18.83 per battery exists only in
 real time, all 19 intervals that printed 5x their day-ahead hour fell on scarcity days, wear
 gating pays on a legacy pack and never binds on a Base Core-style one, and the ancillary
-headline is one day of Reg Down rather than a rate.
+headline is a rare day inside ERCOT's ADER pilot rules (+$0.14 median) rather than a rate —
+the pilot rules cost 92% of the unrestricted value because Reg Down is the product an
+aggregation of home batteries may not sell.
 
 **Against.** The held-out uplift itself is small — 6 of 7 days, mean $0.44 and median $0.26 per
 battery per day — on seven days. That is enough to say the policy is not broken and not enough
