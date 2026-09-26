@@ -32,6 +32,15 @@ The impact is priced against **real ERCOT data**: the grid event sits on the mos
 two-hour window of a real LZ_HOUSTON trading day, so the incident shows dollars at risk
 (`kW x hours x $/MWh`) before approval and dollars recovered after it.
 
+Two dials in the sidebar make that number mean something at Base's scale:
+
+- **Price scenario** — a normal peak day (2026-09-22, peak $199.74/MWh) or a real ERCOT
+  scarcity day (2023-09-06, peak $5,147.65/MWh, settlement at the offer cap plus reserve adders).
+- **Fleet scale** — 48, 1,000 or 10,000 simulated devices. The failure is a gateway firmware
+  ring that covers one device in 48, so a 10,000-device fleet loses 208 devices to the same
+  root cause. On the scarcity day that is **$8,971 at risk and $8,684 recovered** from one
+  operator approval, versus $1.82 on the 48-device normal day.
+
 ## Quick Start
 
 One command starts the demo from a fresh clone (after install):
@@ -53,6 +62,7 @@ still no credentials):
 
 ```bash
 python -m gridsignal.ingest --date 2026-09-22          # LZ_HOUSTON real-time 15-min SPP
+python -m gridsignal.ingest --scarcity-year 2023       # highest-priced day of that year
 ```
 
 ## Tests and formatting
@@ -68,6 +78,8 @@ ruff format --check .
 - **Trigger BAT-042 Failure** (sidebar) — simulate the telemetry blackout.
 - **Approve Recovery Plan** (incident panel) — the human gate; nothing moves until it is clicked.
 - **Reset Demo** (sidebar) — replay the story without reloading the browser.
+- **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
+  and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
 
 Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEMO.md`](docs/DEMO.md).
 
@@ -81,7 +93,7 @@ Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEM
 ```mermaid
 flowchart LR
     subgraph CR["Control Room (simulated fleet, real prices)"]
-        F[fleet.py<br/>deterministic 48-device fleet] --> E[ControlRoomEngine]
+        F[fleet.py<br/>deterministic 48/1k/10k fleet] --> E[ControlRoomEngine]
         PR[prices.py<br/>cached ERCOT SPP Parquet] --> E
         E -->|detect| I[Incident<br/>severity, cause, impact, plan]
         I --> T[Role tasks<br/>Operator / Reliability / Field]
@@ -100,14 +112,15 @@ flowchart LR
 
 | Module | Responsibility |
 |---|---|
-| `src/gridsignal/fleet.py` | Deterministic synthetic fleet (seeded, 48 devices, BAT-042 is the demo device) |
+| `src/gridsignal/fleet.py` | Deterministic synthetic fleet (seeded, 48/1,000/10,000 devices, BAT-042 is the demo device) and its gateway rings |
 | `src/gridsignal/control_room/models.py` | Device, GridEvent, Incident, Task, AuditEvent, FleetSnapshot |
 | `src/gridsignal/control_room/engine.py` | State machine: baseline → failure → incident → **human approval** → recovery |
 | `src/gridsignal/ingest.py` | Pulls real-time settlement point prices from ERCOT via gridstatus and caches them as Parquet |
-| `src/gridsignal/prices.py` | Loads the cached trace, finds the peak window, prices kW at risk in dollars |
+| `src/gridsignal/prices.py` | Named price scenarios, cached-trace loading, peak-window selection, kW to dollars |
 | `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
 | `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
-| `tests/test_prices.py`, `tests/test_ingest.py` | Price-trace loading, peak-window selection, dollar conversion, cache provenance |
+| `tests/test_prices.py`, `tests/test_ingest.py` | Scenario loading, peak-window selection, dollar conversion, cache provenance |
+| `tests/test_scale.py` | Gateway-ring scaling, scarcity pricing, and a 10,000-device detect-plus-reallocate benchmark |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 
@@ -125,12 +138,14 @@ Optional live-data path: `pip install -e ".[ercot]"`, copy `.env.example` to `.e
 | Dataset | Source | Notes |
 |---|---|---|
 | Simulated battery fleet | `src/gridsignal/fleet.py` | Seeded synthetic data, no real customer or device data |
-| Simulated grid event | `src/gridsignal/control_room/engine.py` | 240 kW / 2 h commitment; the window is chosen from the real price trace |
+| Simulated grid event | `src/gridsignal/control_room/engine.py` | 5 kW per device over 2 h (240 kW at 48 devices, 50 MW at 10,000); the window is chosen from the real price trace |
 | Real-time settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2026-09-22 (96 intervals, peak $199.74/MWh). Cached at `data/processed/lz_houston_rtm_spp_sample.parquet` with provenance in the sidecar `.json`; refresh with `python -m gridsignal.ingest --date <YYYY-MM-DD>` |
+| Scarcity-day settlement prices | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2023-09-06 — the highest-priced LZ_HOUSTON day of 2023 (96 intervals, peak $5,147.65/MWh, day average $788.49/MWh). The archive restates some intervals, so repeated intervals are averaged into one row. Cached at `data/processed/lz_houston_rtm_spp_scarcity_sample.parquet` with a sidecar `.json`; refresh with `python -m gridsignal.ingest --scarcity-year <YYYY>` |
 | System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
 
 Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
-ahead, so the figures are per-fleet-commitment and small by design — one home battery is a few kW.
+ahead. Both price days are real; the fleet, the outage and the recovery are simulated, and the
+historical scarcity trace is pricing context only — it is not replayed as a real-time market feed.
 
 ## Known Limitations and Next Steps
 
@@ -141,7 +156,10 @@ ahead, so the figures are per-fleet-commitment and small by design — one home 
 - Only the price half of the ERCOT pipeline is implemented; `detect`, `forecast`, `signals` and
   `backtest` are still stubs, as are load and fuel-mix ingest.
 - ERCOT's public SPP report only keeps roughly the last week online, so `--date` must be recent;
-  the bundled sample is the cached copy that keeps the demo reproducible.
+  scarcity days come from the yearly historical archive instead. Both bundled samples are the
+  cached copies that keep the demo reproducible and offline.
+- Scaling is a device multiplier on one seeded template, not a model of real per-home diversity,
+  and the fleet map thins healthy markers above 400 devices.
 - Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
   exposure change minute to minute rather than as a single window average.
 

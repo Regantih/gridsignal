@@ -5,9 +5,12 @@ import pytest
 
 from gridsignal.prices import (
     SAMPLE_PRICES,
+    SCARCITY_PRICES,
     PriceTrace,
+    available_scenarios,
     energy_value_usd,
     load_price_trace,
+    load_scenario,
 )
 
 
@@ -36,6 +39,25 @@ def test_bundled_sample_loads_offline():
     assert len(trace.frame) == 96  # 15-minute intervals over one day
     assert trace.peak_mwh > trace.mean_mwh > 0
     assert list(trace.frame["interval_start"]) == sorted(trace.frame["interval_start"])
+
+
+def test_scarcity_scenario_is_a_real_day_near_the_cap():
+    assert SCARCITY_PRICES.exists(), "the demo ships a cached ERCOT scarcity day"
+    scarcity = load_scenario("scarcity")
+    normal = load_scenario("normal")
+    assert scarcity.location == "LZ_HOUSTON"
+    assert len(scarcity.frame) == 96
+    # Settlement prices sit at the $5,000/MWh offer cap of the day, plus reserve adders.
+    assert 5_000 <= scarcity.peak_mwh < 6_000
+    assert scarcity.peak_mwh > 10 * normal.peak_mwh
+    assert scarcity.date != normal.date
+
+
+def test_both_bundled_scenarios_are_selectable():
+    keys = [s.key for s in available_scenarios()]
+    assert keys == ["normal", "scarcity"]
+    with pytest.raises(KeyError, match="unknown price scenario"):
+        load_scenario("blackout")
 
 
 def test_missing_trace_points_at_the_refresh_command(tmp_path):

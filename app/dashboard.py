@@ -11,14 +11,20 @@ import streamlit as st
 
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
+    Device,
     DeviceStatus,
     Incident,
     IncidentStatus,
     Severity,
     TaskStatus,
 )
-from gridsignal.fleet import FOCUS_DEVICE_ID
-from gridsignal.prices import energy_value_usd
+from gridsignal.fleet import FLEET_SIZE, FLEET_SIZES, FOCUS_DEVICE_ID
+from gridsignal.prices import (
+    DEFAULT_SCENARIO,
+    available_scenarios,
+    energy_value_usd,
+    load_scenario,
+)
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
 
@@ -64,9 +70,23 @@ CSS = """
 """
 
 
+# Plotting every marker of a 10,000-device fleet is slow and unreadable, so the map
+# thins healthy devices out and always keeps everything that is not online.
+MAP_MARKERS = 400
+GRID_TILES = 48
+
+
 def engine() -> ControlRoomEngine:
-    if "engine" not in st.session_state:
-        st.session_state.engine = ControlRoomEngine()
+    """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
+    key = (
+        st.session_state.get("scenario", DEFAULT_SCENARIO),
+        st.session_state.get("fleet_size", FLEET_SIZE),
+    )
+    if st.session_state.get("engine_key") != key:
+        st.session_state.engine = ControlRoomEngine(
+            price_trace=load_scenario(key[0]), fleet_size=key[1]
+        )
+        st.session_state.engine_key = key
     return st.session_state.engine
 
 
@@ -103,18 +123,20 @@ def render_overview(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
     ev = snap.grid_event
     cols = st.columns(7)
-    cols[0].metric("Fleet size", snap.total_devices)
+    cols[0].metric("Fleet size", f"{snap.total_devices:,}")
     cols[1].metric(
         "Available capacity",
         f"{snap.available_capacity_kwh:,.0f} kWh",
         delta=f"{snap.committed_kw:,.0f} kW committed",
         delta_color="off",
     )
-    cols[2].metric("Online", snap.online, delta=f"{snap.degraded} degraded", delta_color="off")
+    cols[2].metric(
+        "Online", f"{snap.online:,}", delta=f"{snap.degraded} degraded", delta_color="off"
+    )
     cols[3].metric(
         "Offline / quarantined",
-        f"{snap.offline} / {snap.unavailable}",
-        delta="BAT-042" if snap.offline or snap.unavailable else "none",
+        f"{snap.offline:,} / {snap.unavailable:,}",
+        delta=(f"{FOCUS_DEVICE_ID} gateway ring" if snap.offline or snap.unavailable else "none"),
         delta_color="off",
     )
     cols[4].metric(
@@ -146,8 +168,18 @@ def render_overview(eng: ControlRoomEngine) -> None:
         )
 
 
+def map_devices(devices: list[Device]) -> list[Device]:
+    """Thin a large fleet down for plotting, keeping every unhealthy device."""
+    if len(devices) <= MAP_MARKERS:
+        return devices
+    keep = {d.device_id: d for d in devices[:: len(devices) // MAP_MARKERS]}
+    keep.update({d.device_id: d for d in devices if d.status is not DeviceStatus.ONLINE})
+    return list(keep.values())
+
+
 def render_map(eng: ControlRoomEngine) -> None:
     snap = eng.snapshot()
+    shown = map_devices(snap.devices)
     frame = pd.DataFrame(
         [
             {
@@ -161,7 +193,7 @@ def render_map(eng: ControlRoomEngine) -> None:
                 "SoC %": round(d.state_of_charge * 100),
                 "size": 26 if d.device_id == FOCUS_DEVICE_ID else 11,
             }
-            for d in snap.devices
+            for d in shown
         ]
     )
     color_map = {STATUS_LABEL[s]: c for s, c in STATUS_COLOR.items()}
@@ -194,11 +226,18 @@ def render_map(eng: ControlRoomEngine) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    if len(shown) < len(snap.devices):
+        st.caption(
+            f"Map shows {len(shown):,} of {len(snap.devices):,} devices: every unhealthy "
+            "device plus a sample of healthy ones."
+        )
+
     st.markdown("<div class='gs-kicker'>Device grid</div>", unsafe_allow_html=True)
+    tiles = snap.devices[:GRID_TILES]
     per_row = 12
-    for start in range(0, len(snap.devices), per_row):
+    for start in range(0, len(tiles), per_row):
         row = st.columns(per_row)
-        for col, device in zip(row, snap.devices[start : start + per_row], strict=False):
+        for col, device in zip(row, tiles[start : start + per_row], strict=False):
             focus = device.device_id == FOCUS_DEVICE_ID
             border = "2px solid #f87171" if focus else "1px solid #263041"
             col.markdown(
@@ -210,6 +249,8 @@ def render_map(eng: ControlRoomEngine) -> None:
                 f"background:{STATUS_COLOR[device.status]}'></div></div>",
                 unsafe_allow_html=True,
             )
+    if len(tiles) < len(snap.devices):
+        st.caption(f"First {len(tiles)} tiles of {len(snap.devices):,} simulated devices.")
 
 
 def render_prices(eng: ControlRoomEngine) -> None:
@@ -283,7 +324,7 @@ def render_incident(eng: ControlRoomEngine) -> None:
 
 def render_money(incident: Incident) -> None:
     """Price the lost capacity against the real settlement prices for the window."""
-    risk, recovered = st.columns(2)
+    risk, recovered, scale = st.columns(3)
     risk.metric(
         "Dollars at risk",
         f"${incident.dollars_at_risk:,.2f}",
@@ -307,6 +348,12 @@ def render_money(incident: Incident) -> None:
             delta="pending operator approval",
             delta_color="off",
         )
+    scale.metric(
+        "Devices in outage",
+        f"{len(incident.cohort) or 1:,}",
+        delta="one gateway firmware ring",
+        delta_color="off",
+    )
 
 
 def render_approval(eng: ControlRoomEngine, incident: Incident) -> None:
@@ -363,6 +410,35 @@ def render_audit(eng: ControlRoomEngine) -> None:
         )
 
 
+def render_scenario_controls() -> None:
+    """Price scenario and fleet scale. Changing either rebuilds the simulation."""
+    with st.sidebar:
+        st.header("Scenario")
+        scenarios = available_scenarios()
+        keys = [s.key for s in scenarios]
+        labels = {s.key: s.label for s in scenarios}
+        st.radio(
+            "ERCOT price day",
+            keys,
+            format_func=lambda k: labels[k],
+            key="scenario",
+            index=keys.index(DEFAULT_SCENARIO) if DEFAULT_SCENARIO in keys else 0,
+        )
+        chosen = next(s for s in scenarios if s.key == st.session_state.get("scenario", keys[0]))
+        st.caption(chosen.blurb)
+        st.radio(
+            "Fleet scale",
+            FLEET_SIZES,
+            format_func=lambda n: f"{n:,} devices",
+            key="fleet_size",
+        )
+        st.caption(
+            "A gateway firmware ring covers one device per 48, so the same failure takes "
+            "out more of the fleet — and more revenue — as the fleet grows."
+        )
+        st.divider()
+
+
 def render_demo_controls(eng: ControlRoomEngine) -> None:
     with st.sidebar:
         st.header("Demo Controls")
@@ -397,8 +473,9 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
 
 
 def main() -> None:
-    eng = engine()
     render_header()
+    render_scenario_controls()
+    eng = engine()
     render_demo_controls(eng)
     render_overview(eng)
     st.divider()

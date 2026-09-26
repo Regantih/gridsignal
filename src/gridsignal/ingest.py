@@ -21,6 +21,9 @@ PROCESSED = ROOT / "data" / "processed"
 DEFAULT_LOCATION = "LZ_HOUSTON"
 DEFAULT_MARKET = "REAL_TIME_15_MIN"
 SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD"
+# The daily MIS report above only retains about a week, so scarcity days come from the
+# historical RTM settlement point price archive.
+HISTORICAL_SOURCE_URL = "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER"
 
 
 class MissingDependencyError(RuntimeError):
@@ -45,17 +48,61 @@ def fetch_prices(
     if zone.empty:
         raise ValueError(f"no {market} prices for {location} on {date}")
 
-    return (
+    return normalize_prices(
         zone.rename(
             columns={
                 "Interval Start": "interval_start",
                 "Interval End": "interval_end",
                 "SPP": "spp",
             }
-        )[["interval_start", "interval_end", "spp"]]
+        )
+    )
+
+
+def normalize_prices(df: pd.DataFrame) -> pd.DataFrame:
+    """Tidy to ``interval_start``/``interval_end``/``spp``, one row per interval.
+
+    ERCOT publishes some intervals twice (a correction restates the same interval a
+    cent or two apart), so intervals are collapsed to their mean.
+    """
+    return (
+        df[["interval_start", "interval_end", "spp"]]
+        .groupby(["interval_start", "interval_end"], as_index=False)["spp"]
+        .mean()
+        .round({"spp": 2})
         .sort_values("interval_start")
         .reset_index(drop=True)
     )
+
+
+def fetch_scarcity_day(
+    year: int,
+    location: str = DEFAULT_LOCATION,
+) -> tuple[str, pd.DataFrame]:
+    """Highest-priced day of ``year`` for one load zone, from ERCOT's historical archive.
+
+    Returns ``(date, frame)`` so the caller can cache it with the right provenance.
+    """
+    if gridstatus is None:
+        raise MissingDependencyError('install the live-data extra: pip install -e ".[ercot]"')
+
+    raw = gridstatus.Ercot().get_rtm_spp(year)
+    zone = raw[raw["Location"] == location]
+    if zone.empty:
+        raise ValueError(f"no historical RTM prices for {location} in {year}")
+
+    frame = normalize_prices(
+        zone.rename(
+            columns={
+                "Interval Start": "interval_start",
+                "Interval End": "interval_end",
+                "SPP": "spp",
+            }
+        )
+    )
+    days = frame["interval_start"].dt.date
+    peak_day = days[frame["spp"].idxmax()]
+    return str(peak_day), frame[days == peak_day].reset_index(drop=True)
 
 
 def fetch_load(start: str, end: str) -> pd.DataFrame:
@@ -81,6 +128,7 @@ def save_price_trace(
     location: str = DEFAULT_LOCATION,
     market: str = DEFAULT_MARKET,
     path: Path | None = None,
+    source: str = SOURCE_URL,
 ) -> Path:
     """Cache a price trace as Parquet plus a sidecar JSON describing its provenance."""
     PROCESSED.mkdir(parents=True, exist_ok=True)
@@ -92,7 +140,7 @@ def save_price_trace(
                 "location": location,
                 "market": market,
                 "date": date,
-                "source": SOURCE_URL,
+                "source": source,
                 "fetched_at": datetime.now(UTC).isoformat(timespec="seconds"),
                 "intervals": int(len(df)),
                 "units": "$/MWh",
@@ -105,15 +153,33 @@ def save_price_trace(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Refresh the cached ERCOT price trace")
-    p.add_argument("--date", required=True, help="trade date, e.g. 2026-09-22")
+    p = argparse.ArgumentParser(description="Refresh a cached ERCOT price trace")
+    group = p.add_mutually_exclusive_group(required=True)
+    group.add_argument("--date", help="recent trade date, e.g. 2026-09-22")
+    group.add_argument(
+        "--scarcity-year",
+        type=int,
+        help="cache the highest-priced day of this year as the scarcity scenario",
+    )
     p.add_argument("--location", default=DEFAULT_LOCATION)
     p.add_argument("--market", default=DEFAULT_MARKET)
     args = p.parse_args()
 
-    df = fetch_prices(args.date, location=args.location, market=args.market)
-    path = save_price_trace(df, date=args.date, location=args.location, market=args.market)
-    print(f"{len(df)} intervals, peak ${df['spp'].max():.2f}/MWh -> {path}")
+    if args.scarcity_year:
+        date, df = fetch_scarcity_day(args.scarcity_year, location=args.location)
+        path = save_price_trace(
+            df,
+            date=date,
+            location=args.location,
+            path=PROCESSED / f"{args.location.lower()}_rtm_spp_scarcity_sample.parquet",
+            source=HISTORICAL_SOURCE_URL,
+        )
+    else:
+        date = args.date
+        df = fetch_prices(date, location=args.location, market=args.market)
+        path = save_price_trace(df, date=date, location=args.location, market=args.market)
+
+    print(f"{date}: {len(df)} intervals, peak ${df['spp'].max():,.2f}/MWh -> {path}")
 
 
 if __name__ == "__main__":

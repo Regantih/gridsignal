@@ -26,10 +26,12 @@ from gridsignal.control_room.models import (
     Task,
     TaskStatus,
 )
-from gridsignal.fleet import DEFAULT_SEED, FOCUS_DEVICE_ID, build_fleet
+from gridsignal.fleet import DEFAULT_SEED, FLEET_SIZE, FOCUS_DEVICE_ID, build_fleet, gateway_ring
 from gridsignal.prices import PriceTrace, energy_value_usd, load_price_trace
 
-GRID_EVENT_TARGET_KW = 240.0
+# The fleet commits 5 kW per device to the event, so the target scales with the fleet.
+TARGET_KW_PER_DEVICE = 5.0
+GRID_EVENT_TARGET_KW = TARGET_KW_PER_DEVICE * FLEET_SIZE
 GRID_EVENT_HOURS = 2.0
 TELEMETRY_STALE_SECONDS = 120
 
@@ -44,11 +46,24 @@ class ApprovalError(RuntimeError):
     """Raised when a recovery plan is approved out of order."""
 
 
+def subject_for(device_id: str, ring_size: int) -> str:
+    """Name the thing being quarantined: one device, or its whole gateway ring."""
+    if ring_size == 1:
+        return device_id
+    return f"the {ring_size} devices on {device_id}'s gateway ring"
+
+
 class ControlRoomEngine:
     """In-memory, deterministic simulation of a battery-fleet control room."""
 
-    def __init__(self, seed: int = DEFAULT_SEED, price_trace: PriceTrace | None = None) -> None:
+    def __init__(
+        self,
+        seed: int = DEFAULT_SEED,
+        price_trace: PriceTrace | None = None,
+        fleet_size: int = FLEET_SIZE,
+    ) -> None:
         self.seed = seed
+        self.fleet_size = fleet_size
         self.prices = price_trace or load_price_trace()
         self.reset()
 
@@ -58,7 +73,8 @@ class ControlRoomEngine:
         """Return the simulation to its stable starting state."""
         window_start, window_end, window_price = self.prices.peak_window(GRID_EVENT_HOURS)
         self._clock = window_start
-        self.devices: list[Device] = build_fleet(self.seed)
+        self.devices: list[Device] = build_fleet(self.seed, self.fleet_size)
+        self._by_id = {d.device_id: d for d in self.devices}
         self.incidents: list[Incident] = []
         self.audit: list[AuditEvent] = []
         self._incident_seq = 0
@@ -66,7 +82,7 @@ class ControlRoomEngine:
             name="ERCOT peak-demand response window",
             zone=self.prices.location,
             status="active",
-            target_kw=GRID_EVENT_TARGET_KW,
+            target_kw=TARGET_KW_PER_DEVICE * self.fleet_size,
             price_mwh=window_price,
             started_at=window_start,
             ends_at=window_end,
@@ -100,10 +116,7 @@ class ControlRoomEngine:
         return event
 
     def device(self, device_id: str) -> Device:
-        for device in self.devices:
-            if device.device_id == device_id:
-                return device
-        raise KeyError(device_id)
+        return self._by_id[device_id]
 
     def snapshot(self) -> FleetSnapshot:
         return FleetSnapshot(
@@ -150,7 +163,11 @@ class ControlRoomEngine:
     # ------------------------------------------------------------------ failure
 
     def trigger_device_failure(self, device_id: str = FOCUS_DEVICE_ID) -> Incident:
-        """Simulate a telemetry blackout on one device and open an incident.
+        """Simulate a telemetry blackout on one gateway ring and open an incident.
+
+        At the 48-device demo scale the ring is just ``device_id``; at fleet scale the
+        same gateway regression takes out every device on that firmware ring, so the
+        dollars at stake scale with the fleet.
 
         Detection and planning happen automatically; execution does not. The incident
         is parked in ``awaiting_approval`` until a human approves the plan.
@@ -164,21 +181,28 @@ class ControlRoomEngine:
         if not device.is_dispatchable:
             raise ApprovalError(f"{device_id} is already out of service, reset the demo first")
 
-        lost_kw = device.assigned_kw
+        ring = [self.device(i) for i in gateway_ring(device_id, self.fleet_size)]
+        lost_kw = round(sum(d.assigned_kw for d in ring), 2)
         self._tick(45)
         window_hours = self.remaining_hours()
         price_mwh = self.remaining_price_mwh()
         dollars_at_risk = energy_value_usd(lost_kw, window_hours, price_mwh)
-        device.status = DeviceStatus.OFFLINE
-        device.last_telemetry_s = TELEMETRY_STALE_SECONDS + 18
-        device.assigned_kw = 0.0
+        for member in ring:
+            member.status = DeviceStatus.OFFLINE
+            member.last_telemetry_s = TELEMETRY_STALE_SECONDS + 18
+            member.assigned_kw = 0.0
+        others = (
+            ""
+            if len(ring) == 1
+            else f" {len(ring) - 1} more devices on the same gateway firmware ring went dark too."
+        )
         self._log(
             actor="telemetry-monitor",
             kind="detection",
             summary=f"{device_id} telemetry lost during active grid event",
             detail=(
                 f"No heartbeat for {device.last_telemetry_s}s (threshold "
-                f"{TELEMETRY_STALE_SECONDS}s) at {device.site}."
+                f"{TELEMETRY_STALE_SECONDS}s) at {device.site}.{others}"
             ),
         )
 
@@ -195,7 +219,14 @@ class ControlRoomEngine:
                 "Site gateway lost its uplink: the inverter reported nominal state of charge "
                 "in the last good frame and neighbouring devices on the same feeder are healthy, "
                 "so a device fault is unlikely."
+                + (
+                    ""
+                    if len(ring) == 1
+                    else f" The blackout follows the gateway firmware ring ({len(ring)} devices "
+                    "across five load zones), which points at the uplink stack, not the sites."
+                )
             ),
+            cohort=[d.device_id for d in ring],
             impact=(
                 f"{lost_kw:.1f} kW of committed capacity dropped out of a "
                 f"{self.grid_event.target_kw:.0f} kW commitment while the grid event is active. "
@@ -207,7 +238,8 @@ class ControlRoomEngine:
             price_mwh=price_mwh,
             dollars_at_risk=dollars_at_risk,
             recommended_action=(
-                f"Quarantine {device_id} (mark unavailable, stop counting its capacity) and "
+                f"Quarantine {subject_for(device_id, len(ring))} "
+                "(mark unavailable, stop counting its capacity) and "
                 f"reassign {lost_kw:.1f} kW across healthy devices with headroom to recover "
                 f"the ${dollars_at_risk:,.2f} at risk, then dispatch Field Support to "
                 "inspect the gateway."
@@ -290,15 +322,19 @@ class ControlRoomEngine:
             detail="Operator approval recorded. Execution starts from this point only.",
         )
 
-        device = self.device(incident.device_id)
-        device.status = DeviceStatus.UNAVAILABLE
-        device.assigned_kw = 0.0
+        ring = [self.device(i) for i in (incident.cohort or [incident.device_id])]
+        for member in ring:
+            member.status = DeviceStatus.UNAVAILABLE
+            member.assigned_kw = 0.0
         self._tick(25)
         self._log(
             actor="orchestrator",
             kind="quarantine",
-            summary=f"{device.device_id} marked unavailable and removed from capacity",
-            detail="Device is excluded from dispatch until Field Support clears it.",
+            summary=(
+                f"{subject_for(incident.device_id, len(ring))} "
+                "marked unavailable and removed from capacity"
+            ),
+            detail="Excluded from dispatch until Field Support clears the gateway ring.",
         )
 
         committed_before = self.snapshot().committed_kw

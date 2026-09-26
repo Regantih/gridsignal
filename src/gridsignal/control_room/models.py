@@ -123,6 +123,8 @@ class Incident:
     dollars_at_risk: float = 0.0
     restored_kw: float = 0.0
     dollars_recovered: float = 0.0
+    # Every device knocked out by this failure (one gateway firmware ring).
+    cohort: list[str] = field(default_factory=list)
     approval_required: bool = True
     approved_by: str | None = None
     approved_at: datetime | None = None

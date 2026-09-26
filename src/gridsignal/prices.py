@@ -15,6 +15,39 @@ import pandas as pd
 
 PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
 SAMPLE_PRICES = PROCESSED / "lz_houston_rtm_spp_sample.parquet"
+SCARCITY_PRICES = PROCESSED / "lz_houston_rtm_spp_scarcity_sample.parquet"
+
+
+@dataclass(frozen=True)
+class PriceScenario:
+    """A bundled day of real prices the demo can be replayed against."""
+
+    key: str
+    label: str
+    blurb: str
+    path: Path
+
+
+SCENARIOS: dict[str, PriceScenario] = {
+    "normal": PriceScenario(
+        key="normal",
+        label="Normal peak day",
+        blurb="An ordinary summer evening ramp: prices firm but far from scarcity.",
+        path=SAMPLE_PRICES,
+    ),
+    "scarcity": PriceScenario(
+        key="scarcity",
+        label="Scarcity day",
+        blurb="A real ERCOT scarcity event with settlement prices near the offer cap.",
+        path=SCARCITY_PRICES,
+    ),
+}
+DEFAULT_SCENARIO = "normal"
+
+
+def available_scenarios() -> list[PriceScenario]:
+    """Scenarios whose Parquet sample is actually bundled on this machine."""
+    return [s for s in SCENARIOS.values() if s.path.exists()]
 
 
 @dataclass(frozen=True)
@@ -86,3 +119,12 @@ def load_price_trace(path: Path | None = None) -> PriceTrace:
         source=meta.get("source", "ERCOT MIS"),
         frame=frame,
     )
+
+
+def load_scenario(key: str = DEFAULT_SCENARIO) -> PriceTrace:
+    """Load the bundled price trace for a named scenario."""
+    try:
+        scenario = SCENARIOS[key]
+    except KeyError:
+        raise KeyError(f"unknown price scenario {key!r}; known: {sorted(SCENARIOS)}") from None
+    return load_price_trace(scenario.path)

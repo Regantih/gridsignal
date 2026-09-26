@@ -21,6 +21,26 @@ control system, and it issues no dispatch commands.
 `Reset Demo` returns the simulation to the stable baseline so judges can replay the story without
 reloading the browser.
 
+## Making the dollars matter
+
+Two sidebar dials replay the same failure under conditions Base actually cares about:
+
+- **Price scenario.** The normal peak day (2026-09-22) or a real ERCOT scarcity day
+  (2023-09-06, settlement peaking at $5,147.65/MWh — the offer cap of the day plus reserve
+  adders). Both are cached Parquet samples, so the switch works offline.
+- **Fleet scale.** 48, 1,000 or 10,000 devices. The outage is a gateway firmware ring covering
+  one device in 48, so the same root cause takes out 208 devices in a 10,000-device fleet.
+
+| Fleet | Normal day | Scarcity day |
+|---|---|---|
+| 48 | $1.82 at risk | $55.39 at risk |
+| 1,000 | $27.77 at risk | $847.44 at risk |
+| 10,000 | $294.04 at risk | **$8,971.58 at risk, $8,682.72 recovered** |
+
+One operator approval is worth roughly nine thousand dollars on a scarcity evening — per outage,
+per fleet. Detection plus reallocation across 10,000 devices runs in well under a second
+(`tests/test_scale.py` prints the measured build / detect / reallocate split on every test run).
+
 ## Safety boundaries
 
 - **No real-world effect.** No device commands, no utility or market integration, no credentials
@@ -72,4 +92,7 @@ restored at the fleet level, and a person owns the decision.
 7. **(1:10)** Coverage snaps back to 100 %, the dollars at risk turn into dollars recovered,
    BAT-042 is quarantined, tasks advance, and the audit timeline shows detection → recommendation
    → human approval → reassignment → recovery.
-8. **(1:25)** Click **Reset Demo**. "Fully replayable, deterministic, and simulation-only."
+8. **(1:20)** Switch the sidebar to **Scarcity day** and **10,000 devices**, then trigger and
+   approve again. "Same failure, real ERCOT scarcity prices, Base-scale fleet: nearly nine
+   thousand dollars riding on one approval — and the reallocation still solves in milliseconds."
+9. **(1:30)** Click **Reset Demo**. "Fully replayable, deterministic, and simulation-only."

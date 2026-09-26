@@ -20,6 +20,24 @@ ZONES: list[tuple[str, str, float, float]] = [
 FLEET_SIZE = 48
 FOCUS_DEVICE_ID = "BAT-042"
 DEFAULT_SEED = 42
+FLEET_SIZES = (48, 1_000, 10_000)
+# Gateways are rolled out in rings of this many devices; a ring shares a firmware
+# channel, so an uplink regression takes the whole ring out at once.
+GATEWAY_RING_SIZE = 48
+
+
+def gateway_ring(device_id: str, fleet_size: int = FLEET_SIZE) -> list[str]:
+    """Devices sharing ``device_id``'s gateway firmware ring, including itself.
+
+    At the 48-device demo scale a ring is a single device; at fleet scale the same
+    failure takes out ``fleet_size / GATEWAY_RING_SIZE`` devices.
+    """
+    index = int(device_id.split("-")[1])
+    return [
+        f"BAT-{i:03d}"
+        for i in range(1, fleet_size + 1)
+        if i % GATEWAY_RING_SIZE == index % GATEWAY_RING_SIZE
+    ]
 
 
 def _street(rng: random.Random, city: str) -> str:
