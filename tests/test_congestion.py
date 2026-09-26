@@ -129,7 +129,10 @@ def test_placement_prefers_the_best_zone_then_moves_on() -> None:
     assert "LZ_SOUTH" not in placed
     assert sum(placed.values()) == 1_000
     houston = sketch[sketch["zone"] == "LZ_HOUSTON"].iloc[0]
-    assert houston["last $/battery/day"] < houston["first $/battery/day"]
+    assert (
+        houston["last $/battery/day (hindsight-timed)"]
+        < houston["first $/battery/day (hindsight-timed)"]
+    )
     assert sketch.attrs["unplaced"] == 0
 
 
@@ -187,3 +190,49 @@ def test_summary_headline_states_only_bundled_facts() -> None:
     assert f"{summary.days} bundled ERCOT days" in summary.headline
     assert summary.widest.location in summary.headline
     assert 0.0 <= summary.divergent_share <= 1.0
+
+
+# ------------------------------------------------- hindsight labels and regimes
+
+
+def test_the_headline_pairs_a_zones_gap_with_that_same_zones_uplift() -> None:
+    """The widest gap and the uplift quoted next to it must be the same zone."""
+    basis = congestion.basis_frame(congestion.load_days(congestion.bundled_days()[:3]))
+    summary = congestion.summarize(basis)
+    assert summary.widest_zone.location == summary.widest.location
+    quoted = f"${summary.widest_zone.uplift_usd:,.2f}/battery/day"
+    assert quoted in summary.headline
+    others = [u for u in congestion.zone_uplift(basis) if u.location != summary.widest.location]
+    assert summary.best.location not in summary.headline or summary.best.location == (
+        summary.widest.location
+    )
+    assert all(o.location not in summary.headline for o in others)
+
+
+def test_every_dollar_figure_is_labelled_hindsight_timed(capsys) -> None:
+    """CLI headline, uplift table and placement sketch all carry the label."""
+    congestion.main()
+    out = capsys.readouterr().out
+    assert congestion.HINDSIGHT_NOTE in out
+    for line in out.splitlines():
+        if "$/battery/day" in line or "$/day" in line:
+            assert congestion.HINDSIGHT in line, line
+
+
+def test_ordinary_and_scarcity_days_are_reported_apart() -> None:
+    basis = congestion.basis_frame()
+    uplift = congestion.zone_uplift(basis)[0]
+    assert uplift.ordinary_days and uplift.scarcity_days
+    assert uplift.ordinary_days + uplift.scarcity_days == uplift.days
+    # The blended mean sits between the two regimes it is made of.
+    low, high = sorted((uplift.ordinary_uplift_usd, uplift.scarcity_uplift_usd))
+    assert low - 0.01 <= uplift.uplift_usd <= high + 0.01
+    assert "ordinary days" in uplift.split_summary and "scarcity days" in uplift.split_summary
+
+
+def test_the_placement_sketch_does_not_send_most_of_the_next_1000_to_one_zone() -> None:
+    """The DEMO claim is checked against the sketch rather than asserted in prose."""
+    sketch = congestion.placement_sketch(1000)
+    top = sketch.iloc[0]
+    assert top["batteries placed"] < 500, "a 'mostly one zone' claim would need >500 here"
+    assert len(sketch) >= 5

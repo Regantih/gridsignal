@@ -18,6 +18,11 @@ answers three questions:
 Everything here is a read-only analysis of a handful of historical days. The placement
 ranking in particular is a **sketch, not a forecast**: it is arithmetic on the bundled
 prices with an explicit saturation assumption, not a siting study.
+
+**Every dollar figure in this module is hindsight-timed.** The discharge and charge hours
+are picked by ranking a day's settled prices after that day is over, so these are ceilings
+on what perfect timing in a zone was worth, not what a live policy earned. The causal
+policy that decides before prices settle lives in :mod:`gridsignal.dam`.
 """
 
 from __future__ import annotations
@@ -29,7 +34,15 @@ from pathlib import Path
 import pandas as pd
 
 from gridsignal import backtest
+from gridsignal.insight import SCARCITY_PEAK_MWH
 from gridsignal.signals import Signal
+
+#: Stamped on every dollar figure here, because all of them rank prices after the fact.
+HINDSIGHT = "hindsight-timed"
+HINDSIGHT_NOTE = (
+    "hindsight-timed: discharge hours are ranked on prices that had already settled, "
+    "so every dollar figure is a ceiling on perfect timing, not a live result"
+)
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 ZONE_DIR = DATA_DIR / "zones"
@@ -226,10 +239,16 @@ class ZoneDay:
     zone_blind_usd: float
     mean_hub_basis: float
     peak_hub_basis: float
+    peak_mwh: float = 0.0
 
     @property
     def uplift_usd(self) -> float:
         return round(self.zone_timed_usd - self.zone_blind_usd, 2)
+
+    @property
+    def scarcity(self) -> bool:
+        """A day whose zone price touched four figures behaves nothing like the rest."""
+        return self.peak_mwh >= SCARCITY_PEAK_MWH
 
 
 def zone_day(basis: pd.DataFrame, date: str, location: str) -> ZoneDay:
@@ -259,6 +278,7 @@ def zone_day(basis: pd.DataFrame, date: str, location: str) -> ZoneDay:
         zone_blind_usd=blind.signal_usd,
         mean_hub_basis=round(float(day["hub_basis"].mean()), 2),
         peak_hub_basis=round(float(day["hub_basis"].max()), 2),
+        peak_mwh=round(float(day["spp"].max()), 2),
     )
 
 
@@ -274,6 +294,10 @@ class ZoneUplift:
     mean_hub_basis: float
     peak_hub_basis: float
     win_days: int
+    ordinary_days: int = 0
+    scarcity_days: int = 0
+    ordinary_uplift_usd: float = 0.0
+    scarcity_uplift_usd: float = 0.0
 
     @property
     def uplift_usd(self) -> float:
@@ -282,6 +306,18 @@ class ZoneUplift:
     @property
     def win_rate(self) -> float:
         return round(self.win_days / self.days, 2) if self.days else 0.0
+
+    @property
+    def split_summary(self) -> str:
+        """The two regimes stated apart, because their averages are nothing alike."""
+        return (
+            f"${self.ordinary_uplift_usd:,.2f} on {self.ordinary_days} ordinary days, "
+            f"${self.scarcity_uplift_usd:,.2f} on {self.scarcity_days} scarcity days"
+        )
+
+
+def _mean_uplift(days: list[ZoneDay]) -> float:
+    return round(sum(d.uplift_usd for d in days) / len(days), 2) if days else 0.0
 
 
 def zone_uplift(basis: pd.DataFrame | None = None) -> list[ZoneUplift]:
@@ -300,6 +336,10 @@ def zone_uplift(basis: pd.DataFrame | None = None) -> list[ZoneUplift]:
                 mean_hub_basis=round(sum(d.mean_hub_basis for d in days) / len(days), 2),
                 peak_hub_basis=round(max(d.peak_hub_basis for d in days), 2),
                 win_days=sum(1 for d in days if d.uplift_usd > 0),
+                ordinary_days=len([d for d in days if not d.scarcity]),
+                scarcity_days=len([d for d in days if d.scarcity]),
+                ordinary_uplift_usd=_mean_uplift([d for d in days if not d.scarcity]),
+                scarcity_uplift_usd=_mean_uplift([d for d in days if d.scarcity]),
             )
         )
     return sorted(results, key=lambda r: r.uplift_usd, reverse=True)
@@ -312,9 +352,11 @@ def uplift_frame(results: list[ZoneUplift] | None = None) -> pd.DataFrame:
             {
                 "zone": r.location,
                 "metro": r.metro,
-                "zone-timed $/battery/day": r.zone_timed_usd,
-                "zone-blind $/battery/day": r.zone_blind_usd,
-                "uplift $": r.uplift_usd,
+                "zone-timed $/battery/day (hindsight-timed)": r.zone_timed_usd,
+                "zone-blind $/battery/day (hindsight-timed)": r.zone_blind_usd,
+                "uplift $ (hindsight-timed)": r.uplift_usd,
+                "ordinary-day uplift $": r.ordinary_uplift_usd,
+                "scarcity-day uplift $": r.scarcity_uplift_usd,
                 "mean basis $/MWh": r.mean_hub_basis,
                 "peak basis $/MWh": r.peak_hub_basis,
                 "days won": f"{r.win_days}/{r.days}",
@@ -417,9 +459,9 @@ def placement_sketch(
             "zone": r.location,
             "metro": r.metro,
             "batteries placed": placed[r.location],
-            "first $/battery/day": first_usd.get(r.location, 0.0),
-            "last $/battery/day": last_usd.get(r.location, 0.0),
-            "total $/day": round(zone_total[r.location], 2),
+            "first $/battery/day (hindsight-timed)": first_usd.get(r.location, 0.0),
+            "last $/battery/day (hindsight-timed)": last_usd.get(r.location, 0.0),
+            "total $/day (hindsight-timed)": round(zone_total[r.location], 2),
             "saturates at": r.saturation_batteries,
         }
         for r in ranks
@@ -438,6 +480,7 @@ class CongestionSummary:
     days: int
     zones: int
     widest: WidestHour
+    widest_zone: ZoneUplift
     best: ZoneUplift
     worst: ZoneUplift
     mean_uplift_usd: float
@@ -450,13 +493,16 @@ class CongestionSummary:
 
     @property
     def headline(self) -> str:
+        """One zone's gap, paired with that same zone's uplift and nobody else's."""
         return (
             f"Across {self.days} bundled ERCOT days the hub average hid a "
             f"${self.widest.hub_basis:,.2f}/MWh gap: {self.widest.metro} "
             f"({self.widest.location}) priced that far above the hub in hour "
-            f"{self.widest.hour:02d}, while a battery timed to its own zone's price "
-            f"earned ${self.best.uplift_usd:,.2f}/day more than the same battery timed "
-            f"to the hub."
+            f"{self.widest.hour:02d}, yet a battery in {self.widest_zone.location} timed "
+            f"to its own zone's price earned only "
+            f"${self.widest_zone.uplift_usd:,.2f}/battery/day more than the same battery "
+            f"timed to the hub ({HINDSIGHT}; "
+            f"{self.widest_zone.split_summary})."
         )
 
     @property
@@ -465,8 +511,10 @@ class CongestionSummary:
             f"{self.divergent_intervals:,} of {self.intervals:,} zone-intervals "
             f"({self.divergent_share:.1%}) settled more than $5/MWh away from the hub "
             f"average, so a single-zone price series misses them by construction. "
-            f"Best zone {self.best.location} (+${self.best.uplift_usd:,.2f}/battery/day), "
-            f"worst {self.worst.location} (${self.worst.uplift_usd:,.2f})."
+            f"Best zone {self.best.location} "
+            f"(+${self.best.uplift_usd:,.2f}/battery/day {HINDSIGHT}: "
+            f"{self.best.split_summary}), worst {self.worst.location} "
+            f"(${self.worst.uplift_usd:,.2f})."
         )
 
 
@@ -476,10 +524,12 @@ DIVERGENCE_USD = 5.0
 def summarize(basis: pd.DataFrame | None = None) -> CongestionSummary:
     basis = basis if basis is not None else basis_frame()
     uplifts = zone_uplift(basis)
+    widest = widest_hours(basis, top=1)[0]
     return CongestionSummary(
         days=int(basis["date"].nunique()),
         zones=int(basis["location"].nunique()),
-        widest=widest_hours(basis, top=1)[0],
+        widest=widest,
+        widest_zone=next(u for u in uplifts if u.location == widest.location),
         best=uplifts[0],
         worst=uplifts[-1],
         mean_uplift_usd=round(sum(u.uplift_usd for u in uplifts) / len(uplifts), 2),
@@ -502,6 +552,7 @@ def main() -> None:
     summary = summarize(basis)
     print(summary.headline)
     print(summary.subhead)
+    print(f"({HINDSIGHT_NOTE}.)")
     print()
     print(uplift_frame(zone_uplift(basis)).to_string(index=False))
     print()
@@ -512,10 +563,10 @@ def main() -> None:
             f"hub +${hour.hub_basis:>8,.2f}  west +${hour.west_basis:>8,.2f}"
         )
     print()
-    print("where to install the next 1,000 batteries (sketch, not a forecast):")
+    print(f"where to install the next 1,000 batteries (sketch, not a forecast; {HINDSIGHT}):")
     sketch = placement_sketch(1000)
     print(sketch.to_string(index=False))
-    print(f"  total ${sketch.attrs['total_usd_per_day']:,.2f}/day")
+    print(f"  total ${sketch.attrs['total_usd_per_day']:,.2f}/day ({HINDSIGHT})")
 
 
 if __name__ == "__main__":

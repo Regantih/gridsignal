@@ -1314,7 +1314,12 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
 
     cols = st.columns(3)
     cols[0].metric("Placed", f"{int(sketch['batteries placed'].sum()):,}")
-    cols[1].metric("Value at these prices", f"${sketch.attrs['total_usd_per_day']:,.0f}/day")
+    cols[1].metric(
+        "Value at these prices",
+        f"${sketch.attrs['total_usd_per_day']:,.0f}/day",
+        delta=congestion.HINDSIGHT,
+        delta_color="off",
+    )
     cols[2].metric(
         "Top zone",
         sketch.iloc[0]["metro"],
@@ -1341,9 +1346,9 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
         sketch.style.format(
             {
                 "batteries placed": "{:,.0f}",
-                "first $/battery/day": "{:,.2f}",
-                "last $/battery/day": "{:,.2f}",
-                "total $/day": "{:,.0f}",
+                "first $/battery/day (hindsight-timed)": "{:,.2f}",
+                "last $/battery/day (hindsight-timed)": "{:,.2f}",
+                "total $/day (hindsight-timed)": "{:,.0f}",
                 "saturates at": "{:,.0f}",
             }
         ),
@@ -1352,6 +1357,7 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
     )
     st.caption(
         usd(
+            f"Every dollar here is {congestion.HINDSIGHT_NOTE}. "
             "Data-driven sketch on a few bundled days of prices, not a forecast and not a "
             "siting study. Batteries are placed greedily into whichever zone pays most at "
             f"that moment; a zone's marginal value falls linearly to zero at its assumed "
@@ -1403,9 +1409,11 @@ def render_congestion() -> None:
     st.dataframe(
         congestion.uplift_frame(uplifts).style.format(
             {
-                "zone-timed $/battery/day": "{:,.2f}",
-                "zone-blind $/battery/day": "{:,.2f}",
-                "uplift $": "{:+,.2f}",
+                "zone-timed $/battery/day (hindsight-timed)": "{:,.2f}",
+                "zone-blind $/battery/day (hindsight-timed)": "{:,.2f}",
+                "uplift $ (hindsight-timed)": "{:+,.2f}",
+                "ordinary-day uplift $": "{:+,.2f}",
+                "scarcity-day uplift $": "{:+,.2f}",
                 "mean basis $/MWh": "{:,.2f}",
                 "peak basis $/MWh": "{:,.2f}",
             }
@@ -1419,7 +1427,9 @@ def render_congestion() -> None:
             f"15-minute prints across {summary.days} bundled days. The only difference is "
             "which hours were chosen: the zone's own price, which carries its congestion, or "
             "the ERCOT hub average a zone-blind operator watches. Uplift is small and it is "
-            "negative in some zones; that is what these days show."
+            "negative in some zones; that is what these days show. Ordinary and scarcity days "
+            f"are split out because their averages are nothing alike, and every figure is "
+            f"{congestion.HINDSIGHT_NOTE}."
         )
     )
 

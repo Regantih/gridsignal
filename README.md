@@ -531,23 +531,33 @@ Two spreads, per 15-minute interval, per zone:
 - **West-to-load-center spread** = load-zone SPP − `LZ_WEST` SPP — what a metro paid over the
   generation-heavy west, which is the direction congestion pushes.
 
+**Every dollar figure in this section is hindsight-timed**: the discharge hours are ranked on
+prices that had already settled, so they are ceilings on perfect timing in a zone, not what a
+live policy earned. The causal policy is the held-out scorecard above.
+
 **What most people miss:** across these 15 bundled days, **LZ_LCRA at hour 18 priced $39.82/MWh
 above the hub average on average**, and **3,427 of 11,520 zone-intervals (29.8%) settled more than
-$5/MWh away from the hub** — yet timing discharge to a zone's own price instead of the hub average
-is worth only **+$0.13 per battery per day on average** (best `LZ_SOUTH` +$0.57, worst `LZ_WEST`
-−$0.01). The congestion is large and real; the share of it a single 13.5 kWh battery can collect
-by re-timing alone is small. Both halves are in the Grid Signals panel.
+$5/MWh away from the hub** — yet a battery *in LZ_LCRA* timed to its own zone's price earned only
+**+$0.15 per battery per day** (hindsight-timed) over the same battery timed to the hub. The gap
+and the uplift quoted next to it are the same zone; the best zone on these days is a different
+one, `LZ_SOUTH` at +$0.57. The congestion is large and real; the share of it a single 13.5 kWh
+battery can collect by re-timing alone is small. Both halves are in the Grid Signals panel.
 
-| Zone | Metro | Zone-timed $/bat/day | Zone-blind $/bat/day | Uplift $ | Mean basis $/MWh | Days won |
-|---|---|---:|---:|---:|---:|---|
-| LZ_SOUTH | South Texas | 7.01 | 6.44 | **+0.57** | −1.62 | 11/15 |
-| LZ_LCRA | Austin (LCRA) | 7.47 | 7.32 | **+0.15** | 6.25 | 10/15 |
-| LZ_HOUSTON | Houston | 7.29 | 7.21 | **+0.08** | 2.57 | 11/15 |
-| LZ_AEN | Austin (city) | 7.35 | 7.27 | **+0.08** | 3.72 | 11/15 |
-| LZ_NORTH | Dallas-Fort Worth | 7.35 | 7.28 | **+0.07** | 2.61 | 9/15 |
-| LZ_RAYBN | Rayburn | 7.32 | 7.25 | **+0.07** | 1.48 | 8/15 |
-| LZ_CPS | San Antonio | 7.32 | 7.26 | **+0.06** | 3.11 | 11/15 |
-| LZ_WEST | West Texas | 7.37 | 7.38 | **−0.01** | 9.49 | 8/15 |
+| Zone | Metro | Zone-timed $/bat/day | Zone-blind $/bat/day | Uplift $ | Ordinary days $ | Scarcity days $ | Mean basis $/MWh | Days won |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| LZ_SOUTH | South Texas | 7.01 | 6.44 | **+0.57** | +0.70 | +0.03 | −1.62 | 11/15 |
+| LZ_LCRA | Austin (LCRA) | 7.47 | 7.32 | **+0.15** | +0.18 | +0.03 | 6.25 | 10/15 |
+| LZ_HOUSTON | Houston | 7.29 | 7.21 | **+0.08** | +0.09 | +0.04 | 2.57 | 11/15 |
+| LZ_AEN | Austin (city) | 7.35 | 7.27 | **+0.08** | +0.09 | +0.03 | 3.72 | 11/15 |
+| LZ_NORTH | Dallas-Fort Worth | 7.35 | 7.28 | **+0.07** | +0.09 | +0.01 | 2.61 | 9/15 |
+| LZ_RAYBN | Rayburn | 7.32 | 7.25 | **+0.07** | +0.09 | +0.01 | 1.48 | 8/15 |
+| LZ_CPS | San Antonio | 7.32 | 7.26 | **+0.06** | +0.06 | +0.04 | 3.11 | 11/15 |
+| LZ_WEST | West Texas | 7.37 | 7.38 | **−0.01** | +0.01 | −0.06 | 9.49 | 8/15 |
+
+All figures hindsight-timed. **Ordinary and scarcity days are split** because their averages are
+nothing alike: 12 of the 15 bundled days are ordinary, 3 touched four figures, and re-timing
+collects almost nothing on the scarcity days — on those days every zone is expensive at once, so
+the local signal and the hub signal pick nearly the same hours.
 
 **Method.** Both policies settle at the *same* local zone prints on the same 13.5 kWh / 5 kW
 battery; the only difference is which price series ranks the intervals — the zone's own price
