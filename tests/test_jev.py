@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -24,7 +25,12 @@ from gridsignal.jev.client import (
     request_key,
     transport_from_env,
 )
-from gridsignal.jev.policy import ApprovalPolicy, decide
+from gridsignal.jev.policy import (
+    ApprovalPolicy,
+    decide,
+    deciding_confidence,
+    distrusted_agents,
+)
 from gridsignal.jev.questions import (
     BACKUP_RISK,
     ROOT_CAUSE,
@@ -404,6 +410,51 @@ def test_distrusted_agent_or_partial_cover_routes_to_the_human() -> None:
     assert not partial.auto_approved and "whole gap" in partial.reason
 
 
+def test_the_gate_turns_on_root_cause_and_backup_risk_only() -> None:
+    """A shaky trust answer changes who gets the kW; it does not set the gate."""
+    response = response_with(0.99, 0.05)
+    shaky = replace(
+        response,
+        answers=response.answers
+        | {
+            "trust_BAT-001": replace(response.answers["trust_BAT-001"], confidence=0.10),
+        },
+    )
+    assert deciding_confidence(shaky) == pytest.approx(0.99)
+    assert decide(shaky, dollars=10.0, covered_fully=True, human_approver="operator").auto_approved
+
+    unsure_root = replace(
+        response,
+        answers=response.answers
+        | {ROOT_CAUSE: replace(response.answers[ROOT_CAUSE], confidence=0.4)},
+    )
+    assert not decide(
+        unsure_root, dollars=10.0, covered_fully=True, human_approver="operator"
+    ).auto_approved
+
+
+def test_a_distrusted_agent_already_dropped_no_longer_blocks_the_gate() -> None:
+    response = response_with(0.99, 0.05, trust=False)
+    assert distrusted_agents(response) == ("BAT-001",)
+    still_in_plan = decide(
+        response,
+        dollars=10.0,
+        covered_fully=True,
+        human_approver="operator",
+        plan_agents=["BAT-001", "BAT-002"],
+    )
+    dropped = decide(
+        response,
+        dollars=10.0,
+        covered_fully=True,
+        human_approver="operator",
+        plan_agents=["BAT-002"],
+    )
+    assert not still_in_plan.auto_approved
+    assert dropped.auto_approved
+    assert dropped.distrusted == ("BAT-001",)  # recorded either way
+
+
 def test_threshold_and_cap_are_configurable() -> None:
     relaxed = ApprovalPolicy(confidence_threshold=0.7, max_backup_risk=0.9, dollar_cap=10_000.0)
     decision = decide(
@@ -488,3 +539,16 @@ def test_eval_scores_both_layers_against_ground_truth() -> None:
     assert 0.0 <= jev.accuracy <= 1.0
     table = evaluate.markdown(report)
     assert "Root-cause accuracy" in table and "rules-only" in table
+
+
+def test_eval_says_rules_fallback_when_there_is_no_fixture(tmp_path: Path) -> None:
+    """With no key and no recorded answer the second column is not Jev's work."""
+    single = next(p for p in available_scenarios() if p.stem == "single_device")
+    report = evaluate.evaluate(paths=[single], directory=tmp_path)
+
+    assert report.fixtures == 0
+    assert report.summary(evaluate.JEV) is None
+    fallback = report.summary(evaluate.JEV_FALLBACK)
+    assert fallback is not None and fallback.scenarios == 1
+    table = evaluate.markdown(report)
+    assert "rules fallback" in table and "| jev |" not in table

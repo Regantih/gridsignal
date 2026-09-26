@@ -59,9 +59,33 @@ def test_agent_mesh_shows_the_registry_the_log_and_a_scenario_picker() -> None:
     log = next(f for f in frames if "kind" in f.columns and "card" not in f.columns)
     assert {"agent", "kind", "health", "last heartbeat (s)", "card"} <= set(registry.columns)
     assert set(registry["card"]) <= {"verified", "stale", "rejected"}
-    assert {"call_for_capacity", "award_proposed", "approval"} <= set(log["kind"])
+    assert {"call_for_capacity", "award_proposed"} <= set(log["kind"])
+    assert "approval" not in set(log["kind"])  # nothing is approved until a human clicks
     assert [s.label for s in app.selectbox] == ["Replay"]
     assert "Simulation only" in " ".join(m.value for m in app.markdown)
+
+
+def test_agent_mesh_awards_execute_only_after_the_operator_clicks_approve() -> None:
+    app = AppTest.from_file(APP, default_timeout=180)
+    app.run()
+    app.session_state["view"] = "Agent Mesh"
+    app.run()
+    assert not app.exception, app.exception
+
+    approve = next(b for b in app.button if b.label == "Approve award set")
+    approve.click().run()
+    app.session_state["mesh_kinds"] = []  # show every message kind, including the new ones
+    app.run()
+    assert not app.exception, app.exception
+
+    log = next(
+        df.value
+        for df in app.dataframe
+        if "kind" in df.value.columns and "card" not in df.value.columns
+    )
+    assert {"approval", "award_executed"} <= set(log["kind"])
+    approved = " ".join(e.value for e in app.success)
+    assert "M. Alvarez (Fleet Operator)" in approved and "scripted" not in approved
 
 
 def test_agent_mesh_shows_jev_answers_and_the_rules_comparison() -> None:

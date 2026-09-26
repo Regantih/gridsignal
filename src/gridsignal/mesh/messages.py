@@ -20,6 +20,7 @@ class MessageKind(StrEnum):
     CALL_FOR_CAPACITY = "call_for_capacity"
     BID = "bid"
     AWARD_PROPOSED = "award_proposed"
+    AWARD_REVISED = "award_revised"
     JEV_DECISION = "jev_decision"
     APPROVAL = "approval"
     AUTO_APPROVAL = "auto_approval"

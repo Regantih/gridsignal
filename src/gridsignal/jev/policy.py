@@ -4,11 +4,16 @@
 
 A step is auto-approved only when **all** of these hold:
 
-* Jev's confidence on every decision in the step is at least ``confidence_threshold``
-  (default 0.9),
-* the plan is low risk to homeowner backup (``backup_risk <= max_backup_risk``),
+* Jev's confidence on the two answers this decision actually turns on — the root cause
+  and the backup-risk score — is at least ``confidence_threshold`` (default 0.9),
+* the plan is low risk to member backup (``backup_risk <= max_backup_risk``),
 * the money at stake is under ``dollar_cap``,
-* the plan covers the whole gap and no agent was flagged untrustworthy.
+* the plan covers the whole gap and no agent *in the plan* was flagged untrustworthy.
+
+The gate deliberately does not take the minimum confidence over every answer: the
+per-agent trust answers change *who* is awarded (distrusted bidders are dropped and the
+award recomputed before approval), not whether the step is safe, so an uncertain trust
+answer about an agent that is no longer in the plan must not veto the step.
 
 Anything else routes to the human approval gate with Jev's probabilities attached, which
 is also what happens whenever Jev is offline: the rules fallback answers with zero
@@ -17,7 +22,7 @@ confidence, so it can never clear the gate.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
 from gridsignal.jev.client import JevResponse, Source
@@ -68,10 +73,24 @@ class ApprovalDecision:
         }
 
 
-def _min_confidence(response: JevResponse) -> float:
-    if not response.answers:
+def deciding_confidence(response: JevResponse) -> float:
+    """Confidence over the answers the gate turns on: root cause and backup risk."""
+    answers = [response.answer(ROOT_CAUSE), response.answer(BACKUP_RISK)]
+    present = [a.confidence for a in answers if a is not None]
+    if len(present) < 2:
         return 0.0
-    return min(a.confidence for a in response.answers.values())
+    return min(present)
+
+
+def distrusted_agents(response: JevResponse) -> tuple[str, ...]:
+    """Agents whose card or bid Jev answered ``no`` on, whatever their signature says."""
+    return tuple(
+        sorted(
+            qid[len(TRUST_PREFIX) :]
+            for qid, answer in response.answers.items()
+            if qid.startswith(TRUST_PREFIX) and answer.yes is False
+        )
+    )
 
 
 def decide(
@@ -81,19 +100,21 @@ def decide(
     human_approver: str,
     policy: ApprovalPolicy | None = None,
     overrides: Mapping[str, float] | None = None,
+    plan_agents: Collection[str] | None = None,
 ) -> ApprovalDecision:
-    """Route one recovery step either to Jev or to the human gate."""
+    """Route one recovery step either to Jev or to the human gate.
+
+    ``plan_agents`` is the award set as it stands *after* distrusted bidders have been
+    dropped; when given, only distrust of an agent still in the plan blocks the gate.
+    """
     gate = policy or ApprovalPolicy(**{k: float(v) for k, v in dict(overrides or {}).items()})
     root = response.answer(ROOT_CAUSE)
     risk_answer = response.answer(BACKUP_RISK)
     risk = risk_answer.score if risk_answer and risk_answer.score is not None else 1.0
-    confidence = _min_confidence(response)
-    distrusted = tuple(
-        sorted(
-            qid[len(TRUST_PREFIX) :]
-            for qid, answer in response.answers.items()
-            if qid.startswith(TRUST_PREFIX) and answer.yes is False
-        )
+    confidence = deciding_confidence(response)
+    distrusted = distrusted_agents(response)
+    blocking = (
+        distrusted if plan_agents is None else tuple(a for a in distrusted if a in plan_agents)
     )
 
     reasons: list[str] = []
@@ -107,8 +128,8 @@ def decide(
         reasons.append(f"${dollars:,.2f} above the ${gate.dollar_cap:,.0f} cap")
     if not covered_fully:
         reasons.append("plan does not cover the whole gap")
-    if distrusted:
-        reasons.append(f"{len(distrusted)} agent(s) flagged untrustworthy")
+    if blocking:
+        reasons.append(f"{len(blocking)} agent(s) flagged untrustworthy")
 
     auto = not reasons
     return ApprovalDecision(

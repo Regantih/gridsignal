@@ -12,15 +12,18 @@ from __future__ import annotations
 
 import argparse
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from gridsignal.jev import rules
-from gridsignal.jev.client import FIXTURE_DIR, JevClient
+from gridsignal.jev.client import FIXTURE_DIR, JevClient, Source
 from gridsignal.mesh.scenarios import available_scenarios, load_scenario
 
 RULES = "rules-only"
 JEV = "jev"
+#: What the second column is really called when there is no key and no recorded answer:
+#: the deterministic rules answered, so calling the row "jev" would overstate it.
+JEV_FALLBACK = "jev (rules fallback)"
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,14 @@ def evaluate(paths: list[Path] | None = None, directory: Path = FIXTURE_DIR) -> 
             rows.append(row)
             by_mode[mode].append(row)
 
+    # With no key and no fixtures every "Jev" answer came from the rules fallback; say so
+    # rather than crediting the model for an answer it never gave.
+    jev_rows = by_mode[JEV]
+    if jev_rows and all(r.source == Source.FALLBACK.value for r in jev_rows):
+        del by_mode[JEV]
+        rows = [replace(r, mode=JEV_FALLBACK) if r.mode == JEV else r for r in rows]
+        by_mode[JEV_FALLBACK] = [replace(r, mode=JEV_FALLBACK) for r in jev_rows]
+
     return EvalReport(
         rows=tuple(rows),
         summaries=tuple(_summarise(mode, mode_rows) for mode, mode_rows in by_mode.items()),
@@ -121,6 +132,7 @@ def evaluate(paths: list[Path] | None = None, directory: Path = FIXTURE_DIR) -> 
 
 def markdown(report: EvalReport) -> str:
     """The table that goes in the README and the Agent Mesh view."""
+    jev_mode = JEV_FALLBACK if any(r.mode == JEV_FALLBACK for r in report.rows) else JEV
     lines = [
         "| Decision layer | Root-cause accuracy | Human approvals | Auto-approvals | "
         "Median decision latency |",
@@ -133,14 +145,14 @@ def markdown(report: EvalReport) -> str:
             f"{summary.auto_approvals} | {summary.median_latency_ms:.0f} ms |"
         )
     lines.append("")
-    lines.append("| Scenario | Injected root cause | rules-only | Jev |")
+    lines.append(f"| Scenario | Injected root cause | {RULES} | {jev_mode} |")
     lines.append("| --- | --- | --- | --- |")
     scenarios = sorted({r.scenario for r in report.rows})
     for scenario in scenarios:
         rows = {r.mode: r for r in report.rows if r.scenario == scenario}
-        truth = rows[JEV].truth
+        truth = rows[jev_mode].truth
         cells = []
-        for mode in (RULES, JEV):
+        for mode in (RULES, jev_mode):
             row = rows[mode]
             mark = "✓" if row.correct else "✗"
             cells.append(f"{row.root_cause} {mark}")

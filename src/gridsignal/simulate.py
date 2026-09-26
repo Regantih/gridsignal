@@ -20,7 +20,7 @@ from gridsignal.control_room.models import Device, DeviceStatus
 from gridsignal.fleet import GATEWAY_RING_SIZE, gateway_ring
 from gridsignal.jev import rules
 from gridsignal.jev.client import JevClient, JevResponse, Source
-from gridsignal.jev.policy import ApprovalDecision, ApprovalPolicy, decide
+from gridsignal.jev.policy import ApprovalDecision, ApprovalPolicy, decide, distrusted_agents
 from gridsignal.jev.questions import (
     BACKUP_RISK,
     ROOT_CAUSE,
@@ -93,6 +93,11 @@ class RunMetrics:
     auto_approvals: int
     decision_latency_ms: float
     distrusted_agents: int
+    #: True when the run stopped at the approval gate waiting for an operator click.
+    pending_approval: bool = False
+    #: kW dropped from the proposed award because the decision layer distrusted the
+    #: bidder, even though its signature verified.
+    distrusted_kw_dropped: float = 0.0
     # Grid-stress drill measurements. All simulated.
     min_frequency_hz: float = NOMINAL_HZ
     extra_demand_kw: float = 0.0
@@ -314,16 +319,28 @@ def run_scenario(
     scenario: Scenario,
     jev: JevClient | None = None,
     policy: ApprovalPolicy | None = None,
+    approver: str | None = None,
+    approve: bool = True,
 ) -> RunResult:
     """Replay one YAML scenario end to end.
 
     ``jev`` defaults to recorded answers for this scenario, so the default run needs no
     key and no network; pass :meth:`JevClient.offline` for the rules-only comparison.
+
+    ``approver`` names the human who approves the awards. The command line runs
+    unattended, so it defaults to the scenario's name marked ``scripted approver``; the
+    Control Room passes the operator who actually clicked Approve. The YAML name alone
+    never counts as a human: it is always labelled as scripted.
+
+    With ``approve=False`` the run stops at the approval gate: the award is proposed and
+    logged but nothing is committed, which is what the Control Room shows before the
+    operator clicks Approve.
     """
     client = jev or JevClient.for_scenario(scenario.slug, fallback=rules.answers)
     if client.fallback is None:
         client.fallback = rules.answers
     gate = policy or ApprovalPolicy()
+    human_approver = approver or f"{scenario.approver} (scripted approver)"
     trace = load_price_scenario(scenario.price_scenario)
     engine = ControlRoomEngine(seed=scenario.seed, price_trace=trace, fleet_size=scenario.batteries)
     hours = engine.remaining_hours()
@@ -579,6 +596,8 @@ def run_scenario(
         self_deployed_kw=self_deployed_kw,
     )
     escalated = False
+    pending_approval = False
+    distrusted_kw_dropped = 0.0
     time_to_cover_s = 0
     decisions: list[ApprovalDecision] = []
     responses: list[JevResponse] = []
@@ -639,16 +658,50 @@ def run_scenario(
         )
         questions = incident_questions(snapshot)
         response = client.ask(snapshot.as_state(), questions)
+
+        # Signatures were checked when the cards were published; they only prove a card
+        # was not edited in flight. Jev's trust answers catch the validly signed agent
+        # that is lying about what it can deliver, and those bids leave the award set
+        # before anyone is asked to approve it.
+        distrusted = distrusted_agents(response)
+        if distrusted:
+            before_kw = award_set.covered_kw
+            award_set = coordinator.revise(call, bids, distrusted)
+            distrusted_kw_dropped += round(max(before_kw - award_set.covered_kw, 0.0), 2)
+
         decision = decide(
             response,
             dollars=energy_value_usd(award_set.covered_kw, hours, price_mwh),
             covered_fully=not award_set.escalated,
-            human_approver=scenario.approver,
+            human_approver=human_approver,
             policy=gate,
+            plan_agents=[a.agent_id for a in award_set.awards],
         )
         responses.append(response)
         decisions.append(decision)
         _log_decision(bus, registry.now_s, response, decision, call.call_id)
+
+        if not approve and not decision.auto_approved:
+            # No human has clicked yet. The plan exists, nothing is committed, and the
+            # run stops here: this is the state the Control Room shows next to its
+            # Approve button.
+            pending_approval = True
+            awards.append(award_set)
+            bus.send(
+                registry.now_s,
+                MessageKind.ESCALATION,
+                coordinator.agent_id,
+                "fleet-operator",
+                (
+                    f"{award_set.covered_kw:.1f} kW proposed for {call.call_id} — waiting "
+                    "for an operator to approve it in the Control Room"
+                ),
+                call_id=call.call_id,
+                covered_kw=award_set.covered_kw,
+                pending_approval=True,
+            )
+            escalated = True
+            break
 
         if not decision.auto_approved:
             registry.advance(scenario.approval_delay_s)
@@ -748,6 +801,8 @@ def run_scenario(
         dollars_at_risk=dollars_at_risk,
         dollars_recovered=energy_value_usd(covered_kw, hours, price_mwh),
         escalated=escalated,
+        pending_approval=pending_approval,
+        distrusted_kw_dropped=round(distrusted_kw_dropped, 2),
         rounds=rounds,
         jev_source=client.source.value,
         jev_model=responses[-1].model if responses else "rules-fallback",
@@ -804,9 +859,14 @@ def trace_path(scenario: Scenario, directory: Path = TRACE_DIR) -> Path:
     return directory / f"{scenario.slug}.jsonl"
 
 
-def run_file(path: str | Path, out: Path | None = None) -> RunResult:
+def run_file(
+    path: str | Path,
+    out: Path | None = None,
+    approver: str | None = None,
+    approve: bool = True,
+) -> RunResult:
     scenario = load_scenario(path)
-    result = run_scenario(scenario)
+    result = run_scenario(scenario, approver=approver, approve=approve)
     result.bus.write_jsonl(out or trace_path(scenario))
     return result
 

@@ -22,11 +22,13 @@ from gridsignal import (
 )
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
+from gridsignal.control_room.engine import OWNERS
 from gridsignal.control_room.models import (
     Device,
     DeviceStatus,
     Incident,
     IncidentStatus,
+    Role,
     Severity,
     TaskStatus,
 )
@@ -54,6 +56,9 @@ from gridsignal.signals import Signal
 from gridsignal.simulate import RunResult, run_file
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
+
+#: The operator whose click approves an award. Nothing in YAML can stand in for them.
+OPERATOR = OWNERS[Role.FLEET_OPERATOR]
 
 STATUS_COLOR = {
     DeviceStatus.ONLINE: "#16a34a",
@@ -1499,9 +1504,51 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
 
 
 @st.cache_data(show_spinner=False)
-def chaos_run(path: str) -> RunResult:
-    """Replay one YAML chaos scenario; deterministic, so caching is safe."""
-    return run_file(path)
+def chaos_run(path: str, approver: str | None = None) -> RunResult:
+    """Replay one YAML chaos scenario; deterministic, so caching is safe.
+
+    Without an ``approver`` the replay stops at the approval gate, so the mesh awards
+    only ever execute after an operator clicks Approve in this view.
+    """
+    return run_file(path, approver=approver, approve=approver is not None)
+
+
+def render_mesh_approval(result: RunResult, approved_key: str) -> None:
+    """The human gate for the mesh: a real click, on the same path the engine uses."""
+    if result.metrics.pending_approval:
+        st.warning(
+            f"Human approval required. {result.awards[-1].covered_kw:,.1f} kW is proposed "
+            "and nothing is committed until you approve it."
+        )
+        if st.button("Approve award set", type="primary", use_container_width=True):
+            st.session_state[approved_key] = True
+            st.rerun()
+        return
+    approved = [a for a in result.awards if a.approved_by]
+    if approved:
+        st.success(f"Awards executed. Approved by {approved[-1].approved_by}.")
+        if st.button("Reset to the approval gate", use_container_width=True):
+            st.session_state.pop(approved_key, None)
+            st.rerun()
+
+
+def render_award_revision(result: RunResult) -> None:
+    """Before/after the distrusted bids were dropped and the auction re-run."""
+    revised = [a for a in result.awards if a.covered_kw_before_revision is not None]
+    if not revised:
+        return
+    award = revised[-1]
+    before = award.covered_kw_before_revision or 0.0
+    st.markdown(
+        "<div class='gs-card'><div class='gs-kicker'>Award revised after the trust "
+        f"check</div><div class='gs-body'>Signatures verified, but Jev distrusted "
+        f"{', '.join(award.dropped)}. Those bids were removed and the auction re-run "
+        f"before anyone was asked to approve it: <b>{before:,.1f} kW from "
+        f"{len(award.awards) + len(award.dropped):,} agents</b> before, "
+        f"<b>{award.covered_kw:,.1f} kW from {len(award.awards):,} agents</b> after."
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
 
 
 def render_registry(result: RunResult) -> None:
@@ -1573,7 +1620,9 @@ def render_agent_mesh() -> None:
             "Same run as `python -m gridsignal.simulate "
             f"scenarios/{choice.name}`, replayed from its JSONL trace."
         )
-    result = chaos_run(str(choice))
+    approved_key = f"mesh_approved::{choice.name}"
+    approver = OPERATOR if st.session_state.get(approved_key) else None
+    result = chaos_run(str(choice), approver)
     metrics, scenario = result.metrics, result.scenario
 
     st.subheader(scenario.name)
@@ -1608,9 +1657,12 @@ def render_agent_mesh() -> None:
         unsafe_allow_html=True,
     )
 
+    render_mesh_approval(result, approved_key)
+
     if result.responses:
         st.subheader("Jev decision layer")
         render_jev_card(result.responses[-1], result.decisions[-1])
+        render_award_revision(result)
 
     left, right = st.columns([3, 4], gap="large")
     with left:

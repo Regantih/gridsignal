@@ -10,11 +10,15 @@ Two properties matter more than the protocol itself:
   kW is applied by ``approve(call_id, approver)`` and nowhere else.
 * **Awards are idempotent.** Re-triggering the same call, or a double-click on approve,
   returns the award already on file instead of committing the capacity twice.
+* **A distrusted bid is dropped, not just flagged.** ``revise()`` removes the bidders a
+  judgement layer distrusts and recomputes the award before anyone approves it, so the
+  verdict changes who gets the kW rather than only annotating the log.
 """
 
 from __future__ import annotations
 
 import math
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 from gridsignal.mesh.cards import AgentKind, CardStatus, Health
@@ -80,6 +84,10 @@ class AwardSet:
     escalated: bool = False
     approved_by: str | None = None
     executed: bool = False
+    #: Bidders dropped by :meth:`Coordinator.revise` before this award was approved.
+    dropped: tuple[str, ...] = ()
+    #: What the award covered before those bidders were dropped, if any were.
+    covered_kw_before_revision: float | None = None
 
     @property
     def covered_kw(self) -> float:
@@ -267,6 +275,47 @@ class Coordinator:
                 uncovered_kw=award_set.uncovered_kw,
             )
         return award_set
+
+    def revise(
+        self, call: CallForCapacity, bids: list[Bid], distrusted: Collection[str]
+    ) -> AwardSet:
+        """Recompute the award without the bidders a judgement layer distrusts.
+
+        A valid signature only proves a card was not edited in flight; it says nothing
+        about an agent that signs an inflated capability honestly. Those bids are removed
+        here and the auction re-run, before the approval gate sees the plan.
+        """
+        award_set = self.awards.get(call.call_id)
+        if award_set is None or award_set.executed:
+            raise ApprovalRequired(f"nothing revisable for {call.call_id}")
+        drop = {a for a in distrusted}
+        if not drop & {a.agent_id for a in award_set.awards}:
+            return award_set
+
+        before_kw = award_set.covered_kw
+        before_agents = len(award_set.awards)
+        del self.awards[call.call_id]
+        revised = self.propose(call, [b for b in bids if b.agent_id not in drop])
+        revised.dropped = tuple(sorted(drop))
+        revised.covered_kw_before_revision = before_kw
+        self.bus.send(
+            self.registry.now_s,
+            MessageKind.AWARD_REVISED,
+            self.agent_id,
+            "fleet-operator",
+            (
+                f"Dropped {len(drop)} distrusted bidder(s) and re-ran the auction: "
+                f"{before_kw:.1f} kW from {before_agents} agents -> "
+                f"{revised.covered_kw:.1f} kW from {len(revised.awards)} agents"
+            ),
+            call_id=call.call_id,
+            dropped=sorted(drop),
+            covered_kw_before=before_kw,
+            covered_kw_after=revised.covered_kw,
+            agents_before=before_agents,
+            agents_after=len(revised.awards),
+        )
+        return revised
 
     def approve(self, call_id: str, approver: str) -> AwardSet:
         """The gate: awarded capacity is committed here and only here."""

@@ -60,7 +60,8 @@ def test_single_device_scenario_covers_the_gap_behind_a_human_approval() -> None
     assert result.metrics.covered_pct == 100.0
     assert not result.metrics.escalated
     assert kinds.index(MessageKind.APPROVAL) < kinds.index(MessageKind.AWARD_EXECUTED)
-    assert result.awards[0].approved_by == "M. Alvarez (Fleet Operator)"
+    # The CLI has no human at the keyboard, so the YAML name is labelled as scripted.
+    assert result.awards[0].approved_by == "M. Alvarez (Fleet Operator) (scripted approver)"
     assert result.metrics.dollars_recovered > 0.0
 
 
@@ -162,3 +163,45 @@ def test_ten_thousand_agent_negotiation_benchmark(capsys: pytest.CaptureFixture[
     assert award_set.coverage_pct == 100.0
     assert award_set.executed
     assert registered_s + heartbeat_s + negotiate_s < 30.0
+
+
+# ------------------------------------------- distrusted bids and the human click
+
+
+def test_distrusted_bidders_are_dropped_and_the_award_recomputed() -> None:
+    """A valid signature is not enough: the inflated bidders lose their award."""
+    result = run_scenario(load_scenario(SCENARIO_DIR / "holdout" / "large_load_squeeze.yaml"))
+    revised = [a for a in result.awards if a.covered_kw_before_revision is not None]
+
+    assert revised, "the squeeze drill has validly signed bidders Jev distrusts"
+    award = revised[-1]
+    assert award.dropped  # named, not just flagged
+    assert not {a.agent_id for a in award.awards} & set(award.dropped)
+    assert award.covered_kw < (award.covered_kw_before_revision or 0.0)
+    assert result.metrics.distrusted_kw_dropped > 0.0
+
+    revisions = [m for m in result.bus.messages if m.kind is MessageKind.AWARD_REVISED]
+    assert revisions and revisions[-1].payload["dropped"] == list(award.dropped)
+    # The revision happens before anyone is asked to approve the plan.
+    kinds = [m.kind for m in result.bus.messages]
+    assert kinds.index(MessageKind.AWARD_REVISED) < kinds.index(MessageKind.APPROVAL)
+
+
+def test_the_cli_labels_its_approver_as_scripted() -> None:
+    result = run_scenario(load_scenario("single_device.yaml"))
+    assert result.awards[0].approved_by.endswith("(scripted approver)")
+
+
+def test_without_a_click_nothing_is_committed() -> None:
+    """The Control Room path: propose, wait, then execute on the operator's click."""
+    pending = run_scenario(load_scenario("single_device.yaml"), approve=False)
+    assert pending.metrics.pending_approval
+    assert pending.awards[-1].approved_by is None
+    assert not pending.awards[-1].executed
+
+    clicked = run_scenario(
+        load_scenario("single_device.yaml"), approver="M. Alvarez (Fleet Operator)"
+    )
+    assert clicked.awards[-1].approved_by == "M. Alvarez (Fleet Operator)"
+    assert clicked.awards[-1].executed
+    assert "scripted" not in (clicked.awards[-1].approved_by or "")
