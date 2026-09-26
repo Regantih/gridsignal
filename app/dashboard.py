@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import pipeline
+from gridsignal import holdout, pipeline
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
     Device,
@@ -89,6 +89,12 @@ SIGNAL_COLOR = {
 def signals_run(scenario: str) -> pipeline.PipelineResult:
     """Detect -> forecast -> signal -> backtest for one bundled ERCOT day."""
     return pipeline.run(scenario)
+
+
+@st.cache_data(show_spinner=False)
+def holdout_run() -> list[holdout.DayResult]:
+    """Score the frozen policy on the bundled days it was never tuned on."""
+    return holdout.evaluate()
 
 
 def engine() -> ControlRoomEngine:
@@ -545,6 +551,72 @@ def render_money_chart(ledger: pd.DataFrame) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_holdout() -> None:
+    """Out-of-sample scorecard: the same frozen policy on days it never saw."""
+    results = holdout_run()
+    st.subheader("Held-out days (thresholds frozen, never tuned on these)")
+    if not results:
+        st.caption(
+            "No held-out days bundled. Run python scripts/fetch_holdout.py "
+            "with the [ercot] extra to cache them."
+        )
+        return
+
+    summary = holdout.summarize(results)
+    cols = st.columns(4)
+    cols[0].metric("Days scored", f"{summary.days}")
+    cols[1].metric(
+        "Days beating naive",
+        f"{summary.days_won}/{summary.days}",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Mean uplift",
+        f"${summary.mean_uplift_usd:,.2f}",
+        delta="per battery per day",
+        delta_color="off",
+    )
+    cols[3].metric(
+        "Worst day",
+        f"${summary.worst_uplift_usd:,.2f}",
+        delta="per battery",
+        delta_color="off",
+    )
+
+    frame = holdout.as_frame(results)
+    st.dataframe(
+        frame.rename(
+            columns={
+                "date": "Date",
+                "peak_mwh": "Peak $/MWh",
+                "mean_mwh": "Mean $/MWh",
+                "spikes": "Spike intervals",
+                "signal_usd": "GridSignal $",
+                "naive_usd": "Naive $",
+                "uplift_usd": "Uplift $",
+            }
+        ).style.format(
+            {
+                "Peak $/MWh": "{:,.2f}",
+                "Mean $/MWh": "{:,.2f}",
+                "GridSignal $": "{:,.2f}",
+                "Naive $": "{:,.2f}",
+                "Uplift $": "{:+,.2f}",
+            }
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        usd(
+            "Every figure is per battery per day on real cached LZ_HOUSTON 15-minute RTM "
+            "settlement prices. The policy thresholds were written against the two "
+            "scenario days above and were not adjusted after seeing these results, so "
+            "losing days are shown as they came out."
+        )
+    )
+
+
 def render_grid_signals(scenario: str, fleet_size: int) -> None:
     """Spike detection, spike forecast, dispatch signals and what they were worth."""
     result = signals_run(scenario)
@@ -608,11 +680,15 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
             height=320,
         )
 
+    st.divider()
+    render_holdout()
+
     st.caption(
         usd(
             f"Backtest on real cached ERCOT {trace.market} prices for {trace.location}, "
             f"{trace.date} ({len(trace.frame)} intervals, peak ${trace.peak_mwh:,.2f}/MWh). "
-            "Battery model: 13.5 kWh usable, 5 kW inverter, 90% round trip. Signals are "
+            "Battery model (assumed, not measured fleet data): 13.5 kWh usable, 5 kW "
+            "inverter, 90% round trip. Signals are "
             "advisory only — nothing is dispatched, and past prices are not a forecast of "
             "future revenue."
         )
