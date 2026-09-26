@@ -286,7 +286,7 @@ class ControlRoomEngine:
         energy_kw = max(0.0, device.available_kwh - reserve_kwh) / hours_left
         return round(max(min(device.power_kw * trust, energy_kw), 0.0), 3)
 
-    def _headroom_kw(self, device: Device) -> float:
+    def exportable_kw(self, device: Device) -> float:
         """Exportable kW: the discharge headroom left once the house is served.
 
         The home is on the same side of the meter, so its load comes out of the
@@ -343,7 +343,7 @@ class ControlRoomEngine:
         for device in self.mine:
             device.assigned_kw = 0.0
 
-        headroom = {d.device_id: self._headroom_kw(d) for d in self.mine}
+        headroom = {d.device_id: self.exportable_kw(d) for d in self.mine}
         pool = [d for d in self.mine if headroom[d.device_id] > 0]
         total_headroom = sum(headroom[d.device_id] for d in pool)
         if total_headroom <= 0:
@@ -476,9 +476,9 @@ class ControlRoomEngine:
         hours = max(self.remaining_hours(), MIN_DISPATCH_HOURS)
         return round(WEAR_USD_PER_KW * 1000.0 / hours, 2)
 
-    def _spare_kw(self, device: Device) -> float:
+    def spare_kw(self, device: Device) -> float:
         """Export headroom this battery has not already promised to the event."""
-        return round(max(self._headroom_kw(device) - device.assigned_kw, 0.0), 3)
+        return round(max(self.exportable_kw(device) - device.assigned_kw, 0.0), 3)
 
     def surplus_offer(self) -> SurplusOffer:
         """What the fleet could still offer beyond its commitment, and what it holds.
@@ -494,7 +494,7 @@ class ControlRoomEngine:
         committed = round(sum(d.assigned_kw for d in self.mine), 2)
         spare_by_zone: dict[str, float] = defaultdict(float)
         for device in self.mine:
-            spare_by_zone[device.zone] += self._spare_kw(device)
+            spare_by_zone[device.zone] += self.spare_kw(device)
 
         deliverable = 0.0
         for zone, spare in spare_by_zone.items():
@@ -574,8 +574,8 @@ class ControlRoomEngine:
             return offer
 
         for zone in sorted({d.zone for d in self.mine}):
-            in_zone = [d for d in self.mine if d.zone == zone and self._spare_kw(d) > 0]
-            spare = sum(self._spare_kw(d) for d in in_zone)
+            in_zone = [d for d in self.mine if d.zone == zone and self.spare_kw(d) > 0]
+            spare = sum(self.spare_kw(d) for d in in_zone)
             if spare <= 0:
                 continue
             zone_committed = sum(d.assigned_kw for d in self.mine if d.zone == zone)
@@ -584,7 +584,7 @@ class ControlRoomEngine:
             for device in in_zone:
                 # Round the added kW *down*: a rounded-up commitment would be a kW the
                 # battery does not have, and would show as a reserve breach on paper.
-                extra = math.floor(taken * self._spare_kw(device) / spare * 100) / 100
+                extra = math.floor(taken * self.spare_kw(device) / spare * 100) / 100
                 device.assigned_kw = round(device.assigned_kw + extra, 2)
 
         self._log(
@@ -987,7 +987,7 @@ class ControlRoomEngine:
             raise OverrideError(f"{device_id} is controlled by {UTILITY_PARTNER}, not ours")
         if kw < 0:
             raise OverrideError("an award cannot be negative")
-        headroom = self._headroom_kw(device)
+        headroom = self.exportable_kw(device)
         if kw > headroom + 1e-9:
             raise OverrideError(
                 f"{device_id} can export {headroom:.2f} kW at most with the member's "

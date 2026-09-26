@@ -60,12 +60,12 @@ def discharge_headroom_kw(engine: ControlRoomEngine, device: Device) -> float:
 
 def _share(engine: ControlRoomEngine, pool: list[Device], target: float) -> float:
     """Old: read each device's headroom again for the sum and again for the split."""
-    total_headroom = sum(engine._headroom_kw(d) for d in pool)
+    total_headroom = sum(engine.exportable_kw(d) for d in pool)
     if total_headroom <= 0 or target <= 0:
         return 0.0
     share = min(target, total_headroom)
     for device in pool:
-        device.assigned_kw = round(share * engine._headroom_kw(device) / total_headroom, 2)
+        device.assigned_kw = round(share * engine.exportable_kw(device) / total_headroom, 2)
     return round(sum(d.assigned_kw for d in pool), 2)
 
 
@@ -73,8 +73,8 @@ def allocate_dispatch(engine: ControlRoomEngine) -> float:
     """Old: the same allocation, with headroom recomputed at every step."""
     for device in engine.mine:
         device.assigned_kw = 0.0
-    pool = [d for d in engine.mine if engine._headroom_kw(d) > 0]
-    total_headroom = sum(engine._headroom_kw(d) for d in pool)
+    pool = [d for d in engine.mine if engine.exportable_kw(d) > 0]
+    total_headroom = sum(engine.exportable_kw(d) for d in pool)
     if total_headroom <= 0:
         return 0.0
     target = min(engine.grid_event.target_kw, total_headroom)

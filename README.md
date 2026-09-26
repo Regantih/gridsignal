@@ -354,6 +354,28 @@ run on each path is printed beside the totals. Simulated fleet and household loa
 ERCOT prices; on screen as **Control Room → Backup promise ledger**, tested in
 `tests/test_backup_ledger.py`.
 
+#### What-if console
+
+`python -m gridsignal.whatif` (and **Control Room → What-if console**) prices a hypothetical
+against the fleet already on screen, without touching it. The operator picks or types the
+scenario — `20% of LZ_HOUSTON offline at 17:00`, `gateway ring 3 dark`, `price spike to $3,000`,
+`BAT-042 offline` — and a parser, not a model, turns it into a question the same control-room
+engine answers: who drops out, what it costs, who can cover it and what the plan is.
+
+On the simulated 10,000-device fleet, `20% of LZ_HOUSTON offline at 17:00` drops 1,777.7 kW
+across **400 devices in LZ_HOUSTON**, **$492.03 of exposure** over the remaining hours at cached
+ERCOT prices, all of it coverable by spare export headroom elsewhere; `price spike to $3,000`
+is reported as **9,424.9 kW uncommitted**, worth **$56,549.46 of upside** — upside, not
+exposure, because nothing has failed. Every answer lands in about 25 ms on a 2 vCPU box
+(machine-dependent; the test budget is 2 s at 10,000 devices).
+
+The console is deliberately inert: it reads the engine and returns numbers, it never assigns a
+kW, opens an incident or writes the audit trail, and the plan it prints ends with the human
+approval step. The member's backup reserve is outside the recoverable headroom by construction,
+the utility partner's units are neither counted as our loss nor used as our cover, and any offer
+in the plan still has to pass `gridsignal.guardrails` before it could leave. Tested in
+`tests/test_whatif.py` (parser, arithmetic, no-mutation, timing).
+
 #### Base's two business models, scored on the same simulated fleet
 
 Base has described two ways the same battery earns: a **retail-choice** model, where Base is the

@@ -24,6 +24,7 @@ from gridsignal import (
     judgment_report,
     member,
     pipeline,
+    whatif,
 )
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.workflow import group_alarms
@@ -209,6 +210,7 @@ def canonical() -> dict[str, str]:
     unrestricted = ancillary.holdout_summary(ancillary.BASE_CORE, rules=ancillary.ALL_PRODUCTS)
     models = business.compare()
     promise = backup_ledger.cached_prove()
+    zone_case, _, spike_case = whatif.report(fleet_size=DEMO_FLEET)
     return {
         "backup_intervals_audited": f"{promise.guarded.intervals:,}",
         "backup_violations": str(promise.guarded.violations),
@@ -242,6 +244,11 @@ def canonical() -> dict[str, str]:
         "ancillary_top_day_share": f"{pilot.top_day_share[1]:.0%}",
         "unrestricted_median_usd": f"{unrestricted.median_uplift_usd:,.2f}",
         "unrestricted_mean_usd": f"{unrestricted.mean_uplift_usd:,.2f}",
+        "whatif_zone_devices": f"{zone_case.devices_affected:,}",
+        "whatif_zone_lost_kw": f"{zone_case.lost_kw:,.1f}",
+        "whatif_zone_at_risk_usd": f"{zone_case.dollars_at_risk:,.2f}",
+        "whatif_spike_kw": f"{spike_case.recoverable_kw:,.1f}",
+        "whatif_spike_usd": f"{spike_case.dollars_at_risk:,.2f}",
     }
 
 

@@ -33,6 +33,7 @@ from gridsignal import (
     replay,
     rollout,
     telemetry,
+    whatif,
     why,
 )
 from gridsignal.backtest import BacktestSummary
@@ -656,6 +657,51 @@ def render_backup_ledger(eng: ControlRoomEngine) -> None:
         f"{bare.violations} intervals across {bare.runs_breached} runs. Simulated "
         "fleet and household load, real cached ERCOT prices; reproduce with "
         "python -m gridsignal.backup_ledger."
+    )
+
+
+def render_whatif(eng: ControlRoomEngine) -> None:
+    """Price a hypothetical against the fleet on screen, without dispatching it."""
+    st.markdown("<div class='gs-kicker'>What-if console</div>", True)
+    picked = st.selectbox("What-if scenario", whatif.EXAMPLES, key="whatif_pick")
+    typed = st.text_input(
+        "or type one", key="whatif_text", placeholder="20% of LZ_NORTH offline at 18:00"
+    )
+    try:
+        answer = whatif.evaluate(eng, whatif.parse(typed.strip() or picked))
+    except whatif.ParseError as exc:
+        st.warning(str(exc))
+        return
+
+    cols = st.columns(3)
+    at_stake = "Upside on the table" if answer.lost_kw == 0 else "At stake"
+    metric(
+        cols[0],
+        at_stake,
+        money(answer.dollars_at_risk),
+        note=f"{answer.hours:.2f} h left at ${answer.price_mwh:,.2f}/MWh",
+    )
+    metric(
+        cols[1],
+        "Coverable by the rest of the fleet",
+        power(answer.recoverable_kw),
+        note=(
+            f"{answer.devices_affected:,} devices affected, "
+            f"{power(answer.spare_kw)} of spare headroom"
+        ),
+        tooltip=GLOSSARY["headroom"],
+    )
+    metric(
+        cols[2],
+        "Still exposed",
+        money(answer.dollars_exposed),
+        note=f"{power(answer.uncovered_kw)} nobody can cover",
+    )
+    st.markdown("\n".join(f"- {step}" for step in answer.plan))
+    caption(
+        f"Answered in {answer.elapsed_ms:.0f} ms against the {eng.fleet_size:,}-device "
+        "simulated fleet on screen. Nothing is dispatched and no state changes: the "
+        "console only prices the question. Reproduce with python -m gridsignal.whatif."
     )
 
 
@@ -3019,6 +3065,8 @@ def main() -> None:
     render_home_first(eng)
     st.divider()
     render_backup_ledger(eng)
+    st.divider()
+    render_whatif(eng)
     st.divider()
     if advanced():
         render_fleet_replay()

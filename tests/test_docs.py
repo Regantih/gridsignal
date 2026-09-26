@@ -210,6 +210,12 @@ CLAIMS: tuple[tuple[str, str], ...] = (
     (r"\$([\d,]+\.\d\d) per kW-month", "break_even_kw_month_usd"),
     (r"\$(\d+\.\d\d) per battery per day of wholesale value", "certainty_cost_usd"),
     (r"promised\s+backup on \*{0,2}(\d) of 7 days", "partner_unclamped_breaches"),
+    # The what-if console's two published answers, from `python -m gridsignal.whatif`.
+    (r"drops ([\d,]+\.\d) kW", "whatif_zone_lost_kw"),
+    (r"\*{0,2}(\d+) devices in LZ_HOUSTON\*{0,2}", "whatif_zone_devices"),
+    (r"\$([\d,]+\.\d\d) of exposure", "whatif_zone_at_risk_usd"),
+    (r"\*{0,2}([\d,]+\.\d) kW uncommitted", "whatif_spike_kw"),
+    (r"\$([\d,]+\.\d\d) of upside", "whatif_spike_usd"),
 )
 
 #: The documents a judge reads. docs/DEMO.md has its own, stricter check: every number the

@@ -138,7 +138,7 @@ def test_overrides_leave_every_battery_above_its_reserve():
     eng.approve_recovery()
     hours = eng.grid_event.duration_hours
     for device in [d for d in eng.devices if d.is_operator_controlled][:40]:
-        headroom = eng._headroom_kw(device)
+        headroom = eng.exportable_kw(device)
         if headroom <= 0:
             continue
         eng.override_award(device.device_id, headroom, "push every battery to its limit")

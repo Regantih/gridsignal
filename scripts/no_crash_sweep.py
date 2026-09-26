@@ -51,6 +51,7 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("market guardrails", ("-m", "gridsignal.guardrails")),
     ("retail-choice vs utility-partner", ("-m", "gridsignal.business")),
     ("backup promise ledger", ("-m", "gridsignal.backup_ledger")),
+    ("what-if console at 10k", ("-m", "gridsignal.whatif", "--fleet", "10000")),
     ("deliverability report", ("-m", "gridsignal.deliverability_report")),
     ("degradation-aware dispatch", ("-m", "gridsignal.degradation")),
     (
@@ -293,6 +294,15 @@ def sweep_app(port: int) -> list[Result]:
             "sweep: hold this battery back"
         )
         click(page, "Override award", "Control Room: override award")
+        select_every_option(page, "What-if scenario", "Control Room: what-if")
+        page.get_by_label("or type one").fill("gateway ring 5 dark")
+        page.keyboard.press("Enter")
+        check(page, "Control Room: what-if typed")
+        page.get_by_label("or type one").fill("make me a sandwich")
+        page.keyboard.press("Enter")
+        check(page, "Control Room: what-if refused")
+        page.get_by_label("or type one").fill("")
+        page.keyboard.press("Enter")
         open_every_expander(page, "Control Room")
         click(page, "Reset Demo", "Control Room: reset")
 

@@ -179,7 +179,7 @@ def test_priority_zone_discharges_that_zone_first_without_changing_the_target():
     in_zone = [d for d in eng.devices if d.zone == zone and d.is_dispatchable]
     # Every dispatchable battery in the chosen zone is pushed to its full headroom.
     for device in in_zone:
-        assert device.assigned_kw == pytest.approx(eng._headroom_kw(device), abs=0.02)
+        assert device.assigned_kw == pytest.approx(eng.exportable_kw(device), abs=0.02)
     assert committed == pytest.approx(before, abs=0.5)
     assert eng.snapshot().coverage_pct == pytest.approx(100.0, abs=0.5)
     assert eng.audit[-1].kind == "dispatch_priority"
@@ -209,7 +209,7 @@ def test_priority_zone_survives_the_failure_and_recovery_flow():
     # Reserve is untouched: nothing we control is asked for more than its headroom.
     # The utility tenant's units carry their partner's own schedule, not our award.
     for device in eng.mine:
-        assert device.assigned_kw <= eng._headroom_kw(device) + 0.02
+        assert device.assigned_kw <= eng.exportable_kw(device) + 0.02
 
 
 def test_unknown_priority_zone_falls_back_to_sharing_by_headroom():

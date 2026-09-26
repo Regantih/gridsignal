@@ -527,6 +527,26 @@ def test_the_backup_ledger_card_shows_the_promise_and_the_counterfactual(
     assert held["Held h"].min() >= held["Held h without the floor"].min()
 
 
+def test_the_what_if_console_prices_a_scenario_without_dispatching_it(
+    rendered_views: dict[str, AppTest],
+) -> None:
+    """The default Control Room answers a hypothetical and says it changed nothing."""
+    app = rendered_views["Control Room"]
+    text = markdown_text(app)
+    assert "What-if console" in text
+    assert "Nothing is dispatched" in text
+    labels = {m.label: m.value for m in app.metric}
+    assert labels["Coverable by the rest of the fleet"].endswith("kW")
+    assert labels["Still exposed"].startswith("$")
+
+
+def test_the_what_if_console_refuses_a_scenario_it_cannot_read() -> None:
+    app = fresh()
+    app.text_input("whatif_text").set_value("make me a sandwich").run()
+    assert not app.exception, app.exception
+    assert any("Unrecognised scenario" in w.value for w in app.warning)
+
+
 #: Panels the demo script does not narrate. They exist, but not on the default screen.
 ADVANCED_PANELS = (
     "Full-fleet scarcity replay",

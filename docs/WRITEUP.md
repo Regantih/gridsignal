@@ -6,18 +6,17 @@ it and fix it.
 
 **Who it helps.** Fleet operators at a company like Base, and members who want lights on.
 
-**Solution.** GridSignal Control Room is a simulation-only operator console for a fleet of
-batteries run as a mesh of agents. Every battery, gateway and zone publishes an HMAC-signed
-capability card; when capacity is lost, healthy agents bid and the cheapest covering set is
-proposed. Jev, a fast decision model, judges root cause, trust and backup risk against six
-pre-committed principles and names the one that decided it; signatures, rules and a named human
-still decide. Only then is the device quarantined, its kW reassigned and the sequence audited.
-Related alarms collapse into one timeline; any award is overridable with a logged reason.
-Dispatch is home-first: the house runs off the grid while storage is held for the
-day-ahead peak, the member's reserve is never sold, and a partner utility's units are a
-tenant the mesh may never touch. The same orchestration ships firmware in canary rings, takes
-JSON-lines telemetry, and runs coordinator and agents as separate processes over multiplexed
-loopback TCP.
+**Solution.** GridSignal Control Room is a simulation-only console for a battery fleet run as a
+mesh of agents. Every battery, gateway and zone publishes an HMAC-signed capability card; when
+capacity is lost, healthy agents bid and the cheapest covering set wins. Jev, a fast decision
+model, judges root cause, trust and backup risk against six pre-committed principles;
+signatures, rules and a named human still decide. Only then is the device quarantined, its kW
+reassigned and the sequence audited. Related alarms collapse into one timeline; any award is
+overridable with a reason. Dispatch is home-first: the house runs off the grid while storage is
+held for the day-ahead peak, the member's reserve is never sold, and a partner utility's units
+are untouchable. It also ships firmware in canary rings, takes JSON-lines telemetry, and runs
+coordinator and agents as separate processes over multiplexed loopback TCP. A what-if console
+prices typed scenarios on the same engine at fleet scale, dispatching nothing.
 
 **Impact.** One approval turns $4,812 at risk into $4,751 recovered across 10,000 simulated
 devices on a real ERCOT scarcity day. Only 47% of a scarcity day's capturable value was visible
