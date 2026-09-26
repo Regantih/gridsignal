@@ -288,9 +288,7 @@ async def _run_agents(
     wrong_key = derived_signing_key(seed + 1)
     stats = {"sent": 0, "received": 0, "dropped": 0}
     cards = _fleet_cards(seed, fleet_size, start, end)
-    signed = [
-        card.signed(wrong_key if index < forged else key) for index, card in enumerate(cards)
-    ]
+    signed = [card.signed(wrong_key if index < forged else key) for index, card in enumerate(cards)]
     edges = [round(len(signed) * i / channels) for i in range(channels + 1)]
     sessions = [
         _channel_session(
@@ -608,8 +606,7 @@ def lines(results: list[TransportResult]) -> list[str]:
         "Local loopback (127.0.0.1), agents multiplexed over TCP sockets, signed cards",
         "verified across the process boundary. Not a WAN: no gateway, cellular or",
         "inverter time.",
-        f"File descriptor limit on this box: {soft:,} "
-        f"(soft, after asking for the hard limit).",
+        f"File descriptor limit on this box: {soft:,} (soft, after asking for the hard limit).",
         "",
         f"{'agents':>8}  {'procs':>5}  {'drop':>5}  {'p50 ms':>8}  {'p95 ms':>8}  "
         f"{'max ms':>8}  {'frames/s':>10}  {'covered':>8}",
