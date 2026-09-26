@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from gridsignal import holdout
+from gridsignal import degradation, holdout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import dashboard  # noqa: E402
@@ -42,6 +42,14 @@ def test_headline_reports_the_held_out_mean_median_and_win_rate(grid_signals: Ap
 
 def test_headline_carries_the_one_line_caveat(grid_signals: AppTest) -> None:
     assert "never the claim on its own" in markdown_text(grid_signals)
+
+
+def test_grid_signals_shows_the_wear_gate_per_battery_type(grid_signals: AppTest) -> None:
+    text = markdown_text(grid_signals)
+    assert "assumption" in text
+    for model in degradation.WEAR_MODELS:
+        assert model.label in text
+    assert "equivalent full cycles" in text
 
 
 def test_every_view_renders() -> None:

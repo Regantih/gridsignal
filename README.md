@@ -297,6 +297,51 @@ read as one, instead of 332 pages. Add a fleet-wide stale-telemetry wave and the
 grouping gives **808 alarms → 48 incidents (16.8 per incident)**, one per affected ring,
 rather than one per alarm. Tests: `tests/test_workflow.py`.
 
+#### Degradation-aware dispatch: what a cycle costs
+
+Every kWh through the pack spends a little of it, and the day-ahead policy above does not
+know that. `src/gridsignal/degradation.py` puts a dollar on the cycle and gates dispatch on
+it. **The wear cost is an assumption of this repo, stated so it can be argued with, not a
+vendor figure, a warranty or a measured degradation curve:** a pack costs
+`replacement $/kWh` and is modelled as delivering `cycle_life` equivalent full cycles, so a
+kWh of throughput costs the ratio of the two.
+
+| Battery type (simulated) | Usable | Assumption | Wear |
+|---|---|---|---|
+| Legacy unit | 13.5 kWh | $400/kWh over 4,000 cycles | **$100.00/MWh** of throughput |
+| Base Core-style unit (40 kWh / 20 kW, per public interview, not an official spec) | 40 kWh | $300/kWh over 6,000 cycles | **$50.00/MWh** of throughput |
+
+Two decisions, because they carry different costs. Taking a cycle at all has to pay for the
+energy *and* the wear, so a day whose best expected export cannot clear
+`day-ahead charge price ÷ round-trip efficiency + wear` is dropped entirely, charge
+included — that is a cycle the battery never spends. Once the cycle is taken the energy is
+bought, so each export is judged only on its own margin against the wear of moving it, and
+anything cheaper is held for a better interval. Both tests read only the day-ahead curve
+and the last settled print, so nothing here looks at a price before it settles
+(`tests/test_degradation.py::test_the_gate_never_reads_a_price_before_it_settles`).
+
+```bash
+python -m gridsignal.degradation   # net dollars after wear and cycles saved, both splits
+```
+
+Per battery per day against the naive schedule, wear charged on the throughput the policy
+adds over that schedule:
+
+| Split | Battery | Gross $ | Wear $ | Net $ | Net, gated $ | Cycles | Gated | Saved |
+|---|---|---|---|---|---|---|---|---|
+| tuning | legacy | +0.09 | 0.08 | +0.01 | **+0.99** | 6.36 | 2.36 | 4.00 |
+| tuning | Base Core-style | +0.35 | 0.04 | +0.31 | **+1.64** | 6.12 | 2.12 | 4.00 |
+| held-out | legacy | +0.44 | 0.11 | +0.33 | **+1.48** | 7.55 | 2.00 | 5.55 |
+| held-out | Base Core-style | +0.70 | 0.05 | +0.65 | **+0.54** | 7.19 | 7.19 | 0.00 |
+
+The honest finding is the split itself: on the expensive pack the gate earns **+$1.15 per
+battery per day on held-out days and skips 5.55 of 7.55 equivalent full cycles**, because
+most days never had a spread worth grinding a $400/kWh pack for. On the cheaper Base
+Core-style pack the same floor almost never binds — it saves no cycles and costs $0.11 a
+day, since the few thin exports it withholds print higher than the day-ahead curve
+expected. Wear-gating is therefore a per-unit-type policy, not a fleet-wide one. Shown in
+**Grid Signals → Held-out days**. Tests: `tests/test_degradation.py`.
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.

@@ -15,6 +15,7 @@ import streamlit as st
 from gridsignal import (
     ancillary,
     congestion,
+    degradation,
     drills,
     holdout,
     home,
@@ -1248,6 +1249,65 @@ def render_holdout() -> None:
     )
     render_lookahead_correction(results)
     render_home_first_cost(results)
+    render_degradation()
+
+
+@st.cache_data(show_spinner=False)
+def degradation_run() -> list[degradation.SplitResult]:
+    """Deterministic on cached prices, so caching the whole sweep is safe."""
+    return degradation.evaluate_all()
+
+
+def render_degradation() -> None:
+    """Wear-aware dispatch: what a cycle costs, and which days are not worth taking."""
+    results = degradation_run()
+    st.markdown("#### Degradation-aware dispatch, by battery type")
+    st.caption(
+        usd(
+            "A cycle is only taken when the expected spread covers the energy and the "
+            "wear of moving it. The wear cost is an assumption of this build \u2014 pack "
+            "replacement over modelled cycle life \u2014 not a vendor figure: "
+            + "; ".join(f"{m.label}, {m.assumption}" for m in degradation.WEAR_MODELS)
+            + "."
+        )
+    )
+    frame = pd.DataFrame(
+        [
+            {
+                "Split": r.split,
+                "Battery": r.model.label,
+                "Gross $": r.gross_usd,
+                "Wear $": r.wear_usd,
+                "Net $": r.net_usd,
+                "Net after gate $": r.gated_net_usd,
+                "Cycles": r.cycles,
+                "Cycles saved": r.cycles_saved,
+                "Days won": f"{r.days_won_ungated} \u2192 {r.days_won} of {r.days}",
+            }
+            for r in results
+        ]
+    )
+    st.dataframe(
+        frame.style.format(
+            {
+                "Gross $": "{:+,.2f}",
+                "Wear $": "{:,.2f}",
+                "Net $": "{:+,.2f}",
+                "Net after gate $": "{:+,.2f}",
+                "Cycles": "{:,.2f}",
+                "Cycles saved": "{:,.2f}",
+            }
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    for result in results:
+        st.caption(usd(result.verdict))
+    st.caption(
+        "Dollars are per battery per day against the naive schedule; wear is charged on "
+        "the throughput the policy adds over that schedule, so cycling less is credited. "
+        "Reproduce with python -m gridsignal.degradation."
+    )
 
 
 def render_lookahead_correction(results: list[holdout.DayResult]) -> None:
