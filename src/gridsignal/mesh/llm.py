@@ -29,8 +29,9 @@ class LLMCoordinator(Coordinator):
         bus: MessageBus,
         enabled: bool = False,
         ranker: Ranker | None = None,
+        check_deliverability: bool = True,
     ) -> None:
-        super().__init__(registry, bus)
+        super().__init__(registry, bus, check_deliverability=check_deliverability)
         self.enabled = enabled
         self.ranker = ranker
 

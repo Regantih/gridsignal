@@ -1855,6 +1855,42 @@ def render_award_revision(result: RunResult) -> None:
     )
 
 
+def render_deliverability(result: RunResult) -> None:
+    """What the pre-award proof trimmed, refused, and why."""
+    checks = [(a, v) for a in result.awards for v in a.checks]
+    metrics = result.metrics
+    saved_kw = metrics.undeliverable_kw
+    if not checks and saved_kw <= 0:
+        return
+    st.markdown(
+        "<div class='gs-card'><div class='gs-kicker'>Deliverability check before the "
+        f"award</div><div class='gs-body'>Every award is proved against the whole event "
+        f"window before it is committed: <b>{metrics.awards_trimmed} trimmed</b>, "
+        f"<b>{metrics.awards_rejected} refused</b>. Without the check this run would have "
+        f"committed <b>{saved_kw:,.2f} kW</b> across "
+        f"{metrics.undeliverable_awards} awards that the battery could not have held for "
+        "the full window. Simulated fleet.</div></div>",
+        unsafe_allow_html=True,
+    )
+    if checks:
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "agent": v.agent_id,
+                        "asked (kW)": v.requested_kw,
+                        "can deliver (kW)": v.deliverable_kw,
+                        "outcome": "refused" if v.rejected else "trimmed",
+                        "why": v.reason,
+                    }
+                    for _, v in checks
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+
+
 def render_registry(result: RunResult) -> None:
     """Who is in the mesh, what they claim they can do, and whether we believe them."""
     statuses = result.registry.statuses()
@@ -1967,6 +2003,7 @@ def render_agent_mesh() -> None:
         st.subheader("Jev decision layer")
         render_jev_card(result.responses[-1], result.decisions[-1])
         render_award_revision(result)
+    render_deliverability(result)
 
     left, right = st.columns([3, 4], gap="large")
     with left:

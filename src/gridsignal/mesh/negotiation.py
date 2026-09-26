@@ -13,6 +13,9 @@ Two properties matter more than the protocol itself:
 * **A distrusted bid is dropped, not just flagged.** ``revise()`` removes the bidders a
   judgement layer distrusts and recomputes the award before anyone approves it, so the
   verdict changes who gets the kW rather than only annotating the log.
+* **Nothing is awarded that cannot be delivered.** Every award is proved against the
+  whole event window by :mod:`gridsignal.mesh.deliverability`, once when it is proposed
+  and again at the approval gate, and is trimmed or rejected with a logged reason.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ from collections.abc import Collection
 from dataclasses import dataclass, field
 
 from gridsignal.mesh.cards import AgentCard, AgentKind, CardStatus, Health
+from gridsignal.mesh.deliverability import MIN_AWARD_KW, Verdict, check
 from gridsignal.mesh.messages import MessageBus, MessageKind
 from gridsignal.mesh.registry import AgentRegistry
 
@@ -98,6 +102,23 @@ class AwardSet:
     dropped: tuple[str, ...] = ()
     #: What the award covered before those bidders were dropped, if any were.
     covered_kw_before_revision: float | None = None
+    #: Every award this coordinator could not clear in full, with the binding reason.
+    checks: tuple[Verdict, ...] = ()
+    #: kW an auction without the deliverability check would have committed to batteries
+    #: that cannot hold it for the whole window.
+    undeliverable_kw: float = 0.0
+    #: How many of its awards would have been at least partly undeliverable.
+    undeliverable_awards: int = 0
+    #: What that unchecked auction would have shown as covered.
+    unchecked_covered_kw: float = 0.0
+
+    @property
+    def trimmed(self) -> tuple[Verdict, ...]:
+        return tuple(v for v in self.checks if not v.rejected)
+
+    @property
+    def rejected(self) -> tuple[Verdict, ...]:
+        return tuple(v for v in self.checks if v.rejected)
 
     @property
     def covered_kw(self) -> float:
@@ -130,9 +151,17 @@ class Coordinator:
 
     agent_id = "coordinator-01"
 
-    def __init__(self, registry: AgentRegistry, bus: MessageBus, controller: str = "base") -> None:
+    def __init__(
+        self,
+        registry: AgentRegistry,
+        bus: MessageBus,
+        controller: str = "base",
+        check_deliverability: bool = True,
+    ) -> None:
         self.registry = registry
         self.bus = bus
+        # Off only for the counterfactual that measures what the check is worth.
+        self.check_deliverability = check_deliverability
         # The tenant this coordinator speaks for; cards naming anyone else are off limits.
         self.controller = controller
         self.calls: dict[str, CallForCapacity] = {}
@@ -238,22 +267,101 @@ class Coordinator:
         """Cheapest first, then biggest, then by id so ties never depend on ordering."""
         return sorted(bids, key=lambda b: (b.price_usd_per_kw, -b.kw, b.agent_id))
 
+    def _log_check(self, call: CallForCapacity, verdict: Verdict, stage: str = "proposal") -> None:
+        """Put every trim and rejection in the trace with the constraint that bound."""
+        action = "rejected" if verdict.rejected else "trimmed"
+        self.bus.send(
+            self.registry.now_s,
+            MessageKind.DELIVERABILITY,
+            self.agent_id,
+            verdict.agent_id,
+            (
+                f"{verdict.agent_id} {action} at {stage}: asked for "
+                f"{verdict.requested_kw:.2f} kW over {call.hours:.2f} h, can deliver "
+                f"{verdict.deliverable_kw:.2f} kW — {verdict.reason}"
+            ),
+            call_id=call.call_id,
+            agent_id=verdict.agent_id,
+            stage=stage,
+            requested_kw=verdict.requested_kw,
+            deliverable_kw=verdict.deliverable_kw,
+            trimmed_kw=verdict.trimmed_kw,
+            rejected=verdict.rejected,
+            reason=verdict.reason,
+        )
+
+    def _unchecked(self, call: CallForCapacity, ranked: list[Bid]) -> tuple[float, int, float]:
+        """The counterfactual: what an auction that trusted every bid would have done.
+
+        Returns the kW it would have committed to batteries that cannot hold it for the
+        whole window, how many of its awards were at least partly undeliverable, and
+        the coverage it would have reported.
+        """
+        undeliverable = 0.0
+        awards = 0
+        covered = 0.0
+        remaining = call.gap_kw
+        for bid in ranked:
+            if remaining <= 1e-9:
+                break
+            take = round(min(bid.kw, remaining), 3)
+            covered += take
+            remaining = round(remaining - take, 6)
+            short = self.deliverable(bid.agent_id, take, call.hours).trimmed_kw
+            undeliverable += short
+            awards += 1 if short > 0 else 0
+        return round(undeliverable, 2), awards, round(covered, 2)
+
+    def deliverable(self, agent_id: str, kw: float, hours: float, extra_kw: float = 0.0) -> Verdict:
+        """What this agent can hold for the whole window, given what it already owes."""
+        card = self.registry.card(agent_id)
+        return check(
+            card,
+            self.registry.status(agent_id),
+            hours,
+            kw,
+            committed_kw=round(self.commitments.get(agent_id, 0.0) + extra_kw, 3),
+            reserve_kwh=reserve_floor_kwh(card),
+        )
+
     def propose(self, call: CallForCapacity, bids: list[Bid]) -> AwardSet:
-        """Award the cheapest set that covers the gap; cover partially and escalate."""
+        """Award the cheapest set that covers the gap; cover partially and escalate.
+
+        Each candidate award is proved against the whole event window before it joins
+        the plan: a bid the battery cannot sustain is trimmed to what it can hold, or
+        dropped, and the auction moves on to the next bidder to close the gap.
+        """
         if call.call_id in self.awards:
             return self.awards[call.call_id]
 
         award_set = AwardSet(call_id=call.call_id, gap_kw=call.gap_kw)
+        ranked = self.rank(call, bids)
+        checks: list[Verdict] = []
         remaining = call.gap_kw
-        for bid in self.rank(call, bids):
+        for bid in ranked:
             if remaining <= 1e-9:
                 break
-            take = round(min(bid.kw, remaining), 3)
+            want = round(min(bid.kw, remaining), 3)
+            take = want
+            if self.check_deliverability:
+                verdict = self.deliverable(bid.agent_id, want, call.hours)
+                if not verdict.ok:
+                    checks.append(verdict)
+                    self._log_check(call, verdict)
+                take = verdict.deliverable_kw
+                if take < MIN_AWARD_KW:
+                    continue
             award_set.awards.append(
                 Award(agent_id=bid.agent_id, kw=take, price_usd_per_kw=bid.price_usd_per_kw)
             )
             remaining = round(remaining - take, 6)
 
+        award_set.checks = tuple(checks)
+        (
+            award_set.undeliverable_kw,
+            award_set.undeliverable_awards,
+            award_set.unchecked_covered_kw,
+        ) = self._unchecked(call, ranked)
         award_set.escalated = award_set.uncovered_kw > 0.01
         self.awards[call.call_id] = award_set
         self.bus.send(
@@ -344,6 +452,12 @@ class Coordinator:
             )
             return award_set
 
+        # State drifts while a human decides: cards go stale during the approval delay,
+        # agents degrade, a battery wins a second call. Prove the plan again against the
+        # state as it is now, and commit only what survives.
+        if self.check_deliverability:
+            self._recheck(award_set)
+
         award_set.approved_by = approver
         self.bus.send(
             self.registry.now_s,
@@ -373,6 +487,30 @@ class Coordinator:
             cost_usd=award_set.cost_usd,
         )
         return award_set
+
+    def _recheck(self, award_set: AwardSet) -> None:
+        """Re-prove every award at the gate and trim what the fleet can no longer hold."""
+        call = self.calls[award_set.call_id]
+        kept: list[Award] = []
+        checks = list(award_set.checks)
+        for award in award_set.awards:
+            verdict = self.deliverable(award.agent_id, award.kw, call.hours)
+            if verdict.ok:
+                kept.append(award)
+                continue
+            checks.append(verdict)
+            self._log_check(call, verdict, stage="approval")
+            if verdict.deliverable_kw >= MIN_AWARD_KW:
+                kept.append(
+                    Award(
+                        agent_id=award.agent_id,
+                        kw=verdict.deliverable_kw,
+                        price_usd_per_kw=award.price_usd_per_kw,
+                    )
+                )
+        award_set.awards = kept
+        award_set.checks = tuple(checks)
+        award_set.escalated = award_set.escalated or award_set.uncovered_kw > 0.01
 
     def execute(self, call_id: str) -> AwardSet:
         """Guard rail: there is no path to commitment that skips the human."""

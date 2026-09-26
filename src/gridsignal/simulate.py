@@ -111,6 +111,15 @@ class RunMetrics:
     resynced_agents: int = 0
     conflicting_cards: int = 0
     backup_violations: int = 0
+    #: Awards the pre-award deliverability proof cut back to what the battery can hold.
+    awards_trimmed: int = 0
+    #: Awards it refused outright.
+    awards_rejected: int = 0
+    #: kW an auction without the proof would have committed to batteries that cannot
+    #: sustain it for the whole award window.
+    undeliverable_kw: float = 0.0
+    #: How many of that auction's awards would have been at least partly undeliverable.
+    undeliverable_awards: int = 0
     #: kW deployed by batteries acting on their own cards, with no coordinator involved.
     self_deployed_kw: float = 0.0
     #: Cycles from the simulated under-frequency dip to the first committed kW, or None
@@ -327,6 +336,7 @@ def run_scenario(
     policy: ApprovalPolicy | None = None,
     approver: str | None = None,
     approve: bool = True,
+    check_deliverability: bool = True,
 ) -> RunResult:
     """Replay one YAML scenario end to end.
 
@@ -337,6 +347,10 @@ def run_scenario(
     unattended, so it defaults to the scenario's name marked ``scripted approver``; the
     Control Room passes the operator who actually clicked Approve. The YAML name alone
     never counts as a human: it is always labelled as scripted.
+
+    ``check_deliverability=False`` turns off the pre-award proof that each battery can
+    hold its award for the whole window. It exists only for the counterfactual in
+    :mod:`gridsignal.deliverability`, which measures what the check is worth.
 
     With ``approve=False`` the run stops at the approval gate: the award is proposed and
     logged but nothing is committed, which is what the Control Room shows before the
@@ -358,7 +372,12 @@ def run_scenario(
     )
     bus = MessageBus()
     register_fleet(registry, devices, hours, bus)
-    coordinator: Coordinator = LLMCoordinator(registry, bus, enabled=scenario.llm_coordinator)
+    coordinator: Coordinator = LLMCoordinator(
+        registry,
+        bus,
+        enabled=scenario.llm_coordinator,
+        check_deliverability=check_deliverability,
+    )
 
     silent: set[str] = set()
     silent_after_award: set[str] = set()
@@ -827,6 +846,10 @@ def run_scenario(
         resynced_agents=resynced,
         conflicting_cards=len(conflicting),
         backup_violations=backup_violations,
+        awards_trimmed=sum(len(a.trimmed) for a in awards),
+        awards_rejected=sum(len(a.rejected) for a in awards),
+        undeliverable_kw=round(sum(a.undeliverable_kw for a in awards), 2),
+        undeliverable_awards=sum(a.undeliverable_awards for a in awards),
         self_deployed_kw=self_deployed_kw,
         response_cycles=(
             response_cycles

@@ -216,6 +216,31 @@ Prices are real ERCOT day-ahead clearing prices; capacity payments only (deploym
 modelled), and every battery, load profile and award is simulated. Tests:
 `tests/test_ancillary.py`.
 
+#### Deliverability proof before every award
+
+A bid is a claim about one instant; an award is a promise about a window. Before any
+energy or ancillary award is committed, `src/gridsignal/mesh/deliverability.py` proves the
+battery can hold the awarded kW for **every hour of the event** — spare energy above the
+member's backup reserve, free inverter power (a degraded unit is derated to 50%, a
+modelling assumption), minus the kW it already owes other awards. A card that is stale or
+rejected proves nothing and delivers zero. What it cannot prove is trimmed to what the
+battery can hold, or refused, and the reason is written to the trace as a
+`deliverability` message; the auction then moves the kW to the next bidder. The proof runs
+twice — when the award is proposed and again at the approval gate, because state drifts
+while an operator is deciding.
+
+```bash
+python -m gridsignal.deliverability_report   # every scenario, with the check and without
+```
+
+Across the five tuned scenarios and the four held-out drills (3,343 awards), the unchecked
+auction would have committed **3.21 kW across 2 awards** it could not have delivered: a
+battery re-bidding, in a second round, energy it already owed its first award. The check
+trimmed one and refused the other, with 0 member backup reserve violations either way. The
+low count is the honest finding — the bid filter already keeps most awards deliverable, and
+the check catches the case it structurally misses, the second award. Everything here is a
+simulated fleet on bundled ERCOT prices. Tests: `tests/test_deliverability.py`.
+
 #### Mixed fleet and control authority (simulated)
 
 The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.

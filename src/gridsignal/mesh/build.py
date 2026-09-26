@@ -47,11 +47,20 @@ def zone_id(zone: str) -> str:
     return f"ZONE-{zone}"
 
 
+def power_derate(device: Device) -> float:
+    """How much of the inverter's nameplate power a device is trusted for.
+
+    Published on the card so the deliverability check does not derate a degraded
+    battery a second time on top of what is already netted out here.
+    """
+    return 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
+
+
 def spare_kw(device: Device, hours: float, reserve_fraction: float | None = None) -> float:
     """Exportable power beyond the current commitment, after the home is served."""
     if not device.is_dispatchable or not device.is_operator_controlled:
         return 0.0
-    trust = 0.5 if device.status is DeviceStatus.DEGRADED else 1.0
+    trust = power_derate(device)
     # The energy limit already nets off what this device promised the event, so the
     # commitment comes out of the inverter limit only — subtracting it from both would
     # hide spare kW twice over.
@@ -102,6 +111,9 @@ def card_for(device: Device, hours: float, reserve_fraction: float | None = None
             "reserve_kwh": (
                 home.reserve_kwh(device, fraction) if device.is_operator_controlled else 0.0
             ),
+            # The derate already applied to kw_available, so a checker downstream
+            # holds this battery to it without applying its own on top.
+            "power_derate": power_derate(device),
             # The pre-agreed local rule, signed into the card: how much this battery
             # deploys by itself if frequency crosses the trigger.
             "ffr_kw": round(FFR_SHARE * spare_kw(device, hours, fraction), 3),
