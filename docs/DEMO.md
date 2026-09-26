@@ -144,26 +144,22 @@ The interesting property is that the fleet's *commitment* survives a device fail
 autonomous safety-critical action: degradation is contained at the device level, coverage is
 restored at the fleet level, and a person owns the decision.
 
-## 60–90 second demo script
+## Timed 5-minute demo script
 
-1. **(0:00)** "This is GridSignal Control Room — a simulation of Base-style home batteries
-   responding to an ERCOT peak event. 48 devices, 240 kW committed, everything green."
-2. **(0:15)** Click **Trigger BAT-042 Failure**. "A device just dropped off mid-event."
-3. **(0:25)** Point at the map/grid: BAT-042 is red; coverage drops below 100 % and the banner
-   flags the commitment at risk.
-4. **(0:35)** Read the incident panel: severity, root-cause hypothesis, impact, recommended action,
-   owner, and **dollars at risk** priced on the real ERCOT price trace shown below the map.
-   "The system diagnosed, priced and planned — but it did not act."
-5. **(0:50)** Show the collaboration panel: Reliability Engineer is validating, Field Support is
-   blocked pending approval.
-6. **(1:00)** Click **Approve Recovery Plan**. "A human owns this decision."
-7. **(1:10)** Coverage snaps back to 100 %, the dollars at risk turn into dollars recovered,
-   BAT-042 is quarantined, tasks advance, and the audit timeline shows detection → recommendation
-   → human approval → reassignment → recovery.
-8. **(1:20)** Switch the sidebar to **Scarcity day** and **10,000 devices**, then trigger and
-   approve again. "Same failure, real ERCOT scarcity prices, Base-scale fleet: nearly nine
-   thousand dollars riding on one approval — and the reallocation still solves in milliseconds."
-9. **(1:30)** Switch to **Agent Mesh**, pick `zone_outage`. "Same orchestration as a mesh: a
-   thousand signed agents, a call for capacity, bids priced against the homeowner's backup, one
-   human approval — and where the headroom runs out, it covers what it can and escalates."
-10. **(1:40)** Click **Reset Demo**. "Fully replayable, deterministic, and simulation-only."
+Record the screen live; every number below comes from the running app, not from slides. Total
+runtime 4:55. Start on **Control Room**, sidebar set to **Normal day / 48 devices**, demo reset.
+
+| Time | Screen | Say and do |
+|---|---|---|
+| **0:00** | Control Room, stable | "Base Power runs thousands of home batteries as one plant. They make most of their money in a handful of hours a year — and that is exactly when a device goes quiet. This is GridSignal Control Room: 48 simulated batteries, 240 kW committed to a real ERCOT peak window, a human on the approval gate. Simulation only; it never touches a real device." |
+| **0:30** | Control Room → failure | Click **Trigger BAT-042 Failure**. "A battery just stopped sending telemetry mid-event." Point at the red marker, coverage under 100%, and the high-severity incident: root-cause hypothesis, impact in kW, **dollars at risk** priced on the real settlement trace below the map, three role tasks with Field Support blocked. "It diagnosed, priced and planned — and then stopped." |
+| **1:00** | Control Room → approval | Click **Approve Recovery Plan**. "A named person decides." Coverage snaps to 100%, BAT-042 is quarantined, dollars at risk become **dollars recovered**, and the audit timeline reads detection → recommendation → human approval → reassignment → recovery, append-only. |
+| **1:30** | Agent Mesh → `zone_outage` | "Same orchestration, run as a mesh instead of a controller." Registry table: every battery, gateway and zone holds an HMAC-signed capability card — verified, stale, or **rejected**, because `lying_agent` edits its card after signing. Message log: a call for capacity, bids priced on wear plus the homeowner's backup reserve, cheapest covering award. |
+| **2:10** | Agent Mesh → Jev + escalation | "Code acts, Jev decides, humans approve when Jev is unsure." Show Jev's root cause, confidence, probabilities and latency in the log. "Confidence never cleared 0.9 on any bundled scenario, so every award here is human-approved — and the rules fallback reports zero confidence, so it can never auto-approve." Switch to `fleet_wide_scarcity`: partial cover committed, remainder escalated to a person. |
+| **2:45** | Grid Signals → insight card | "Open Grid Data: what the public data hides. Across the ERCOT scarcity days bundled here, only **47%** of a battery's capturable value was visible in the day-ahead curve. The $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. All 19 intervals that printed 5x their day-ahead hour fell on scarcity days; the 12 ordinary days never diverged." |
+| **3:15** | Grid Signals → held-out | "And the honest part. The first policy was rejected — it beat the naive schedule on 2 of 7 held-out days. Anchoring to the day-ahead curve and deviating only on real-time divergence made it 6 of 7, mean +$0.62, median +$0.10, worst −$0.27. Thresholds frozen, tuned on a separate split, scored once, losing days still on screen." |
+| **3:45** | Member App | "The same event from the homeowner's side: hours of whole-home backup still held, what their battery earned, and 'we've lost contact with your battery — it is still protecting your home', which becomes 'resolved, a technician is scheduled' after the operator approved. No incident IDs, no kW, no buttons." |
+| **4:15** | Control Room at scale | Sidebar → **Scarcity day**, **10,000 devices**; trigger and approve. "Real ERCOT scarcity prices, Base-scale fleet: **$8,971 at risk, $8,683 recovered** on one approval. Detection plus reallocation across 10,000 devices is ~138 ms; a 10,000-agent negotiation over 5,913 bids is ~22 ms." Show the architecture diagram in the README: ERCOT pipeline, agent mesh, Jev, human gate. |
+| **4:45** | Close | Click **Reset Demo**. "Deterministic, replayable, offline, no API key. The fleet's commitment survives a device failure — and a person still owns the decision." |
+
+Reset between takes with **Reset Demo**; the story replays without reloading the browser.

@@ -9,7 +9,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from gridsignal import holdout, member, pipeline
+from gridsignal import holdout, insight, member, pipeline
 from gridsignal.backtest import BacktestSummary
 from gridsignal.control_room import ControlRoomEngine
 from gridsignal.control_room.models import (
@@ -77,6 +77,13 @@ CSS = """
 .gs-body {font-size: .87rem; color: #b9c4d4; line-height: 1.45;}
 .gs-sim {background: #1b2537; border-left: 4px solid #38bdf8; border-radius: 8px;
          padding: .65rem .9rem; font-size: .85rem; color: #cfe0f2;}
+.gs-insight {border-color: #38bdf8; background: linear-gradient(180deg,#132030 0%,#11161f 100%);}
+.gs-huge {font-size: 3.4rem; font-weight: 700; color: #38bdf8; line-height: 1.1;}
+.gs-lead {font-size: 1.05rem; font-weight: 600; color: #e6edf6; margin-bottom: .45rem;}
+/* Seven metrics share one row, so the default value size truncates mid-number. */
+[data-testid="stMetricValue"] {font-size: 1.75rem;}
+[data-testid="stMetricLabel"] p {font-size: .8rem; color: #8b98ad;}
+[data-testid="stMetricDelta"] {font-size: .78rem;}
 </style>
 """
 
@@ -119,6 +126,12 @@ def signals_run(scenario: str) -> pipeline.PipelineResult:
 def jev_eval() -> jev_evaluate.EvalReport:
     """Rules-only vs Jev across every chaos scenario; replayed from fixtures."""
     return jev_evaluate.evaluate()
+
+
+@st.cache_data(show_spinner=False)
+def insight_run() -> list[insight.DayInsight]:
+    """Day-ahead versus real-time value on every bundled ERCOT day."""
+    return insight.analyze()
 
 
 @st.cache_data(show_spinner=False)
@@ -176,7 +189,7 @@ def render_overview(eng: ControlRoomEngine) -> None:
     cols = st.columns(7)
     cols[0].metric("Fleet size", f"{snap.total_devices:,}")
     cols[1].metric(
-        "Available capacity",
+        "Capacity available",
         f"{snap.available_capacity_kwh:,.0f} kWh",
         delta=f"{snap.committed_kw:,.0f} kW committed",
         delta_color="off",
@@ -191,9 +204,9 @@ def render_overview(eng: ControlRoomEngine) -> None:
         delta_color="off",
     )
     cols[4].metric(
-        f"Grid event ({ev.zone})",
+        "Grid event",
         ev.status.title(),
-        delta=f"{snap.coverage_pct:.0f}% of {ev.target_kw:.0f} kW target",
+        delta=f"{snap.coverage_pct:.0f}% of {ev.target_kw:,.0f} kW",
         delta_color="off",
     )
     cols[5].metric(
@@ -204,9 +217,9 @@ def render_overview(eng: ControlRoomEngine) -> None:
     )
     window_value = energy_value_usd(ev.target_kw, ev.duration_hours, ev.price_mwh)
     cols[6].metric(
-        "Event price (real)",
-        f"${ev.price_mwh:,.2f}/MWh",
-        delta=f"window value ${window_value:,.2f}",
+        f"{ev.zone} price (real)",
+        f"${ev.price_mwh:,.0f}/MWh",
+        delta=f"window ${window_value:,.0f}",
         delta_color="off",
     )
 
@@ -468,7 +481,7 @@ def render_approval(eng: ControlRoomEngine, incident: Incident) -> None:
             "Human approval required. The orchestrator has planned the recovery but will not "
             "reassign any capacity until an operator approves."
         )
-        if st.button("✅ Approve Recovery Plan", type="primary", use_container_width=True):
+        if st.button("Approve Recovery Plan", type="primary", use_container_width=True):
             eng.approve_recovery()
             st.rerun()
     elif incident.status is IncidentStatus.RESOLVED:
@@ -552,13 +565,13 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
         st.caption("Judges can replay the story without reloading the page.")
         pending_or_done = any(i.device_id == FOCUS_DEVICE_ID for i in eng.incidents)
         if st.button(
-            f"⚠️ Trigger {FOCUS_DEVICE_ID} Failure",
+            f"Trigger {FOCUS_DEVICE_ID} Failure",
             use_container_width=True,
             disabled=pending_or_done,
         ):
             eng.trigger_device_failure(FOCUS_DEVICE_ID)
             st.rerun()
-        if st.button("🔄 Reset Demo", use_container_width=True):
+        if st.button("Reset Demo", use_container_width=True):
             eng.reset()
             st.rerun()
         st.divider()
@@ -804,6 +817,88 @@ def signed_usd(amount: float) -> str:
     return f"{'-' if amount < 0 else '+'}${abs(amount):,.2f}"
 
 
+def render_insight() -> None:
+    """The Open Grid Data headline: what the day-ahead curve did not tell you."""
+    results = insight_run()
+    if not results:
+        return
+    s = insight.summarize(results)
+
+    st.markdown(
+        "<div class='gs-card gs-insight'>"
+        "<div class='gs-kicker'>What most people miss in the ERCOT data</div>"
+        f"<div class='gs-huge'>{s.scarcity_visible_share:.0%}</div>"
+        f"<div class='gs-lead'>of a scarcity day's battery value was visible in the "
+        f"day-ahead curve</div>"
+        f"<div class='gs-body'>{s.headline} {s.subhead}</div>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    cols = st.columns(4)
+    cols[0].metric(
+        "Day-ahead share, scarcity days",
+        f"{s.scarcity_visible_share:.0%}",
+        delta=f"{s.ordinary_visible_share:.0%} on ordinary days",
+        delta_color="off",
+    )
+    cols[1].metric(
+        "Only visible in real time",
+        f"${s.scarcity_blind_usd:,.2f}",
+        delta="per battery per scarcity day",
+        delta_color="off",
+    )
+    cols[2].metric(
+        "Equivalent ordinary days",
+        f"{s.ordinary_days_equivalent}",
+        delta=f"at ${s.ordinary_day_usd:,.2f} each",
+        delta_color="off",
+    )
+    cols[3].metric(
+        f"Intervals {insight.dam.DEVIATION_MULTIPLE:.0f}x above day-ahead",
+        f"{s.divergent_intervals}/{s.intervals:,}",
+        delta=f"{s.ordinary_divergent_intervals} on ordinary days",
+        delta_color="off",
+    )
+
+    with st.expander("Day by day: day-ahead plan vs. perfect real-time foresight"):
+        frame = insight.as_frame(results)
+        st.dataframe(
+            frame.rename(
+                columns={
+                    "date": "Date",
+                    "peak_mwh": "Peak $/MWh",
+                    "day_ahead_usd": "Day-ahead plan $",
+                    "foresight_usd": "Perfect foresight $",
+                    "visible_share": "Visible day-ahead",
+                    "only_real_time_usd": "Only in real time $",
+                    "divergent_intervals": f"{insight.dam.DEVIATION_MULTIPLE:.0f}x intervals",
+                    "max_divergence": "Max divergence",
+                }
+            ).style.format(
+                {
+                    "Peak $/MWh": "{:,.2f}",
+                    "Day-ahead plan $": "{:,.2f}",
+                    "Perfect foresight $": "{:,.2f}",
+                    "Visible day-ahead": "{:.0%}",
+                    "Only in real time $": "{:,.2f}",
+                    "Max divergence": "{:,.1f}x",
+                }
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        st.caption(
+            usd(
+                "Both columns settle the same real 15-minute LZ_HOUSTON prints for one "
+                "13.5 kWh / 5 kW battery. Day-ahead plan = charge and export windows chosen "
+                "from that date's ERCOT day-ahead curve alone, executed blind. Perfect "
+                "foresight = the best single cycle available if the real-time prices had been "
+                "known in advance; it is a ceiling nobody can trade, not a strategy."
+            )
+        )
+
+
 def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> None:
     """One scenario day next to the held-out record — never the single day on its own.
 
@@ -856,6 +951,8 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     result = signals_run(scenario)
     summary = result.summary
     trace = result.trace
+
+    render_insight()
 
     st.subheader("Backtest: GridSignal vs. a naive fixed schedule")
     render_headline(summary, trace.date, fleet_size)

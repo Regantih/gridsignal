@@ -15,3 +15,7 @@ data/processed/*
 .streamlit/secrets.toml
 .DS_Store
 data/traces/
+
+# Playwright raw recording; the committed capture is docs/media/demo.mp4
+docs/media/demo.webm
+docs/media/raw/

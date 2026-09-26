@@ -1,15 +1,78 @@
-# Submission Checklist (due Sun Sep 27, 11:00 AM CT)
+# Submission — GridSignal Control Room
+
+**Project title:** GridSignal Control Room
+**Tracks:** Orchestration (primary) + Open Grid Data
+**Repository:** https://github.com/Regantih/gridsignal
+
+## Checklist (due Sun Sep 27, 11:00 AM CT)
 
 Submit via https://airtable.com/appWQWPtBqDUhCPPj/shrU4GuBeUnMzyrd5. One per team.
 
-- [ ] Project title
-- [ ] 2 to 5 min Loom demo showing the core loop live
-- [ ] Repo set to PUBLIC
-- [ ] README: quick start, stack + architecture diagram, reproduce steps, data provenance, limitations
-- [ ] Deployed URL or short screen capture
-- [ ] Team roster (names, roles, contacts)
-- [ ] 150 to 300 word write-up: problem, who it helps, solution, impact
+- [x] Project title — GridSignal Control Room
+- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:55)
+- [ ] Repo set to PUBLIC — repository setting, do this before submitting
+- [x] README: quick start, stack + architecture diagram, reproduce steps, data provenance, limitations — [`../README.md`](../README.md)
+- [x] Deployed URL or short screen capture — deploy steps below, or `python scripts/capture_demo.py`
+- [ ] Team roster (names, roles, contacts) — fill in [`ROSTER.md`](ROSTER.md)
+- [x] 150 to 300 word write-up — below, and in [`WRITEUP.md`](WRITEUP.md)
 
-## Write-up draft
+## Write-up (150–300 words)
 
-TODO
+**Problem.** A distributed home-battery fleet earns most of its money in a handful of hours a
+year, and that is exactly when a device stops answering. The operator has to notice the silence,
+work out what it costs the commitment and coordinate engineers and field techs — across
+dashboards, chat and spreadsheets, while the market clears at the cap.
+
+**Who it helps.** Fleet operators and reliability engineers at a company like Base Power, the
+field techs they dispatch, and the homeowner whose battery is the one that went dark and who only
+wants to know whether their lights still have backup.
+
+**Solution.** GridSignal Control Room is a simulation-only operator console for a fleet of
+batteries run as a mesh of agents. Every battery, gateway and zone publishes an HMAC-signed
+capability card; when capacity is lost, a coordinator calls for capacity, healthy agents bid a
+price that reflects wear and the homeowner's backup reserve, and the cheapest covering set is
+proposed. Jev, a fast decision model, judges root cause, agent trustworthiness and backup risk
+with a confidence — but signatures, deterministic rules and a named human approval decide. Only
+after approval is the device quarantined, its kW reassigned and the whole sequence written to an
+append-only audit timeline. A Grid Signals view scores a day-ahead-anchored dispatch policy on
+real ERCOT prices, and a Member App shows the same event as a homeowner sees it.
+
+**Impact.** One approval turns $8,971 at risk into $8,683 recovered across 10,000 simulated
+devices on a real ERCOT scarcity day, detected and reallocated in about 138 ms. The data says why
+that minute matters: on the scarcity days bundled here only 47% of a battery's capturable value
+was visible in the day-ahead curve.
+
+## Deployed URL
+
+Streamlit Community Cloud, no secrets required:
+
+1. Repo public on GitHub.
+2. [share.streamlit.io](https://share.streamlit.io) → **Create app** → deploy from GitHub.
+3. Repository `Regantih/gridsignal`, branch `main`, main file `app/dashboard.py`, Python 3.11.
+4. Dependencies come from `requirements.txt` (installs the package itself).
+5. Optional: add `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY` under **Settings → Secrets** to run
+   Jev live instead of replaying the recorded answers.
+
+Paste the resulting `*.streamlit.app` URL into the submission form.
+
+## Screen capture (fallback if the deploy is unavailable)
+
+```bash
+pip install -e ".[capture]"
+python -m playwright install chromium
+python scripts/capture_demo.py
+```
+
+Writes stills and a WebM screen recording to `docs/media/`: Control Room stable → BAT-042 failure → incident with
+Jev's answer → human approval → recovery, then Agent Mesh, Grid Signals and Member App.
+
+## Demo video
+
+Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:55 and the core loop is
+live, not slides. Keep the "simulation only, a human approves every action" banner on screen
+during the Control Room segment.
+
+## Judging evidence
+
+[`JUDGING_MAP.md`](JUDGING_MAP.md) maps each sub-criterion to the file, test or screen that
+proves it.

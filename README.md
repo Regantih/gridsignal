@@ -38,8 +38,28 @@ Two dials in the sidebar make that number mean something at Base's scale:
   scarcity day (2023-09-06, peak $5,147.65/MWh, settlement at the offer cap plus reserve adders).
 - **Fleet scale** — 48, 1,000 or 10,000 simulated devices. The failure is a gateway firmware
   ring that covers one device in 48, so a 10,000-device fleet loses 208 devices to the same
-  root cause. On the scarcity day that is **$8,971 at risk and $8,684 recovered** from one
+  root cause. On the scarcity day that is **$8,971 at risk and $8,683 recovered** from one
   operator approval, versus $1.82 on the 48-device normal day.
+
+## Why this matters to Base
+
+Base Power sells homeowners a battery and sells the grid the fleet those batteries add up to. Both
+promises break in the same place: a device that stops answering during the two hours that pay for
+the year. This repo is built around that minute.
+
+- **The commitment survives the failure.** A lost device is detected, priced, quarantined and its
+  kW reassigned across healthy headroom, with the member's backup reserve protected. On the
+  bundled scarcity day one operator approval is the difference between $8,971 at risk and $8,683
+  recovered across 10,000 devices.
+- **A person still signs.** Nothing dispatches without a named human approval, and the whole
+  sequence lands in an append-only audit timeline — the shape a utility-facing operation has to
+  have before it can be trusted with real hardware.
+- **It scales to the fleet Base is building, not the one in the demo.** 10,000 devices detect and
+  reallocate in ~138 ms, and 10,000 agents negotiate in ~370 ms.
+- **The homeowner is a first-class view.** The same event rendered as backup hours and dollars
+  earned, with no incident IDs — the support conversation, not the ops console.
+- **The market read is honest.** The dispatch policy is scored on real ERCOT days it was never
+  tuned on, losing days included, because a number Base cannot reproduce is worth nothing to Base.
 
 ## Quick Start
 
@@ -53,9 +73,22 @@ pip install -e ".[dev]"
 streamlit run app/dashboard.py     # -> http://localhost:8501
 ```
 
-No API keys, accounts or network access are required: a cached ERCOT price trace is bundled in
-`data/processed/`. `.env` is optional and only used by the live-ERCOT pipeline
-(`pip install -e ".[ercot]"`).
+Requires Python 3.11 or newer. No API keys, accounts or network access are required: the ERCOT
+price traces and the recorded Jev answers are bundled in the repo.
+
+### Environment variables (all optional)
+
+Copy [`.env.example`](.env.example) to `.env` only if you want a live path; every variable is
+optional and the app runs fully offline without any of them.
+
+| Variable | Used for | Without it |
+|---|---|---|
+| `AI_GATEWAY_API_KEY` | Jev via Vercel AI Gateway (`POST /v1/evaluate`, model `typesafe-ai/jev`) | Recorded Jev answers replay from `data/jev_fixtures/`; then deterministic rules, labelled "Jev offline, rules fallback" |
+| `TYPESAFE_API_KEY` | Jev direct (`POST /v1/systemone`, model `jev-latest`) | as above |
+| `ERCOT_API_USERNAME` / `ERCOT_API_PASSWORD` / `ERCOT_API_SUBSCRIPTION_KEY` | Only if you swap `gridstatus` for ERCOT's official API | `gridstatus` reads the same public reports with no credentials |
+| `DEFAULT_ZONE` | Load zone for refreshes | `LZ_HOUSTON` |
+
+No key is ever written to a fixture, trace, log or commit.
 
 Refresh the cached prices from ERCOT's public MIS reports (needs the `[ercot]` extra and network,
 still no credentials):
@@ -122,7 +155,11 @@ python -m gridsignal.pipeline --scenario scarcity --devices 10000
 python -m gridsignal.holdout          # the held-out scorecard
 ```
 
-Full walkthrough, safety boundaries and a 60–90 second demo script: [`docs/DEMO.md`](docs/DEMO.md).
+The view opens on the **Open Grid Data insight card** (below), then the backtest headline, the
+signal chart and the held-out scorecard.
+
+Full walkthrough, safety boundaries and the timed 5-minute demo script:
+[`docs/DEMO.md`](docs/DEMO.md).
 
 ### Agent Mesh
 
@@ -227,6 +264,89 @@ and [github.com/projnanda](https://github.com/projnanda). No NANDA code is vendo
 depended on here; the registry, the signing scheme, the contract-net protocol and the scenario
 format in this repo are original implementations of those ideas against this simulated fleet.
 
+## Open Grid Data: what the day-ahead curve does not tell you
+
+The usual read of ERCOT scarcity is "the spikes are where the money is". The bundled data says
+something sharper, and it is the thing most people miss: **on the three real scarcity days in this
+repo, only 47% of the value a battery could have captured was visible in the day-ahead curve**.
+The other **$18.83 per battery per scarcity day** exists only in the real-time prints — worth about
+28 whole ordinary trading days ($0.66 each) of perfect optimisation. 19 of 1,440 15-minute
+intervals (1.3%) settled at 5x or more above their day-ahead hour, and **all 19 fell on scarcity
+days**; the twelve ordinary days never diverged once.
+
+The operational consequence for a fleet is specific: a day-ahead schedule is enough on an ordinary
+day (53% of the value is already in the curve, and nothing surprises you), but on a scarcity day
+the schedule is roughly a coin flip against what the day actually paid — so the real-time layer,
+and the ability to keep the fleet coordinated while it runs, is where the scarcity money lives.
+That is the same minute a device failure costs the most, which is why the two tracks in this repo
+are one product.
+
+**Method, so it can be checked.** For each bundled day, two plans settle the *same* real
+15-minute LZ_HOUSTON prints on one 13.5 kWh / 5 kW battery: (a) charge and export windows chosen
+from that date's ERCOT day-ahead curve alone, executed blind; (b) the best single charge/discharge
+cycle that would have been possible knowing the real-time prices — a ceiling nobody can trade, not
+a strategy. "Visible" is (a) ÷ (b), value-weighted across days so a $0.20 day cannot outvote a
+$50 one. A day counts as scarcity if it peaked above $1,000/MWh (3 of 15 days). Code:
+[`src/gridsignal/insight.py`](src/gridsignal/insight.py), tests: `tests/test_insight.py`,
+reproduce with:
+
+```bash
+python -m gridsignal.insight
+```
+
+This is a statement about 15 real LZ_HOUSTON days, not about ERCOT in general, and the foresight
+ceiling is one cycle per day — a two-cycle battery would move both columns.
+
+## Benchmarks
+
+Measured on this machine (Python 3.11, single process, no GPU); reproduce with
+`pytest -q -s tests/test_scale.py tests/test_simulate.py`.
+
+| Benchmark | Scale | Result |
+|---|---|---|
+| Control Room: build fleet | 10,000 devices | ~104 ms |
+| Control Room: detect failure | 10,000 devices | ~1 ms |
+| Control Room: approve + reallocate | 10,000 devices | ~33 ms |
+| Mesh: register signed cards | 10,000 agents | ~242 ms |
+| Mesh: heartbeat sweep | 10,000 agents | ~106 ms |
+| Mesh: contract-net negotiation | 10,000 agents, 5,913 bids | ~22 ms |
+| Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
+| Jev decision round trip | recorded live median | 326 ms (rules fallback: microseconds) |
+
+## Deploying to Streamlit Community Cloud
+
+The app is deploy-ready as-is: everything it needs is committed, so it runs on a free Community
+Cloud instance with no secrets.
+
+1. Push this repo to GitHub (or fork it).
+2. Go to [share.streamlit.io](https://share.streamlit.io), **Create app → Deploy a public app from
+   GitHub**.
+3. Repository `Regantih/gridsignal`, branch `main`, **Main file path** `app/dashboard.py`.
+4. **Advanced settings → Python version 3.11**. Dependencies are read from `requirements.txt`
+   (a pinned mirror of the runtime dependencies in `pyproject.toml`).
+5. Deploy. No secrets are required. To exercise a live Jev path instead of the recorded answers,
+   add `AI_GATEWAY_API_KEY` or `TYPESAFE_API_KEY` under **Settings → Secrets**.
+
+If the deployed URL is unavailable, the scripted capture below produces the same walkthrough as a
+video.
+
+## Screen capture (deploy fallback)
+
+```bash
+pip install -e ".[capture]"
+python -m playwright install chromium
+python scripts/capture_demo.py          # writes docs/media/*.png, demo.webm and demo.mp4
+```
+
+It starts the dashboard on a free port, walks Control Room → trigger → approve → Agent Mesh →
+Grid Signals → Member App, screenshots each step and records the session. No credentials, no
+network. The committed output is in [`docs/media/`](docs/media): the eight stills and
+[`demo.mp4`](docs/media/demo.mp4).
+
+| Control Room, BAT-042 down | Agent Mesh | Grid Signals insight |
+|---|---|---|
+| ![Control Room incident](docs/media/02-control-room-incident.png) | ![Agent Mesh](docs/media/04-agent-mesh.png) | ![Grid Signals](docs/media/05-grid-signals-insight.png) |
+
 ## Tech Stack and Architecture
 
 - Python 3.11, Streamlit, Plotly, pandas
@@ -256,9 +376,29 @@ flowchart LR
         FC --> SG[signals.py<br/>real-time detections]
         SG --> DM
         DM --> BT[backtest.py<br/>$ vs naive schedule]
+        BT --> HO[holdout.py<br/>7 days, frozen params]
+        Q --> IN[insight.py<br/>day-ahead vs real-time value]
         BT --> D
+        HO --> D
+        IN --> D
+    end
+    subgraph AM["Agent mesh (NANDA-inspired)"]
+        E --> BU[mesh/build.py<br/>batteries, gateways, zones as agents]
+        BU --> RG[mesh/registry.py<br/>HMAC-signed cards<br/>verified / stale / rejected]
+        RG --> NG[mesh/negotiation.py<br/>call -> bids -> cheapest cover]
+        JV[jev/client.py<br/>live key -> fixture -> rules] --> NG
+        NG --> HG{{Human approval<br/>always authoritative}}
+        HG --> CM[Idempotent commitment]
+        CM --> TR[(JSONL trace)]
+        SC[scenarios/*.yaml<br/>chaos injections] --> BU
+        NG --> D
     end
 ```
+
+Jev is one input to the mesh, never the authority: an HMAC signature decides whether a card is
+admissible, deterministic rules price and select the bids, Jev adds a judgement on cause, trust and
+homeowner risk with a confidence, and a human approves. With no key and no fixture the mesh runs
+unchanged on the rules.
 
 | Module | Responsibility |
 |---|---|
@@ -282,6 +422,7 @@ flowchart LR
 | `src/gridsignal/mesh/llm.py` | Optional LLM bid ranker behind a flag, disabled by default |
 | `src/gridsignal/simulate.py` | `python -m gridsignal.simulate <scenario>`: deterministic chaos run, metrics and JSONL trace |
 | `src/gridsignal/member.py` | Member-facing summary for one home: backup hours, earned/protected dollars, plain-English notice |
+| `src/gridsignal/insight.py` | Open Grid Data insight: day-ahead plan vs. perfect real-time foresight on every bundled day |
 | `src/gridsignal/holdout.py` | Replays the frozen policy over the bundled held-out days and scores it against the naive schedule |
 | `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
 | `scripts/fetch_tuning.py` | Caches the tuning split, chosen so it can never overlap the held-out dates |
@@ -296,6 +437,9 @@ flowchart LR
 | `tests/test_mesh.py` | Signature rejection, staleness, capability discovery, bid pricing and selection, the approval gate, idempotency, partial cover plus escalation |
 | `tests/test_simulate.py` | Scenario coverage of every failure mode, deterministic replay, JSONL traces, the CLI, and a 10,000-agent negotiation benchmark |
 | `tests/test_dashboard.py` | Every view renders; the Grid Signals headline never shows the scenario day alone; the Agent Mesh registry and log |
+| `tests/test_insight.py` | The insight claim: the foresight ceiling really is a ceiling, scarcity days hide more value than ordinary ones, divergence is a scarcity phenomenon |
+| `tests/test_docs.py` | The write-up is 150–300 words in the required order and the demo script fits under 5:00 |
+| `scripts/capture_demo.py` | Playwright walkthrough that screenshots and records the four views into `docs/media/` |
 | `tests/test_dam.py` | Day-ahead plan shape, hour-to-interval alignment, each deviation rule, no-lookahead, DAM provenance |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
@@ -327,6 +471,15 @@ ahead. Both price days are real; the fleet, the outage and the recovery are simu
 historical scarcity trace is pricing context only — it is not replayed as a real-time market feed.
 
 ## Held-out results (out of sample)
+
+**Disclosure, because it changes how you should read this table.** These seven days were used
+**once before**, to score the original real-time-only policy — it won 2 of 7 (mean −$0.15, worst
+−$4.89) and that result is what caused the policy to be rejected. The replacement day-ahead-anchored
+policy was then tuned on a *separate* split (the two scenario days plus the six days in
+`data/tuning/`) and scored on these seven days **once**, with no retuning afterwards. So the held-out
+set is not virgin: it rejected one policy before it scored this one, which is one degree of
+selection more than a truly untouched test set. It is disclosed rather than hidden because a
+reviewer cannot price the number without it.
 
 Parameters are fitted on the **tuning split only** — the two scenario days plus the six days in
 `data/tuning/` — by the grid search in `scripts/tune_policy.py`, which maximises *median* uplift
@@ -417,7 +570,20 @@ real Base Power device or fleet.
 - Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
   exposure change minute to minute rather than as a single window average.
 
+## Submission documents
+
+| Document | What it is |
+|---|---|
+| [`docs/WRITEUP.md`](docs/WRITEUP.md) | The 150–300 word write-up: problem, who it helps, solution, impact |
+| [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | Submission checklist, the same write-up, deploy and capture instructions |
+| [`docs/JUDGING_MAP.md`](docs/JUDGING_MAP.md) | Every judging sub-criterion mapped to the file, test or screen that proves it |
+| [`docs/DEMO.md`](docs/DEMO.md) | The timed 5-minute demo script |
+| [`docs/ROSTER.md`](docs/ROSTER.md) | Team roster template |
+| [`docs/architecture.md`](docs/architecture.md) | Data-pipeline architecture notes |
+
 ## Team
+
+See [`docs/ROSTER.md`](docs/ROSTER.md).
 
 | Name | Role | Contact |
 |---|---|---|
