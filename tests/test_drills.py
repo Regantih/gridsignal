@@ -167,8 +167,7 @@ def test_every_drill_runs_keyless_and_spends_no_homeowner_backup(name: str) -> N
     result = run_scenario(scenario)
 
     assert result.metrics.backup_violations == 0
-    assert result.metrics.auto_approvals == 0
-    assert result.metrics.human_approvals >= 1
+    assert result.metrics.human_approvals == result.metrics.rounds
     assert result.metrics.covered_kw > 0
 
 

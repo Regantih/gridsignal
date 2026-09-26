@@ -34,7 +34,6 @@ class EvalRow:
     truth: str
     correct: bool
     human_approvals: int
-    auto_approvals: int
     latency_ms: float
     source: str
 
@@ -45,7 +44,6 @@ class ModeSummary:
     scenarios: int
     correct: int
     human_approvals: int
-    auto_approvals: int
     median_latency_ms: float
 
     @property
@@ -79,7 +77,6 @@ def _summarise(mode: str, rows: list[EvalRow]) -> ModeSummary:
         scenarios=len(rows),
         correct=sum(1 for r in rows if r.correct),
         human_approvals=sum(r.human_approvals for r in rows),
-        auto_approvals=sum(r.auto_approvals for r in rows),
         median_latency_ms=_median([r.latency_ms for r in rows]),
     )
 
@@ -108,7 +105,6 @@ def evaluate(paths: list[Path] | None = None, directory: Path = FIXTURE_DIR) -> 
                 truth=metrics.root_cause_truth,
                 correct=metrics.root_cause_correct,
                 human_approvals=metrics.human_approvals,
-                auto_approvals=metrics.auto_approvals,
                 latency_ms=metrics.decision_latency_ms,
                 source=metrics.jev_source,
             )
@@ -134,15 +130,14 @@ def markdown(report: EvalReport) -> str:
     """The table that goes in the README and the Agent Mesh view."""
     jev_mode = JEV_FALLBACK if any(r.mode == JEV_FALLBACK for r in report.rows) else JEV
     lines = [
-        "| Decision layer | Root-cause accuracy | Human approvals | Auto-approvals | "
-        "Median decision latency |",
-        "| --- | --- | --- | --- | --- |",
+        "| Decision layer | Root-cause accuracy | Human approvals | Median decision latency |",
+        "| --- | --- | --- | --- |",
     ]
     for summary in report.summaries:
         lines.append(
             f"| {summary.mode} | {summary.correct}/{summary.scenarios} "
             f"({summary.accuracy:.0%}) | {summary.human_approvals} | "
-            f"{summary.auto_approvals} | {summary.median_latency_ms:.0f} ms |"
+            f"{summary.median_latency_ms:.0f} ms |"
         )
     lines.append("")
     lines.append(f"| Scenario | Injected root cause | {RULES} | {jev_mode} |")

@@ -46,7 +46,6 @@ class DrillRow:
     conflicting_cards: int
     escalated: bool
     human_approvals: int
-    auto_approvals: int
     latency_ms: float
     source: str
 
@@ -96,7 +95,6 @@ def _row(drill: str, mode: str, metrics: RunMetrics) -> DrillRow:
         conflicting_cards=metrics.conflicting_cards,
         escalated=metrics.escalated,
         human_approvals=metrics.human_approvals,
-        auto_approvals=metrics.auto_approvals,
         latency_ms=metrics.decision_latency_ms,
         source=metrics.jev_source,
     )

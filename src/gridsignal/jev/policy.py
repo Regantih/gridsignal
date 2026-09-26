@@ -1,8 +1,13 @@
-"""The confidence gate: when may Jev approve a recovery step on its own?
+"""The confidence gate: how sure is Jev, and does that clear the bar for this step?
 
-`Code acts, Jev decides, humans approve when Jev is unsure.`
+`Code acts, the rules and the hard vetoes decide, a human approves every commit.`
 
-A step is auto-approved only when **all** of these hold:
+Jev never approves anything. Every recovery step waits for a human operator, and the
+gate's only job is to say whether Jev's answers were solid enough that a human should
+expect to wave the step through. ``gate_clear`` is that reading, and it is recorded, not
+acted on: nothing anywhere commits kW because it is true.
+
+The gate reads clear only when **all** of these hold:
 
 * Jev's confidence on the two answers this decision actually turns on — the root cause
   and the backup-risk score — is at least ``confidence_threshold`` (default 0.9),
@@ -15,9 +20,8 @@ per-agent trust answers change *who* is awarded (distrusted bidders are dropped 
 award recomputed before approval), not whether the step is safe, so an uncertain trust
 answer about an agent that is no longer in the plan must not veto the step.
 
-Anything else routes to the human approval gate with Jev's probabilities attached, which
-is also what happens whenever Jev is offline: the rules fallback answers with zero
-confidence, so it can never clear the gate.
+Whenever Jev is offline the rules fallback answers with zero confidence, so the gate
+never reads clear and the reason names the fallback.
 """
 
 from __future__ import annotations
@@ -49,7 +53,9 @@ class ApprovalPolicy:
 
 @dataclass(frozen=True)
 class ApprovalDecision:
-    auto_approved: bool
+    #: Whether Jev's answers cleared the confidence bar. Recorded for the operator;
+    #: never a licence to commit — the approver is always a human either way.
+    gate_clear: bool
     reason: str
     approver: str
     confidence: float
@@ -61,7 +67,7 @@ class ApprovalDecision:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "auto_approved": self.auto_approved,
+            "gate_clear": self.gate_clear,
             "reason": self.reason,
             "approver": self.approver,
             "confidence": round(self.confidence, 4),
@@ -102,7 +108,7 @@ def decide(
     overrides: Mapping[str, float] | None = None,
     plan_agents: Collection[str] | None = None,
 ) -> ApprovalDecision:
-    """Route one recovery step either to Jev or to the human gate.
+    """Read one recovery step against the gate. It goes to ``human_approver`` regardless.
 
     ``plan_agents`` is the award set as it stands *after* distrusted bidders have been
     dropped; when given, only distrust of an agent still in the plan blocks the gate.
@@ -131,17 +137,16 @@ def decide(
     if blocking:
         reasons.append(f"{len(blocking)} agent(s) flagged untrustworthy")
 
-    auto = not reasons
+    clear = not reasons
     return ApprovalDecision(
-        auto_approved=auto,
+        gate_clear=clear,
         reason=(
-            f"Jev confident ({confidence:.2f}), low risk ({risk:.2f}), ${dollars:,.2f} under cap"
-            if auto
+            f"Jev confident ({confidence:.2f}), low risk ({risk:.2f}), ${dollars:,.2f} under "
+            f"cap — {human_approver} still approves"
+            if clear
             else "; ".join(reasons)
         ),
-        approver=(
-            f"jev-auto ({response.model}, confidence {confidence:.2f})" if auto else human_approver
-        ),
+        approver=human_approver,
         confidence=confidence,
         backup_risk=float(risk),
         dollars=round(dollars, 2),

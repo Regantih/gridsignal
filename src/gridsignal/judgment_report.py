@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -306,6 +307,23 @@ def build(directory: Path = FIXTURE_DIR, drills: list[Path] | None = None) -> Re
         verdicts_before=before,
         verdicts_after=after,
     )
+
+
+_CACHED: dict[str, Report] = {}
+_CACHE_LOCK = threading.Lock()
+
+
+def cached_build() -> Report:
+    """``build()`` on the committed fixtures, computed once per process.
+
+    Scoring the pack replays every drill, which is a second or two of work. The screen
+    quotes the blind score on every incident, so the first fault would otherwise pay for
+    it while an operator waits; the lock lets a pre-warm thread do it before the click.
+    """
+    with _CACHE_LOCK:
+        if "report" not in _CACHED:
+            _CACHED["report"] = build()
+        return _CACHED["report"]
 
 
 def save_calibration(report: Report, path: Path = TUNED_PATH) -> Path:

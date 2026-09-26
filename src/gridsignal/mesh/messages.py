@@ -23,7 +23,6 @@ class MessageKind(StrEnum):
     DELIVERABILITY = "deliverability"
     JEV_DECISION = "jev_decision"
     APPROVAL = "approval"
-    AUTO_APPROVAL = "auto_approval"
     AWARD_EXECUTED = "award_executed"
     AWARD_IGNORED = "award_ignored"
     ESCALATION = "escalation"

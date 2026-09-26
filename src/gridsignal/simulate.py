@@ -96,7 +96,9 @@ class RunMetrics:
     root_cause_confidence: float
     backup_risk: float
     human_approvals: int
-    auto_approvals: int
+    #: Steps whose Jev answers cleared the confidence bar. A reading, not an approval:
+    #: every one of them still waited for the human.
+    gate_clear_steps: int
     decision_latency_ms: float
     distrusted_agents: int
     #: True when the run stopped at the approval gate waiting for an operator click.
@@ -164,8 +166,9 @@ class RunResult:
             + (
                 f"\n  {self.jev_label}: root cause {m.root_cause} "
                 f"(confidence {m.root_cause_confidence:.2f}, truth {m.root_cause_truth}), "
-                f"backup risk {m.backup_risk:.2f}, {m.auto_approvals} auto / "
-                f"{m.human_approvals} human approvals, median {m.decision_latency_ms:.0f} ms"
+                f"backup risk {m.backup_risk:.2f}, {m.human_approvals} human approvals "
+                f"({m.gate_clear_steps} cleared Jev's confidence bar, none self-approved), "
+                f"median {m.decision_latency_ms:.0f} ms"
             )
         )
 
@@ -317,14 +320,10 @@ def _log_decision(
         )
     bus.send(
         t_s,
-        MessageKind.AUTO_APPROVAL if decision.auto_approved else MessageKind.ESCALATION,
+        MessageKind.ESCALATION,
         "jev",
         "fleet-operator",
-        (
-            f"Auto-approving {call_id}: {decision.reason}"
-            if decision.auto_approved
-            else f"Routing {call_id} to the human gate: {decision.reason}"
-        ),
+        f"Routing {call_id} to the human gate: {decision.reason}",
         call_id=call_id,
         **decision.as_dict(),
     )
@@ -706,7 +705,7 @@ def run_scenario(
         decisions.append(decision)
         _log_decision(bus, registry.now_s, response, decision, call.call_id)
 
-        if not approve and not decision.auto_approved:
+        if not approve:
             # No human has clicked yet. The plan exists, nothing is committed, and the
             # run stops here: this is the state the Control Room shows next to its
             # Approve button.
@@ -728,9 +727,8 @@ def run_scenario(
             escalated = True
             break
 
-        if not decision.auto_approved:
-            registry.advance(scenario.approval_delay_s)
-            heartbeat_all(registry, silent)
+        registry.advance(scenario.approval_delay_s)
+        heartbeat_all(registry, silent)
         coordinator.approve(call.call_id, decision.approver)
         if first_commit_s is None and award_set.covered_kw > 0:
             first_commit_s = registry.now_s
@@ -836,8 +834,8 @@ def run_scenario(
         root_cause_correct=root_cause == scenario.ground_truth_root_cause,
         root_cause_confidence=round(root.confidence, 4) if root else 0.0,
         backup_risk=round(risk.score, 4) if risk and risk.score is not None else 0.0,
-        human_approvals=sum(1 for d in decisions if not d.auto_approved),
-        auto_approvals=sum(1 for d in decisions if d.auto_approved),
+        human_approvals=len(decisions),
+        gate_clear_steps=sum(1 for d in decisions if d.gate_clear),
         decision_latency_ms=client.median_latency_ms,
         distrusted_agents=len({a for d in decisions for a in d.distrusted}),
         min_frequency_hz=round(min_hz, 3),

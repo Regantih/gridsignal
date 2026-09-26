@@ -175,6 +175,7 @@ def sweep_app(port: int) -> list[Result]:
     later is swept without anyone remembering to add it.
     """
     from playwright.sync_api import Locator, Page, sync_playwright
+    from playwright.sync_api import TimeoutError as PlaywrightTimeout
 
     results: list[Result] = []
 
@@ -197,7 +198,17 @@ def sweep_app(port: int) -> list[Result]:
         check(page, name)
 
     def click(page: Page, label: str, name: str) -> None:
+        """Click a button, giving the previous rerun time to paint it first.
+
+        Streamlit drops the running indicator between the two runs of a rerun, so a
+        control that only exists after the second run can be absent for a moment; a
+        button asked for the instant the indicator clears would read as not offered.
+        """
         button = page.get_by_role("button", name=label).first
+        try:
+            button.wait_for(state="visible", timeout=10_000)
+        except PlaywrightTimeout:
+            pass
         if button.count() == 0 or not button.is_visible() or button.is_disabled():
             results.append(Result(f"{name} (not offered here)", True))
             print(f"  skip {name}")

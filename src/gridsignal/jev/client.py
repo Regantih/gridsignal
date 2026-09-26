@@ -1,6 +1,7 @@
 """Client for Jev, TypeSafe AI's decision model, with record-and-replay fixtures.
 
-`Code acts, Jev decides, humans approve when Jev is unsure.`
+`Code acts, the rules and the hard vetoes decide, a human approves every commit.`
+Jev is a second opinion that escalates when it disagrees; it has no approve path.
 
 Two transports speak to the same model and are normalised to one internal shape:
 

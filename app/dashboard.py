@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import math
 import re
+import threading
+from collections import defaultdict
 
 import pandas as pd
 import plotly.express as px
@@ -307,12 +309,17 @@ def engine() -> ControlRoomEngine:
     return st.session_state.engine
 
 
-def usd(text: str) -> str:
-    """Escape dollar signs so Streamlit markdown does not read them as LaTeX.
+def prewarm() -> None:
+    """Pay the first incident's one-off cost in the background, before anything is clicked.
 
-    Only needed outside raw-HTML blocks (e.g. `st.caption`).
+    The incident screen quotes the blind safety score, which replays every held-out drill.
+    Left lazy, the first 10,000-device fault spends seconds on it while an operator waits;
+    warmed here it is ready by the time the fault is triggered.
     """
-    return text.replace("$", "\\$")
+    if st.session_state.get("prewarmed"):
+        return
+    st.session_state.prewarmed = True
+    threading.Thread(target=judgment_report.cached_build, daemon=True).start()
 
 
 def pill(text: str, color: str) -> str:
@@ -411,22 +418,31 @@ def render_header() -> None:
         )
 
 
+def covered(committed_kw: float, target_kw: float) -> bool:
+    """Whether the fleet is delivering its commitment, read the way the banner reads it.
+
+    One rounding decides the words, the colour and the percentage, so a banner that says
+    0 kW at risk is never red and a banner that names missing kW is never green.
+    """
+    return round(committed_kw) >= round(target_kw)
+
+
 def coverage_banner(committed_kw: float, target_kw: float) -> str:
     """What the fleet is actually delivering against what it promised.
 
-    Rounding is deliberately one-directional: delivered kW is truncated and never
-    allowed past the target, so a fleet that is 0.4 kW short never reads as covered.
+    Delivered kW is capped at the target, so an allocation over-assigned by a rounding
+    remainder never reads as 36,001 of 36,000.
     """
-    target = math.floor(target_kw)
-    delivered = min(math.floor(committed_kw), target)
+    target = round(target_kw)
+    delivered = min(round(committed_kw), target)
     return f"Delivering {delivered:,} of {target:,} kW; {max(target - delivered, 0):,} kW at risk"
 
 
 def coverage_pct_text(committed_kw: float, target_kw: float, coverage_pct: float) -> str:
-    """Percent covered, held below 100% until every promised kW is actually there."""
-    if target_kw > 0 and committed_kw < target_kw:
+    """Percent covered, held below 100% until the banner agrees every kW is there."""
+    if not covered(committed_kw, target_kw):
         return f"{min(math.floor(coverage_pct), 99)}%"
-    return f"{coverage_pct:.0f}%"
+    return f"{min(coverage_pct, 100):.0f}%"
 
 
 def render_overview(eng: ControlRoomEngine) -> None:
@@ -471,7 +487,7 @@ def render_overview(eng: ControlRoomEngine) -> None:
     )
 
     banner = coverage_banner(snap.committed_kw, ev.target_kw)
-    if snap.committed_kw + 0.5 >= ev.target_kw:
+    if covered(snap.committed_kw, ev.target_kw):
         st.success(banner)
     else:
         st.error(f"{banner}. Recovery plan needs operator approval.")
@@ -701,19 +717,25 @@ def render_reserve_policy(eng: ControlRoomEngine) -> None:
         st.rerun()
 
     outcome = eng.reserve_outcome(home.STORM_RESERVE_FRACTION)
-    cols = st.columns(3)
-    metric(cols[0], "Reserve floor", f"{eng.reserve_fraction:.0%}")
+    storm = f"{home.STORM_RESERVE_FRACTION:.0%}"
+    # Two tiles to a row: three of these labels do not fit the side column and the
+    # values were being clipped mid-number.
+    top = st.columns(2)
+    metric(top[0], "Reserve floor", f"{eng.reserve_fraction:.0%}", note=f"storm floor {storm}")
     metric(
-        cols[1],
-        "Revenue given up at 50%",
+        top[1],
+        "Revenue given up",
         money(outcome.revenue_given_up_usd),
-        note=f"{outcome.committed_kw_after - outcome.committed_kw_before:,.0f} kW export",
+        note=(
+            f"at {storm}: {outcome.committed_kw_after - outcome.committed_kw_before:,.0f} kW export"
+        ),
     )
+    bottom = st.columns(2)
     metric(
-        cols[2],
-        "Backup protected at 50%",
+        bottom[0],
+        "Backup protected",
         hours(outcome.backup_hours_after),
-        note=f"{outcome.backup_hours_gained:+.1f} h per member",
+        note=f"at {storm}: {outcome.backup_hours_gained:+.1f} h per member",
     )
     caption(
         "Before a forecast storm the operator holds more energy back for members and "
@@ -722,10 +744,22 @@ def render_reserve_policy(eng: ControlRoomEngine) -> None:
 
 
 def map_devices(devices: list[Device]) -> list[Device]:
-    """Thin a large fleet down for plotting, keeping every unhealthy device."""
+    """Thin a large fleet down for plotting, keeping every unhealthy device.
+
+    The sample is taken zone by zone. A flat stride over the fleet list is not safe:
+    devices are laid out round-robin across the five zones, so any stride that is a
+    multiple of five draws every marker from one city and the map reads as one blob.
+    """
     if len(devices) <= MAP_MARKERS:
         return devices
-    keep = {d.device_id: d for d in devices[:: len(devices) // MAP_MARKERS]}
+    by_zone: dict[str, list[Device]] = defaultdict(list)
+    for device in devices:
+        by_zone[device.zone].append(device)
+    per_zone = max(MAP_MARKERS // len(by_zone), 1)
+    keep: dict[str, Device] = {}
+    for zone_devices in by_zone.values():
+        step = max(len(zone_devices) // per_zone, 1)
+        keep.update({d.device_id: d for d in zone_devices[::step][:per_zone]})
     keep.update({d.device_id: d for d in devices if d.status is not DeviceStatus.ONLINE})
     return list(keep.values())
 
@@ -876,11 +910,9 @@ def render_prices(eng: ControlRoomEngine) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
     caption(
-        usd(
-            f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
-            f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
-            "Cached locally as Parquet so the demo runs offline; the fleet itself is simulated."
-        )
+        f"Real ERCOT {trace.market} settlement point prices, {trace.location}, {trace.date}. "
+        f"Peak ${trace.peak_mwh:,.2f}/MWh, day average ${trace.mean_mwh:,.2f}/MWh. "
+        "Cached locally as Parquet so the demo runs offline; the fleet itself is simulated."
     )
 
 
@@ -946,28 +978,30 @@ def jev_answer_rows(response: JevResponse) -> list[dict[str, object]]:
     return rows
 
 
-def render_jev_card(response: JevResponse, decision: ApprovalDecision) -> None:
-    """Jev's answers, confidence and latency, plus what the confidence gate did."""
+def gate_reading(decision: ApprovalDecision) -> str:
+    """What the confidence gate read, said so it cannot be mistaken for an approval."""
     policy = ApprovalPolicy()
+    verdict = "clears the bar" if decision.gate_clear else "below the bar"
+    return (
+        f"Jev's answers {verdict} (confidence ≥ {policy.confidence_threshold:.2f}, backup risk "
+        f"≤ {policy.max_backup_risk:.2f}, under ${policy.dollar_cap:,.0f} at stake): "
+        f"{decision.reason}. A human approves either way — Jev has no approve path."
+    )
+
+
+def render_jev_card(response: JevResponse, decision: ApprovalDecision) -> None:
+    """Jev's answers, confidence and latency, and what the confidence gate read."""
     badges = " ".join(
         [
             pill(JEV_LABEL[response.source], JEV_COLOR[response.source]),
             pill(response.model, "#475569"),
             pill(f"{response.latency_ms:.0f} ms", "#475569"),
-            pill(
-                "auto-approved by Jev" if decision.auto_approved else "human approval required",
-                "#16a34a" if decision.auto_approved else "#dc2626",
-            ),
+            pill("human approval required", "#dc2626"),
         ]
     )
     st.markdown(
-        f"<div class='gs-card'><div class='gs-kicker'>Decision layer</div>{badges}"
-        f"<div class='gs-body' style='margin-top:.5rem'>Code acts, Jev decides, humans "
-        f"approve when Jev is unsure. Gate: confidence ≥ {policy.confidence_threshold:.2f}, "
-        f"backup risk ≤ {policy.max_backup_risk:.2f}, under "
-        f"${policy.dollar_cap:,.0f} at stake.</div>"
-        f"<div class='gs-body' style='margin-top:.35rem'><b>Verdict:</b> "
-        f"{decision.reason}</div></div>",
+        f"<div class='gs-card'><div class='gs-kicker'>Second opinion</div>{badges}"
+        f"<div class='gs-body' style='margin-top:.5rem'>{gate_reading(decision)}</div></div>",
         unsafe_allow_html=True,
     )
     st.dataframe(pd.DataFrame(jev_answer_rows(response)), hide_index=True, use_container_width=True)
@@ -983,7 +1017,9 @@ def principle_rows(verdict: Verdict) -> list[dict[str, object]]:
             "answer": row.answer,
             "probability safe": round(row.satisfied, 2),
             "Jev confidence": round(row.confidence, 2),
-            "weight": round(row.weight, 2) if row.weight else "—",
+            # One type per column: a float next to an em dash makes Streamlit fall back
+            # from Arrow and log a serialisation failure on every render.
+            "weight": f"{row.weight:.2f}" if row.weight else "—",
         }
         for row in verdict.breakdown
     ]
@@ -999,24 +1035,36 @@ ACTION_COLOR = {
 @st.cache_data(show_spinner=False)
 def blind_pack() -> tuple[int, int, int]:
     """Blind score of the pre-committed safety pack: rules correct, Jev correct, questions."""
-    report = judgment_report.build()
+    report = judgment_report.cached_build()
     rules = report.blind[judgment_report.RULES]
     jev = report.blind[judgment_report.JEV]
     return rules.correct, jev.correct, rules.total
 
 
-def render_principles(verdict: Verdict) -> None:
-    """The six principles behind this decision, and which of them decided it."""
+def render_principles(verdict: Verdict, decision: ApprovalDecision | None = None) -> None:
+    """The one verdict on this incident: the principles, the gate reading and who approves.
+
+    The gate reading lives in this card rather than a second one of its own, so the badge
+    and the Approve button can never state different outcomes for the same incident.
+    """
     badges = " ".join(
         [
             pill(verdict.action.value, ACTION_COLOR[verdict.action]),
             pill(JEV_LABEL[verdict.source], JEV_COLOR[verdict.source]),
             pill(f"score {verdict.score:.2f} vs bar {verdict.bar:.2f}", "#475569"),
+            pill("human approval required", "#dc2626"),
         ]
     )
+    gate = (
+        f"<div class='gs-body' style='margin-top:.35rem'><b>Gate:</b> {gate_reading(decision)}"
+        f"</div>"
+        if decision is not None
+        else ""
+    )
     st.markdown(
-        f"<div class='gs-card'><div class='gs-kicker'>Operator principles</div>{badges}"
+        f"<div class='gs-card'><div class='gs-kicker'>Verdict</div>{badges}"
         f"<div class='gs-body' style='margin-top:.5rem'><b>Why:</b> {verdict.reason}</div>"
+        f"{gate}"
         f"<div class='gs-body' style='margin-top:.35rem'>Three hard vetoes, then three "
         f"weighted principles; the certainty bar rises with the money at stake. Weights "
         f"and bars are calibrated on <b>simulated</b> operator overrides, not on real "
@@ -1034,10 +1082,11 @@ def render_principles(verdict: Verdict) -> None:
 
 
 def render_jev(eng: ControlRoomEngine, incident: Incident) -> None:
+    """One verdict for the incident, then the answers it was read from."""
     response, decision = jev_incident.ask(eng, incident)
-    render_jev_card(response, decision)
     _, _, verdict = jev_incident.judge_incident(eng, incident)
-    render_principles(verdict)
+    render_principles(verdict, decision)
+    st.dataframe(pd.DataFrame(jev_answer_rows(response)), hide_index=True, use_container_width=True)
 
 
 def render_money(incident: Incident) -> None:
@@ -1084,19 +1133,16 @@ def render_approval(eng: ControlRoomEngine, incident: Incident) -> None:
             eng.approve_recovery()
             st.rerun()
     elif incident.status is IncidentStatus.RESOLVED:
+        # The summary itself is the recover step of the timeline and an audit entry; a
+        # third copy here is what made the screen read as three different reports.
         st.success(
             f"Recovery complete. Approved by {incident.approved_by} at "
             f"{incident.approved_at:%H:%M:%S}, resolved at {incident.resolved_at:%H:%M:%S}."
         )
-        st.markdown(
-            f"<div class='gs-card'><div class='gs-kicker'>Operator summary</div>"
-            f"<div class='gs-body'>{eng.human_summary()}</div></div>",
-            unsafe_allow_html=True,
-        )
 
 
 def render_tasks(eng: ControlRoomEngine) -> None:
-    st.subheader("Collaboration")
+    st.markdown("<div class='gs-kicker'>Who is doing what</div>", True)
     tasks = eng.snapshot().tasks
     if not tasks:
         st.markdown(
@@ -1201,8 +1247,8 @@ def render_timeline(eng: ControlRoomEngine) -> None:
         st.markdown(
             f"<div class='gs-card'>{pill('DOLLARS', '#16a34a')}"
             f"<div class='gs-title' style='margin-top:.35rem'>"
-            f"{usd(f'${incident.dollars_at_risk:,.0f}')} at risk · "
-            f"{usd(f'${incident.dollars_recovered:,.0f}')} recovered</div>"
+            f"{money(incident.dollars_at_risk, cents=False)} at risk · "
+            f"{money(incident.dollars_recovered, cents=False)} recovered</div>"
             f"<div class='gs-body'>{incident.impact}</div></div>",
             unsafe_allow_html=True,
         )
@@ -1261,6 +1307,7 @@ def render_workflow(eng: ControlRoomEngine) -> None:
     with right:
         render_alarm_grouping(eng)
         render_override(eng)
+        render_tasks(eng)
 
 
 def render_scenario_controls() -> None:
@@ -1501,14 +1548,12 @@ def render_holdout() -> None:
         use_container_width=True,
     )
     caption(
-        usd(
-            "Every figure is per battery per day on real cached LZ_HOUSTON 15-minute RTM "
-            "settlement prices. Windows are planned from the day-ahead curve published "
-            "the afternoon before; real time only overrides the plan. The policy "
-            "parameters were fitted on the two scenario days plus data/tuning and were "
-            "not adjusted after seeing these results, so losing days are shown as they "
-            "came out."
-        )
+        "Every figure is per battery per day on real cached LZ_HOUSTON 15-minute RTM "
+        "settlement prices. Windows are planned from the day-ahead curve published "
+        "the afternoon before; real time only overrides the plan. The policy "
+        "parameters were fitted on the two scenario days plus data/tuning and were "
+        "not adjusted after seeing these results, so losing days are shown as they "
+        "came out."
     )
     render_lookahead_correction(results)
     render_home_first_cost(results)
@@ -1526,13 +1571,11 @@ def render_degradation() -> None:
     results = degradation_run()
     st.markdown("#### Degradation-aware dispatch, by battery type")
     caption(
-        usd(
-            "A cycle is only taken when the expected spread covers the energy and the "
-            "wear of moving it. The wear cost is an assumption of this build \u2014 pack "
-            "replacement over modelled cycle life \u2014 not a vendor figure: "
-            + "; ".join(f"{m.label}, {m.assumption}" for m in degradation.WEAR_MODELS)
-            + "."
-        )
+        "A cycle is only taken when the expected spread covers the energy and the "
+        "wear of moving it. The wear cost is an assumption of this build \u2014 pack "
+        "replacement over modelled cycle life \u2014 not a vendor figure: "
+        + "; ".join(f"{m.label}, {m.assumption}" for m in degradation.WEAR_MODELS)
+        + "."
     )
     frame = pd.DataFrame(
         [
@@ -1565,7 +1608,7 @@ def render_degradation() -> None:
         use_container_width=True,
     )
     for result in results:
-        caption(usd(result.verdict))
+        caption(result.verdict)
     caption(
         "Dollars are per battery per day against the naive schedule; wear is charged on "
         "the throughput the policy adds over that schedule, so cycling less is credited. "
@@ -1591,13 +1634,11 @@ def render_lookahead_correction(results: list[holdout.DayResult]) -> None:
         note=wins(as_first.days_won, as_first.days),
     )
     caption(
-        usd(
-            "A real-time price is published only after its interval is over, so the "
-            "policy now decides each interval from the day-ahead curve and the last "
-            "settled print. The table above is the corrected run; the figure on the "
-            "right is the number as first scored, kept so the change is visible. "
-            "Reproduce both with python -m gridsignal.holdout."
-        )
+        "A real-time price is published only after its interval is over, so the "
+        "policy now decides each interval from the day-ahead curve and the last "
+        "settled print. The table above is the corrected run; the figure on the "
+        "right is the number as first scored, kept so the change is visible. "
+        "Reproduce both with python -m gridsignal.holdout."
     )
 
 
@@ -1626,13 +1667,11 @@ def render_home_first_cost(results: list[holdout.DayResult]) -> None:
         note="energy the house did not buy",
     )
     caption(
-        usd(
-            "Serving the house first costs export revenue, and the table above is the "
-            "home-first result. On the scarcity held-out day the grid-only battery earns "
-            "far more, because the household load eats the stored energy that a pure "
-            "trading battery would have sold into the spike. That is the trade the "
-            "product makes on purpose: the member keeps the energy and the backup."
-        )
+        "Serving the house first costs export revenue, and the table above is the "
+        "home-first result. On the scarcity held-out day the grid-only battery earns "
+        "far more, because the household load eats the stored energy that a pure "
+        "trading battery would have sold into the spike. That is the trade the "
+        "product makes on purpose: the member keeps the energy and the backup."
     )
 
 
@@ -1745,13 +1784,11 @@ def render_member(eng: ControlRoomEngine) -> None:
         )
         st.plotly_chart(fig, use_container_width=True)
         caption(
-            usd(
-                f"{view.stored_kwh:,.1f} kWh stored right now, with at least "
-                f"{view.reserve_kwh:,.1f} kWh held back for you. Backup hours assume a "
-                f"{member.ESSENTIAL_LOAD_KW:.1f} kW essential household load and your "
-                f"earnings assume a {member.MEMBER_REVENUE_SHARE:.0%} member revenue share "
-                "— both are assumptions in this simulation, not a Base Power tariff."
-            )
+            f"{view.stored_kwh:,.1f} kWh stored right now, with at least "
+            f"{view.reserve_kwh:,.1f} kWh held back for you. Backup hours assume a "
+            f"{member.ESSENTIAL_LOAD_KW:.1f} kW essential household load and your "
+            f"earnings assume a {member.MEMBER_REVENUE_SHARE:.0%} member revenue share "
+            "— both are assumptions in this simulation, not a Base Power tariff."
         )
         if view.generator_kwh > 0:
             st.info(
@@ -1860,13 +1897,11 @@ def render_insight() -> None:
             use_container_width=True,
         )
         caption(
-            usd(
-                "Both columns settle the same real 15-minute LZ_HOUSTON prints for one "
-                "13.5 kWh / 5 kW battery. Day-ahead plan = charge and export windows chosen "
-                "from that date's ERCOT day-ahead curve alone, executed blind. Perfect "
-                "foresight = the best single cycle available if the real-time prices had been "
-                "known in advance; it is a ceiling nobody can trade, not a strategy."
-            )
+            "Both columns settle the same real 15-minute LZ_HOUSTON prints for one "
+            "13.5 kWh / 5 kW battery. Day-ahead plan = charge and export windows chosen "
+            "from that date's ERCOT day-ahead curve alone, executed blind. Perfect "
+            "foresight = the best single cycle available if the real-time prices had been "
+            "known in advance; it is a ceiling nobody can trade, not a strategy."
         )
 
 
@@ -1963,15 +1998,13 @@ def render_placement(ranks: list[congestion.PlacementRank]) -> None:
         use_container_width=True,
     )
     caption(
-        usd(
-            f"Every dollar here is {congestion.HINDSIGHT_NOTE}. "
-            "Data-driven sketch on a few bundled days of prices, not a forecast and not a "
-            "siting study. Batteries are placed greedily into whichever zone pays most at "
-            f"that moment; a zone's marginal value falls linearly to zero at its assumed "
-            f"saturation point ({congestion.RELIEF_MW_PER_DOLLAR:.0f} MW of congested-hour "
-            "discharge per $1/MWh of mean basis, an explicit assumption). Real siting "
-            "depends on interconnection, permitting and load growth, none of which are here."
-        )
+        f"Every dollar here is {congestion.HINDSIGHT_NOTE}. "
+        "Data-driven sketch on a few bundled days of prices, not a forecast and not a "
+        "siting study. Batteries are placed greedily into whichever zone pays most at "
+        f"that moment; a zone's marginal value falls linearly to zero at its assumed "
+        f"saturation point ({congestion.RELIEF_MW_PER_DOLLAR:.0f} MW of congested-hour "
+        "discharge per $1/MWh of mean basis, an explicit assumption). Real siting "
+        "depends on interconnection, permitting and load growth, none of which are here."
     )
 
 
@@ -2029,15 +2062,13 @@ def render_congestion() -> None:
         use_container_width=True,
     )
     caption(
-        usd(
-            f"Both columns settle the same 13.5 kWh / 5 kW battery at that zone's own real "
-            f"15-minute prints across {summary.days} bundled days. The only difference is "
-            "which hours were chosen: the zone's own price, which carries its congestion, or "
-            "the ERCOT hub average a zone-blind operator watches. Uplift is small and it is "
-            "negative in some zones; that is what these days show. Ordinary and scarcity days "
-            f"are split out because their averages are nothing alike, and every figure is "
-            f"{congestion.HINDSIGHT_NOTE}."
-        )
+        f"Both columns settle the same 13.5 kWh / 5 kW battery at that zone's own real "
+        f"15-minute prints across {summary.days} bundled days. The only difference is "
+        "which hours were chosen: the zone's own price, which carries its congestion, or "
+        "the ERCOT hub average a zone-blind operator watches. Uplift is small and it is "
+        "negative in some zones; that is what these days show. Ordinary and scarcity days "
+        f"are split out because their averages are nothing alike, and every figure is "
+        f"{congestion.HINDSIGHT_NOTE}."
     )
 
     render_placement(congestion.placement_ranks(uplifts))
@@ -2107,11 +2138,9 @@ def render_headline(summary: BacktestSummary, date: str, fleet_size: int) -> Non
         unsafe_allow_html=True,
     )
     caption(
-        usd(
-            "The scenario-day figure is one extreme day and is never the claim on its own: "
-            "the held-out average beside it is what the frozen policy does on days it was "
-            "never tuned on, and it can lose money on an individual day."
-        )
+        "The scenario-day figure is one extreme day and is never the claim on its own: "
+        "the held-out average beside it is what the frozen policy does on days it was "
+        "never tuned on, and it can lose money on an individual day."
     )
 
 
@@ -2227,17 +2256,15 @@ def render_ancillary(fleet_size: int) -> None:
         caption(f"{scarcity.battery}, {scarcity.date}: every hour it sold capacity.")
 
     caption(
-        usd(
-            "Real ERCOT day-ahead ancillary clearing prices "
-            f"({meta.get('source', ingest.AS_SOURCE_URL)}, fetched "
-            f"{meta.get('fetched_at', 'n/a')[:10]}), in "
-            f"{meta.get('units', '$/MW per hour of capacity held')}. Capacity payments only: "
-            "deployment energy is not modelled, and every battery, load profile and award is "
-            "simulated. An award is only offered when the state of charge can sustain it for "
-            "the product's full duration above the member's backup reserve. "
-            f"{_price_taker_note(fleet_size)} "
-            "Reproduce: python -m gridsignal.ancillary"
-        )
+        "Real ERCOT day-ahead ancillary clearing prices "
+        f"({meta.get('source', ingest.AS_SOURCE_URL)}, fetched "
+        f"{meta.get('fetched_at', 'n/a')[:10]}), in "
+        f"{meta.get('units', '$/MW per hour of capacity held')}. Capacity payments only: "
+        "deployment energy is not modelled, and every battery, load profile and award is "
+        "simulated. An award is only offered when the state of charge can sustain it for "
+        "the product's full duration above the member's backup reserve. "
+        f"{_price_taker_note(fleet_size)} "
+        "Reproduce: python -m gridsignal.ancillary"
     )
 
 
@@ -2305,14 +2332,12 @@ def render_grid_signals(scenario: str, fleet_size: int) -> None:
     render_congestion()
 
     caption(
-        usd(
-            f"Backtest on real cached ERCOT {trace.market} prices for {trace.location}, "
-            f"{trace.date} ({len(trace.frame)} intervals, peak ${trace.peak_mwh:,.2f}/MWh). "
-            "Battery model (assumed, not measured fleet data): 13.5 kWh usable, 5 kW "
-            "inverter, 90% round trip. Signals are "
-            "advisory only — nothing is dispatched, and past prices are not a forecast of "
-            "future revenue."
-        )
+        f"Backtest on real cached ERCOT {trace.market} prices for {trace.location}, "
+        f"{trace.date} ({len(trace.frame)} intervals, peak ${trace.peak_mwh:,.2f}/MWh). "
+        "Battery model (assumed, not measured fleet data): 13.5 kWh usable, 5 kW "
+        "inverter, 90% round trip. Signals are "
+        "advisory only — nothing is dispatched, and past prices are not a forecast of "
+        "future revenue."
     )
 
 
@@ -2590,15 +2615,13 @@ def render_rollout() -> None:
     with st.expander("Health gates, ring by ring"):
         st.dataframe(pd.DataFrame(gate_rows), hide_index=True, use_container_width=True)
     caption(
-        usd(
-            "Simulated rollout of a simulated build. Rings are lab, 1% canary, 10%, 50% "
-            "and 100%; each one has to clear telemetry heartbeat, charge/discharge "
-            "response and backup reserve held before the next opens, no ring advances "
-            "during a grid event or while a home is islanded, and every promotion past "
-            "10% of the fleet needs a named human. Reproduce with "
-            f"`python -m gridsignal.rollout scenarios/{choice.name}`; the run writes a "
-            "replayable JSONL trace."
-        )
+        "Simulated rollout of a simulated build. Rings are lab, 1% canary, 10%, 50% "
+        "and 100%; each one has to clear telemetry heartbeat, charge/discharge "
+        "response and backup reserve held before the next opens, no ring advances "
+        "during a grid event or while a home is islanded, and every promotion past "
+        "10% of the fleet needs a named human. Reproduce with "
+        f"`python -m gridsignal.rollout scenarios/{choice.name}`; the run writes a "
+        "replayable JSONL trace."
     )
 
     render_install_wave()
@@ -2645,7 +2668,6 @@ def render_jev_eval() -> None:
                 "decision layer": s.mode,
                 "root-cause accuracy": f"{s.correct}/{s.scenarios} ({s.accuracy:.0%})",
                 "human approvals": s.human_approvals,
-                "auto-approvals": s.auto_approvals,
                 "median decision latency (ms)": s.median_latency_ms,
             }
             for s in report.summaries
@@ -2729,6 +2751,7 @@ def _mark(report: drills.DrillReport, drill: str, mode: str) -> str:
 
 
 def main() -> None:
+    prewarm()
     render_header()
     render_scenario_controls()
     if st.session_state.get("view", VIEWS[0]) == "Why":
@@ -2766,7 +2789,6 @@ def main() -> None:
         render_reserve_policy(eng)
         render_dispatch_priority(eng)
         render_incident(eng)
-        render_tasks(eng)
     st.divider()
     render_workflow(eng)
     st.divider()

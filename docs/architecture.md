@@ -76,7 +76,8 @@ here is an original implementation of those ideas and vendors nothing from them.
 
 ## Jev decision layer (`src/gridsignal/jev/`)
 
-Code acts, Jev decides, humans approve when Jev is unsure. The layer is optional: with no API key
+Code acts, the rules and the hard vetoes decide, a human approves every commit; Jev is a second
+opinion that escalates when it disagrees and has no approve path. The layer is optional: with no API key
 it replays recorded answers, and with neither key nor fixture it answers with deterministic rules
 labelled "Jev offline, rules fallback".
 
@@ -91,12 +92,12 @@ labelled "Jev offline, rules fallback".
    answer is recorded into `data/jev_fixtures/<scenario>.json` keyed on a hash of the state and
    questions, so replays are deterministic and a schema change invalidates them loudly.
 3. `rules.py` is the deterministic fallback. It reads the same state and always reports confidence
-   0.0, which is what makes it structurally incapable of auto-approving.
-4. `policy.py` is the confidence gate: auto-approve only when every answer clears the threshold
-   (default 0.9), backup risk is at most 0.35, dollars are under the cap (default $500), the plan
-   covers the whole gap and no agent is called untrustworthy. Everything else returns the human
-   approver. Either way the commit still happens in `Coordinator.approve()` /
-   `ControlRoomEngine.approve_recovery()`.
+   0.0, which is what makes it structurally incapable of ever reading as confident.
+4. `policy.py` is the confidence gate, and it is a reading rather than an action: it reads *clear*
+   only when every answer clears the threshold (default 0.9), backup risk is at most 0.35, dollars
+   are under the cap (default $500), the plan covers the whole gap and no agent is called
+   untrustworthy. Clear or not, the approver is the human, and the commit happens in
+   `Coordinator.approve()` / `ControlRoomEngine.approve_recovery()`.
 5. `incident.py` wires the same questions to the Control Room incident; `evaluate.py` scores
    rules-only against Jev on every chaos scenario (root-cause accuracy against the injected
    ground truth, approval counts, median latency); `record.py` re-records fixtures when a key is

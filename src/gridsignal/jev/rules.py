@@ -1,8 +1,8 @@
 """Deterministic fallback for when Jev is unreachable and nothing was recorded.
 
 These are the rules the mesh used before Jev existed. They answer the same questions in
-the same shape, but always with **zero confidence**, so the confidence-gated policy can
-never auto-approve on them: with no model, every step goes to a human.
+the same shape, but always with **zero confidence**, so the confidence gate never reads
+clear on them. Every step goes to a human either way; with no model it also says so.
 """
 
 from __future__ import annotations

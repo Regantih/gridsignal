@@ -107,7 +107,7 @@ def ask(
     client: JevClient | None = None,
     policy: ApprovalPolicy | None = None,
 ) -> tuple[JevResponse, ApprovalDecision]:
-    """Ask Jev about the open incident and route it: auto-approve, or the human gate."""
+    """Ask Jev about the open incident and read the gate. The human gate is untouched."""
     jev = client or JevClient.for_scenario(fixture_name(engine), fallback=rules.answers)
     if jev.fallback is None:
         jev.fallback = rules.answers

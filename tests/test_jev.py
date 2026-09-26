@@ -362,12 +362,12 @@ def response_with(confidence: float, risk: float, trust: bool = True) -> JevResp
     )
 
 
-def test_confident_low_risk_cheap_steps_are_auto_approved() -> None:
+def test_confident_low_risk_cheap_steps_clear_the_gate_and_still_wait_for_a_human() -> None:
     decision = decide(
         response_with(0.95, 0.10), dollars=120.0, covered_fully=True, human_approver="operator"
     )
-    assert decision.auto_approved
-    assert decision.approver.startswith("jev-auto")
+    assert decision.gate_clear
+    assert decision.approver == "operator"
     assert "under cap" in decision.reason
 
 
@@ -375,7 +375,7 @@ def test_low_confidence_routes_to_the_human() -> None:
     decision = decide(
         response_with(0.72, 0.10), dollars=120.0, covered_fully=True, human_approver="operator"
     )
-    assert not decision.auto_approved
+    assert not decision.gate_clear
     assert decision.approver == "operator"
     assert "below 0.90" in decision.reason
 
@@ -384,7 +384,7 @@ def test_high_backup_risk_routes_to_the_human() -> None:
     decision = decide(
         response_with(0.99, 0.80), dollars=10.0, covered_fully=True, human_approver="operator"
     )
-    assert not decision.auto_approved
+    assert not decision.gate_clear
     assert "backup risk" in decision.reason
 
 
@@ -392,7 +392,7 @@ def test_dollars_over_the_cap_route_to_the_human() -> None:
     decision = decide(
         response_with(0.99, 0.05), dollars=9_000.0, covered_fully=True, human_approver="operator"
     )
-    assert not decision.auto_approved
+    assert not decision.gate_clear
     assert "cap" in decision.reason
 
 
@@ -406,8 +406,8 @@ def test_distrusted_agent_or_partial_cover_routes_to_the_human() -> None:
     partial = decide(
         response_with(0.99, 0.05), dollars=10.0, covered_fully=False, human_approver="operator"
     )
-    assert not distrusted.auto_approved and "untrustworthy" in distrusted.reason
-    assert not partial.auto_approved and "whole gap" in partial.reason
+    assert not distrusted.gate_clear and "untrustworthy" in distrusted.reason
+    assert not partial.gate_clear and "whole gap" in partial.reason
 
 
 def test_the_gate_turns_on_root_cause_and_backup_risk_only() -> None:
@@ -421,7 +421,7 @@ def test_the_gate_turns_on_root_cause_and_backup_risk_only() -> None:
         },
     )
     assert deciding_confidence(shaky) == pytest.approx(0.99)
-    assert decide(shaky, dollars=10.0, covered_fully=True, human_approver="operator").auto_approved
+    assert decide(shaky, dollars=10.0, covered_fully=True, human_approver="operator").gate_clear
 
     unsure_root = replace(
         response,
@@ -430,7 +430,7 @@ def test_the_gate_turns_on_root_cause_and_backup_risk_only() -> None:
     )
     assert not decide(
         unsure_root, dollars=10.0, covered_fully=True, human_approver="operator"
-    ).auto_approved
+    ).gate_clear
 
 
 def test_a_distrusted_agent_already_dropped_no_longer_blocks_the_gate() -> None:
@@ -450,8 +450,8 @@ def test_a_distrusted_agent_already_dropped_no_longer_blocks_the_gate() -> None:
         human_approver="operator",
         plan_agents=["BAT-002"],
     )
-    assert not still_in_plan.auto_approved
-    assert dropped.auto_approved
+    assert not still_in_plan.gate_clear
+    assert dropped.gate_clear
     assert dropped.distrusted == ("BAT-001",)  # recorded either way
 
 
@@ -464,16 +464,30 @@ def test_threshold_and_cap_are_configurable() -> None:
         human_approver="operator",
         policy=relaxed,
     )
-    assert decision.auto_approved
+    assert decision.gate_clear
 
 
-def test_offline_fallback_can_never_auto_approve() -> None:
+def test_offline_fallback_can_never_clear_the_gate() -> None:
     snap = suspect_snapshot()
     client = JevClient.offline(fallback=rules.answers)
     response = client.ask(snap.as_state(), incident_questions(snap))
     decision = decide(response, dollars=1.0, covered_fully=True, human_approver="operator")
-    assert not decision.auto_approved
+    assert not decision.gate_clear
     assert "Jev offline, rules fallback" in decision.reason
+
+
+def test_no_reading_of_the_gate_can_put_jev_in_the_approver_seat() -> None:
+    """Clear or not, the approver is the human: there is no path that commits without one."""
+    for confidence, risk, dollars in ((0.99, 0.01, 1.0), (0.10, 0.90, 9_000.0)):
+        decision = decide(
+            response_with(confidence, risk),
+            dollars=dollars,
+            covered_fully=True,
+            human_approver="operator",
+        )
+        assert decision.approver == "operator"
+        assert "jev" not in decision.approver.lower()
+        assert not hasattr(decision, "auto_approved")
 
 
 # --------------------------------------------------------------- integration
@@ -484,7 +498,7 @@ def test_scenario_runs_from_fixtures_with_no_key_and_no_network() -> None:
     result = run_scenario(scenario)
     assert result.metrics.jev_source == Source.FIXTURE.value
     assert result.metrics.root_cause_truth == "device_fault"
-    assert result.metrics.human_approvals + result.metrics.auto_approvals == result.metrics.rounds
+    assert result.metrics.human_approvals == result.metrics.rounds
     assert result.jev_label == "Jev (recorded answers)"
     kinds = {m.kind.value for m in result.bus.messages}
     assert "jev_decision" in kinds
@@ -499,7 +513,7 @@ def test_scenario_runs_offline_labelled_as_rules_fallback() -> None:
     assert result.jev_label == "Jev offline, rules fallback"
     assert result.metrics.root_cause == "gateway_outage"
     assert result.metrics.root_cause_correct
-    assert result.metrics.auto_approvals == 0
+    assert result.metrics.gate_clear_steps == 0
     assert result.metrics.human_approvals >= 1
 
 
@@ -525,7 +539,7 @@ def test_control_room_incident_is_scored_by_jev() -> None:
     response, decision = jev_incident.ask(eng, incident)
     assert response.source is Source.FIXTURE
     assert response.answer(ROOT_CAUSE) is not None
-    assert not decision.auto_approved  # the bundled incident is above the risk threshold
+    assert not decision.gate_clear  # the bundled incident is above the risk threshold
     assert eng.pending_incident is not None  # the human gate is untouched
 
 

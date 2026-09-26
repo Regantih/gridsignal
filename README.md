@@ -514,10 +514,11 @@ is real, and nothing is ever sent to a battery.
 
 ### Jev, the decision layer
 
-*Code acts, Jev decides, humans approve when Jev is unsure.* The mesh does the arithmetic; the
-decisions that need judgement are put to [Jev](https://docs.typesafe.ai/api), TypeSafe AI's
-decision model, as four explicit questions over the incident snapshot (agent cards, telemetry
-ages, prices, bids, plan coverage):
+*Code acts, the rules and the hard vetoes decide, a human approves every commit.* Jev is a
+second opinion that escalates when it disagrees; it has no approve path. The mesh does the
+arithmetic; the decisions that need judgement are put to [Jev](https://docs.typesafe.ai/api),
+TypeSafe AI's decision model, as four explicit questions over the incident snapshot (agent
+cards, telemetry ages, prices, bids, plan coverage):
 
 1. **Root cause**, as a choice between device fault, gateway outage, telemetry lag, spoofed agent
    and grid event.
@@ -525,11 +526,12 @@ ages, prices, bids, plan coverage):
    signature catches an edited card, this catches an agent that is validly signed and still
    behaving oddly.
 3. **Risk to the homeowner's backup**, as a 0–1 score.
-4. **A confidence-gated approval policy**: a step is auto-approved only when every answer is at
-   least the confidence threshold (default `0.9`), backup risk is low (≤ 0.35), the dollars at
-   stake are under a cap (default $500) and the plan covers the whole gap and flags nobody as
-   untrustworthy. Anything else routes to the same human approval gate as before, with Jev's
-   probabilities shown next to the button. `Coordinator.approve()` remains the only commit path.
+4. **A confidence gate that is read, never acted on**: the gate reads *clear* only when every
+   answer is at least the confidence threshold (default `0.9`), backup risk is low (≤ 0.35), the
+   dollars at stake are under a cap (default $500) and the plan covers the whole gap and flags
+   nobody as untrustworthy. Clear or not, the step goes to the same human approval gate with
+   Jev's probabilities shown next to the button — there is no path in which Jev approves.
+   `Coordinator.approve()` remains the only commit path.
 
 Two transports sit behind one client and whichever key is set wins — Vercel AI Gateway
 (`AI_GATEWAY_API_KEY`, `POST /v1/evaluate`, model `typesafe-ai/jev`, yes/no questions typed
@@ -548,10 +550,10 @@ python -m gridsignal.jev.evaluate          # rules-only vs Jev, from the recorde
 python -m gridsignal.jev.record --refresh  # re-record, only if a key is set
 ```
 
-| Decision layer | Root-cause accuracy | Human approvals | Auto-approvals | Median decision latency |
-| --- | --- | --- | --- | --- |
-| rules-only | 5/5 (100%) | 6 | 0 | 0 ms |
-| jev | 3/5 (60%) | 6 | 0 | 326 ms |
+| Decision layer | Root-cause accuracy | Human approvals | Median decision latency |
+| --- | --- | --- | --- |
+| rules-only | 5/5 (100%) | 6 | 0 ms |
+| jev | 3/5 (60%) | 6 | 326 ms |
 
 | Scenario | Injected root cause | rules-only | Jev |
 | --- | --- | --- | --- |
@@ -566,9 +568,9 @@ ceiling, not evidence they generalise; Jev sees the state cold and gets 3 of 5, 
 scenarios that stack injections (`lying_agent` is a gateway outage *with* a forged card, and it
 names the forgery; `silent_bidder` is two dead devices *and* stale telemetry, and it names the
 staleness). Both are defensible readings of the state and both are wrong about the cause of the
-lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, so **every** award in the
-demo is still approved by a person — the auto-approval path is exercised by tests, not by the
-demo. Latency is the recorded live round trip (median 326 ms); the rules answer in microseconds.
+lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, and every award is
+approved by a person whether it clears or not. Latency is the recorded live round trip
+(median 326 ms); the rules answer in microseconds.
 
 ### The operator judgment model (safety pack v2, committed before it was scored)
 
@@ -696,7 +698,7 @@ back, then covers the remainder at 225 s once it is — the same 600 kW, counted
 Jev moved 1/4 → 2/4 on answers re-recorded against the post-reserve-fix state, and its per-drill
 answers moved around in both directions, so the fair reading is still that the deterministic
 rules, not the model, are what improved. Backup reserve violations stayed at **zero** in every
-drill, before and after, and nothing was auto-approved either way.
+drill, before and after, and every award went through the human gate either way.
 
 What each drill injects, and what the numbers say:
 
@@ -731,8 +733,7 @@ What each drill injects, and what the numbers say:
   escalated, no reserve spent.
 
 Across all four drills, in both the baseline and the tuned run, the fleet spent **zero**
-homeowner backup reserve and auto-approved **nothing** — every award went through the human
-gate. That is the part that held from the start. Root-cause naming did not: 0/4 for the rules,
+homeowner backup reserve and every award went through the human gate. That is the part that held from the start. Root-cause naming did not: 0/4 for the rules,
 1/4 for Jev at baseline. Both layers reach for the injection they were
 shown before rather than "the grid itself moved", which is exactly what a held-out set is for.
 Those are the baseline numbers, scored before any change. The *after tuning on held-out* table
@@ -1211,7 +1212,8 @@ real Base Power device or fleet.
   cryptographic identity beyond a shared HMAC key, and agents do not defect strategically — a
   "lying" agent lies about its capabilities, not about delivery it actually made.
 - Jev's root-cause accuracy on the bundled scenarios (3/5) is below the deterministic rules (5/5),
-  and it never reached the 0.9 confidence gate, so the auto-approval path never fires in the demo.
+  and it never reached the 0.9 confidence gate, so the gate reads *below the bar* throughout the
+  demo — which changes nothing about who commits, since only a human ever does.
   Five scenarios is far too small a sample to conclude anything about the model; it is reported as
   measured rather than tuned away.
 - The Jev fixtures are keyed on the exact incident state, so changing the snapshot schema or the

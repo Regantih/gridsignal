@@ -40,7 +40,7 @@ scene is one click from the last.
 | **1:40** | Control Room → principles panel | "Above the button are the six principles an operator weighs: member backup, market rules and deliverability are hard vetoes, then reversibility, money and doubt. The rules and the vetoes decide. The model is a second opinion that can escalate but never approve — on a safety pack committed before it was scored, the rules fallback answered 21 of 24 and Jev 17 of 24." | Technical Execution / Depth — `src/gridsignal/jev/judgment.py` |
 | **2:10** | Click **Approve Recovery Plan** | "A named human approves. The lost kW are reassigned across healthy batteries that each still hold their member's backup reserve, coverage returns to 100%, and $4,751 of that $4,812 is recovered." | Fit to Track / Why — `src/gridsignal/control_room/engine.py` |
 | **2:35** | Sidebar **View → Member App**, home **BAT-001** | "This is one of the homes that carried it, and nothing here is about the grid. The house takes 1.7 kW before a single kW is exported, 5.5 kW goes out, the member earns $28.07 — and 9.4 hours of backup are still in the wall. The home that failed sees one sentence: your battery is reporting to us again." | Value / Insight — `src/gridsignal/member.py` |
-| **3:05** | **View → Agent Mesh**, run `lying_agent` | "The recovery is a negotiation, not a broadcast. Every battery and gateway holds a signed capability card. One agent edits its card after signing to claim capacity it does not have, the signature check rejects it, honest bidders cover all 67 kW, and the award still waits for a human: 1 approval, 0 auto-approvals." | Innovation / Creativity — `src/gridsignal/mesh/` |
+| **3:05** | **View → Agent Mesh**, run `lying_agent` | "The recovery is a negotiation, not a broadcast. Every battery and gateway holds a signed capability card. One agent edits its card after signing to claim capacity it does not have, the signature check rejects it, honest bidders cover all 67 kW, and the award still waits for a human: 1 approval, 0 self-approvals by Jev." | Innovation / Creativity — `src/gridsignal/mesh/` |
 | **3:35** | Rollout panel → **bad build** | "A fleet is a deployment target too. This build fails on hot devices and keeps its heartbeat, so it passes the heartbeat gate — the response gate halts it in the canary: across 10,000 devices, 100 homes touched, 3 affected, all rolled back, 420 simulated seconds to detect." | Technical Execution / Completeness — `src/gridsignal/rollout.py` |
 | **4:00** | **View → Grid Signals** | "Why this is worth orchestrating: on the bundled scarcity days the day-ahead curve exposed only 47% of the capturable value, and the $18.83 per battery that shows up only in real time is worth about 28 ordinary trading days. Scored once on 7 days the policy never saw, it beats the naive schedule on 6 of 7 — mean $0.44, median $0.26." | Value / Insight — `src/gridsignal/holdout.py` |
 | **4:25** | **View → Why**, then close | "Every number on this page was recomputed from the code as it loaded, limits included. A ring of homes failed, the commitment survived, every member kept their backup, and a person owned the decision — deterministic, offline, no API key." | Fit to Track / Why — `src/gridsignal/why.py` |
@@ -66,9 +66,9 @@ it and run from the CLI, so the script never asks for a scenario the picker does
   and no network calls at runtime.
 - **Human-in-the-loop gate.** `ControlRoomEngine.approve_recovery()` and
   `Coordinator.approve()` are the only paths that move capacity; both record the approver.
-- **The model never gets a veto.** Jev only answers questions, only sees simulated fleet state,
-  and auto-approval is logged as an auto-approval with the model, confidence and reason. With no
-  key and no fixture the UI reads **Jev offline, rules fallback** and the rules report zero
-  confidence, so the fallback cannot auto-approve.
+- **The model never approves and never vetoes.** Jev only answers questions, only sees simulated
+  fleet state, and its confidence gate is a reading logged with the model, confidence and reason
+  — no code path commits kW because the gate read clear. With no key and no fixture the UI reads
+  **Jev offline, rules fallback** and the rules report zero confidence.
 - **Everything simulated is labelled.** Frequency, outages, home loads, firmware builds, install
   waves and member behaviour are all modelled; the prices are historical and read-only.

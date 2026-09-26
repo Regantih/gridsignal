@@ -1,7 +1,8 @@
 """The operator judgment model: six principles, one yes/no question each, one verdict.
 
-`Code acts, Jev decides, humans approve when Jev is unsure.` This module says what
-"unsure" means in the language an operator would use.
+`Code acts, the rules and the hard vetoes decide, a human approves every commit.` Jev is
+a second opinion that escalates when it disagrees. This module says what "unsure" means
+in the language an operator would use.
 
 :mod:`gridsignal.jev.principles` (the YAML next to this file, committed before anything
 was scored against it) lists the principles a fleet operator weighs, in priority order,

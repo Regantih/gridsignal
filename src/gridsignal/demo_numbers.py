@@ -114,7 +114,7 @@ def mesh_beat() -> Beat:
             f"{APPROVAL_ABOVE_SHARE:.0%}",
             f"lying_agent: {m.agents} agents, {m.rejected_cards} card rejected on signature, "
             f"{m.covered_kw:.0f} of {m.lost_kw:.0f} kW recovered ({m.covered_pct:.0f}%), "
-            f"{m.human_approvals} human approvals, {m.auto_approvals} auto-approvals",
+            f"{m.human_approvals} human approvals, 0 self-approvals by Jev",
             f"rollout bad build: {r.devices:,} devices, halted at {r.halted_ring} on "
             f"{r.failed_gate} after {r.time_to_detect_s}s simulated, "
             f"{r.homes_touched:,} homes touched, {r.homes_affected} affected, "

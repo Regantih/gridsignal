@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import re
 import sys
+import time
+from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 import pandas as pd
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from gridsignal import degradation, holdout, why
+from gridsignal import degradation, holdout, judgment_report, why
+from gridsignal.control_room.engine import ControlRoomEngine
+from gridsignal.jev import incident as jev_incident
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "app"))
 import dashboard  # noqa: E402
@@ -151,18 +157,28 @@ def test_agent_mesh_shows_jev_answers_and_the_rules_comparison(
     assert set(evaluation["decision layer"]) == {"rules-only", "jev"}
 
     text = " ".join(m.value for m in app.markdown)
-    assert "Decision layer" in text
-    assert "human approval required" in text or "auto-approved by Jev" in text
+    assert "Second opinion" in text
+    assert "human approval required" in text
+    assert "Jev has no approve path" in text
 
 
-def test_incident_panel_shows_the_jev_read_out() -> None:
+def test_incident_panel_shows_one_verdict_that_cannot_contradict_the_button() -> None:
+    """One card carries the verdict, the gate reading and who approves.
+
+    Two cards could badge the same incident differently; the point of the merge is that
+    the words next to the Approve button can only ever say a human approves.
+    """
     app = fresh()
     trigger = next(b for b in app.button if "Trigger" in b.label)
     trigger.click().run()
     assert not app.exception, app.exception
     text = " ".join(m.value for m in app.markdown)
-    assert "Code acts, Jev decides" in text
+    assert text.count("gs-kicker'>Verdict") == 1
+    assert "Second opinion" not in text
+    assert "human approval required" in text
+    assert "A human approves either way — Jev has no approve path" in text
     assert any(label in text for label in ("Jev live", "Jev (recorded answer)", "Jev offline"))
+    assert any("Approve" in b.label for b in app.button)
 
 
 def test_control_room_accounts_for_spare_capacity_and_can_offer_it() -> None:
@@ -194,12 +210,22 @@ def test_the_banner_states_delivered_against_promised_and_what_is_at_risk() -> N
 
 
 def test_rounding_never_reports_more_delivered_than_promised() -> None:
-    assert dashboard.coverage_banner(499.6, 500.0) == "Delivering 499 of 500 kW; 1 kW at risk"
+    assert dashboard.coverage_banner(498.4, 500.0) == "Delivering 498 of 500 kW; 2 kW at risk"
     assert dashboard.coverage_banner(500.0, 500.0) == "Delivering 500 of 500 kW; 0 kW at risk"
     # A fleet over-assigned by rounding still reads as exactly its commitment.
     assert dashboard.coverage_banner(500.4, 500.0) == "Delivering 500 of 500 kW; 0 kW at risk"
-    assert dashboard.coverage_pct_text(499.6, 500.0, 99.92) == "99%"
+    assert dashboard.coverage_pct_text(498.4, 500.0, 99.68) == "99%"
     assert dashboard.coverage_pct_text(500.0, 500.0, 100.0) == "100%"
+
+
+def test_the_banner_colour_and_its_words_can_never_disagree() -> None:
+    """A sub-kW rounding remainder used to read green while the words said 'kW at risk'."""
+    for committed, target in ((35_999.6, 36_000.0), (500.0, 500.0), (500.4, 500.0)):
+        assert dashboard.covered(committed, target)
+        assert "0 kW at risk" in dashboard.coverage_banner(committed, target)
+        assert dashboard.coverage_pct_text(committed, target, 100.004) == "100%"
+    assert not dashboard.covered(35_999.0, 36_000.0)
+    assert "1 kW at risk" in dashboard.coverage_banner(35_999.0, 36_000.0)
 
 
 def test_the_fleet_map_renders_without_internet_tiles() -> None:
@@ -370,3 +396,80 @@ def test_small_print_keeps_its_dollar_amounts_readable(
             for pos, ch in enumerate(c.value):
                 if ch == "$":
                     assert pos and c.value[pos - 1] == "\\", f"{view}: {c.value!r}"
+
+
+def test_raw_html_never_carries_a_latex_escape_into_the_operator_view() -> None:
+    """Captions need `\\$`; raw HTML does not, and a stray escape prints as `\\$4,812`."""
+    app = fresh()
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    assert not app.exception, app.exception
+    for block in app.markdown:
+        if "<div" in block.value:
+            assert "\\$" not in block.value, block.value
+
+
+def test_the_map_sample_reaches_every_zone_rather_than_one_blob() -> None:
+    """Devices are laid out round-robin, so a flat stride can draw one city only."""
+    eng = ControlRoomEngine(fleet_size=5_000)
+    sample = dashboard.map_devices(eng.devices)
+
+    assert len(sample) <= dashboard.MAP_MARKERS + 200  # unhealthy devices are always kept
+    zones = {d.zone for d in sample}
+    assert zones == {d.zone for d in eng.devices}
+    per_zone = Counter(d.zone for d in sample)
+    assert min(per_zone.values()) >= 0.5 * max(per_zone.values()), per_zone
+
+
+def test_the_operator_summary_and_the_task_list_are_each_rendered_once() -> None:
+    app = fresh()
+    trigger = next(b for b in app.button if "Trigger" in b.label)
+    trigger.click().run()
+    approve = next(b for b in app.button if "Approve" in b.label)
+    approve.click().run()
+    assert not app.exception, app.exception
+
+    text = " ".join(m.value for m in app.markdown)
+    assert "Operator summary" not in text  # the recovery banner already says it
+    assert text.count("Who is doing what") == 1
+
+
+def test_the_blind_pack_is_scored_once_per_process_and_warmed_before_the_first_click() -> None:
+    """The first 10,000-device fault must not pay for replaying every held-out drill."""
+    first = judgment_report.cached_build()
+    assert judgment_report.cached_build() is first
+
+    started: list[str] = []
+    real = judgment_report.cached_build
+
+    def record() -> judgment_report.Report:
+        started.append("warmed")
+        return real()
+
+    state = SimpleNamespace(prewarmed=False, get=lambda key, default=None: False)
+    with mock.patch.object(judgment_report, "cached_build", record):
+        with mock.patch.object(dashboard.st, "session_state", state):
+            dashboard.prewarm()
+            state.get = lambda key, default=None: state.prewarmed
+            dashboard.prewarm()  # idempotent: one warm per session, not one per rerun
+    for _ in range(100):
+        if started:
+            break
+        time.sleep(0.05)
+    assert started == ["warmed"]
+    assert state.prewarmed is True
+
+
+def test_a_ten_thousand_device_fault_answers_quickly_once_the_pack_is_warm() -> None:
+    """Camera timing: the trigger is engine work, not a held-out replay on the click."""
+    judgment_report.cached_build()
+    eng = ControlRoomEngine(fleet_size=10_000)
+    start = time.perf_counter()
+    incident = eng.trigger_device_failure()
+    _, decision = jev_incident.ask(eng, incident)
+    _, _, verdict = jev_incident.judge_incident(eng, incident)
+    elapsed = time.perf_counter() - start
+
+    assert incident.lost_kw > 0
+    assert verdict.action is not None and not decision.gate_clear
+    assert elapsed < 2.0, f"{elapsed:.2f}s"
