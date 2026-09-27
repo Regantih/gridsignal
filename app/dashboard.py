@@ -1550,7 +1550,7 @@ def render_scenario_controls() -> None:
                 caption(
                     "Prices the incident on yesterday's full ERCOT operating day, fetched "
                     "now from ercot.com (LZ_HOUSTON, 15-minute settlement prices). "
-                    "Ordinary days are cheap, which is the point of finding 1."
+                    "Ordinary days are cheap; scarcity days are where the money is."
                 )
         elif live is not None:
             caption("Off: the bundled day above, so every run gives the same numbers.")
