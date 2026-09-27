@@ -3,3 +3,4 @@
 # and puts the `gridsignal` package on the path for app/dashboard.py.
 # Local development should use: pip install -e ".[dev]"
 .
+# Reinstall marker: 2026-09-27 live ERCOT module (gridsignal.live).

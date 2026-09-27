@@ -28,7 +28,6 @@ from gridsignal import (
     insight,
     install,
     judgment_report,
-    live,
     member,
     pipeline,
     replay,
@@ -72,6 +71,11 @@ from gridsignal.prices import (
     load_scenario,
 )
 from gridsignal.signals import Signal
+
+try:  # a hosted app can hot-reload this file before the package is reinstalled
+    from gridsignal import live
+except ImportError:  # pragma: no cover - only on a stale deployment
+    live = None
 from gridsignal.simulate import RunResult, run_file
 
 st.set_page_config(page_title="GridSignal Control Room", layout="wide", page_icon="⚡")
@@ -336,7 +340,7 @@ def live_ercot_trace(day: str) -> PriceTrace:
 
 def engine() -> ControlRoomEngine:
     """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
-    live_on = bool(st.session_state.get("live_ercot", False))
+    live_on = live is not None and bool(st.session_state.get("live_ercot", False))
     key = (
         st.session_state.get("scenario", DEFAULT_SCENARIO),
         st.session_state.get("fleet_size", FLEET_SIZE),
@@ -1529,8 +1533,9 @@ def render_scenario_controls() -> None:
         )
         chosen = next(s for s in scenarios if s.key == st.session_state.get("scenario", keys[0]))
         caption(chosen.blurb)
-        st.toggle("Live ERCOT prices", key="live_ercot", value=False)
-        if st.session_state.get("live_ercot"):
+        if live is not None:
+            st.toggle("Live ERCOT prices", key="live_ercot", value=False)
+        if live is not None and st.session_state.get("live_ercot"):
             try:
                 live_ercot_trace(live.latest_complete_day())
                 st.session_state.live_error = None
@@ -1547,7 +1552,7 @@ def render_scenario_controls() -> None:
                     "now from ercot.com (LZ_HOUSTON, 15-minute settlement prices). "
                     "Ordinary days are cheap, which is the point of finding 1."
                 )
-        else:
+        elif live is not None:
             caption("Off: the bundled day above, so every run gives the same numbers.")
         st.radio(
             "Fleet scale",
