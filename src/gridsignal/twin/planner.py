@@ -21,19 +21,23 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from gridsignal.twin import stress
+from gridsignal.twin import feed, stress
 from gridsignal.twin.data import PriceDays, load_days
 from gridsignal.twin.sim import FleetAssumptions
 from gridsignal.twin.world import PriceWorldModel
 
 if TYPE_CHECKING:
     from gridsignal.control_room.engine import ControlRoomEngine
+    from gridsignal.twin.learn import Calibration
 
 #: The world model prices three ERCOT load zones. The engine's Austin homes are priced as
 #: South, the nearest modelled zone; the partner tenant's West units are not ours to
 #: commit and are left out. Reliability barely depends on price (see ``docs/twin``), so
 #: this mapping moves the value estimate, not the safe commitment.
 TWIN_ZONE = {"LZ_HOUSTON": 0, "LZ_NORTH": 1, "LZ_SOUTH": 2, "LZ_AUSTIN": 2, "LZ_AEN": 2}
+
+#: Scenarios that need the live feed's days to exist. Offered only when they do.
+LIVE_SCENARIO = "This year so far (live feed)"
 
 SCENARIOS: dict[str, dict] = {
     "2025-like (latest year)": {"regime": 2025},
@@ -55,10 +59,53 @@ def _history() -> PriceDays:
     return load_days()
 
 
+@lru_cache(maxsize=2)
+def _live_history(last_day: str | None) -> PriceDays:
+    """Bundled 2021 to 2025 plus every settled live day, cached per newest settled day."""
+    return feed.combined_days()
+
+
+def _history_with_live() -> PriceDays:
+    return _live_history(feed.last_full_day())
+
+
 @lru_cache(maxsize=1)
-def world_model() -> PriceWorldModel:
-    """The price world model, fitted once per process on all bundled ERCOT days."""
+def _frozen_model() -> PriceWorldModel:
     return PriceWorldModel().fit(_history())
+
+
+@lru_cache(maxsize=2)
+def _live_model(last_day: str | None) -> PriceWorldModel:
+    return PriceWorldModel().fit(_live_history(last_day))
+
+
+def world_model(live: bool = False) -> PriceWorldModel:
+    """The price world model, fitted once per process (and once per new live day).
+
+    ``live=False`` fits the frozen bundled history, so every number in ``docs/twin``
+    reproduces. ``live=True`` refits on bundled plus live days, so the newest regime is
+    this year's real prices; it refits by itself when the feed settles a new day.
+    """
+    return _live_model(feed.last_full_day()) if live else _frozen_model()
+
+
+def live_regime() -> int | None:
+    """The newest year the live feed has enough settled days of, or None."""
+    days = feed.live_days()
+    if days is None or len(days) < 60:
+        return None
+    years, counts = np.unique(days.dates.year.to_numpy(), return_counts=True)
+    ok = years[counts >= 60]
+    return int(ok.max()) if len(ok) else None
+
+
+def scenarios(live: bool = False) -> dict[str, dict]:
+    """The scenario menu. With ``live``, adds this year's real regime when it exists."""
+    out = dict(SCENARIOS)
+    regime = live_regime() if live else None
+    if regime is not None:
+        out[LIVE_SCENARIO] = {"regime": regime}
+    return out
 
 
 def assumptions_from_engine(engine: ControlRoomEngine, homes: int = 1_000) -> FleetAssumptions:
@@ -113,6 +160,10 @@ class CommitmentPlan:
     shortfall_mwh_per_year: dict[str, dict[float, float]]
     min_reserve_margin_kwh: float
     assumptions: FleetAssumptions
+    #: True when failure rates came from telemetry instead of the documented defaults.
+    calibrated: bool = False
+    #: True when the price model was refitted to include the live feed's days.
+    live_prices: bool = False
 
     @property
     def recommended_ratio(self) -> float:
@@ -131,8 +182,8 @@ class CommitmentPlan:
         if rec > 0:
             parts.append(
                 f"Commit {rec:.0%} of measured headroom with the recovery playbook on: "
-                f"{self.kept_at('gridsignal_auto', rec):.1%} of {self.years} simulated "
-                f"{self.scenario.split(' (')[0]} years kept."
+                f"{self.kept_at('gridsignal_auto', rec):.1%} of days kept over "
+                f"{self.years} simulated years in the {self.scenario} scenario."
             )
         else:
             parts.append(
@@ -161,28 +212,37 @@ def plan_commitment(
     ratios: tuple[float, ...] = stress.RATIOS,
     assumptions: FleetAssumptions | None = None,
     seed: int = 2026,
+    live: bool | None = None,
+    calibration: Calibration | None = None,
 ) -> CommitmentPlan:
     """Stress-test a fleet on simulated years and return the safe commitment.
 
     Pass an ``engine`` to plan for its live fleet, or ``assumptions`` directly. Every
     policy is scored on the same simulated days and failures (a paired comparison).
     """
-    if scenario not in SCENARIOS:
-        raise ValueError(f"unknown scenario {scenario!r}; choose from {list(SCENARIOS)}")
+    if live is None:
+        live = scenario == LIVE_SCENARIO
+    menu = scenarios(live=live)
+    if scenario not in menu:
+        raise ValueError(f"unknown scenario {scenario!r}; choose from {list(menu)}")
     if assumptions is None:
         assumptions = (
             assumptions_from_engine(engine, homes)
             if engine is not None
             else FleetAssumptions(homes=homes)
         )
+    if calibration is not None:
+        # Measured failure behaviour replaces the documented assumptions.
+        assumptions = calibration.apply(assumptions)
+    history = _history_with_live() if live else _history()
     results = stress.run(
-        world_model(),
-        _history(),
+        world_model(live),
+        history,
         years=years,
         commit_ratios=ratios,
         assumptions=assumptions,
         seed=seed,
-        world_kw=SCENARIOS[scenario],
+        world_kw=menu[scenario],
     )
     curve: dict[str, dict[float, float]] = {p: {} for p in stress.POLICIES}
     short: dict[str, dict[float, float]] = {p: {} for p in stress.POLICIES}
@@ -203,4 +263,6 @@ def plan_commitment(
         shortfall_mwh_per_year=short,
         min_reserve_margin_kwh=min(r.min_reserve_margin_kwh for r in results),
         assumptions=assumptions,
+        calibrated=calibration is not None,
+        live_prices=live,
     )
