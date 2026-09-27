@@ -32,6 +32,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The Jev principle pack is read at import time, so it must ship with the package.
+gridsignal = ["jev/*.yaml"]
+
 [tool.pytest.ini_options]
 # The heavy end of the suite: whole-fleet scenario sweeps, the AppTest renders and the
 # reports that recompute a study. CI runs them as their own parallel job, so neither half
