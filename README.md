@@ -1,8 +1,8 @@
 # GridSignal
 
 Turning ERCOT grid data into battery dispatch signals that Base Power members can act on —
-plus **GridSignal Control Room**, a simulation-only operator view that keeps a distributed
-home-battery fleet coordinated when a device fails.
+plus **GridSignal Control Room**, an operator console that keeps a distributed home-battery
+fleet coordinated when a device fails, priced on real ERCOT market data.
 
 Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
@@ -12,10 +12,13 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
 **Live demo:** [https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/](https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/)
 
-> **Simulation only.** The fleet, the failure and the recovery are deterministic local mock data;
-> only the ERCOT settlement prices are real (a cached public price trace). It does not connect to
-> real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
-> anything. A human operator must approve every recovery action.
+> **Real ERCOT data, simulated fleet.** Every price is real ERCOT settlement data: bundled
+> historical days for repeatable numbers, or fetched live from ercot.com with the **Live ERCOT
+> prices** toggle (or `python -m gridsignal.live --incident`). The battery fleet is simulated
+> because no outside team can reach Base's devices; the **Load telemetry file** panel accepts
+> device heartbeats in a documented format, and the same incident workflow runs on them. It never
+> sends a command to a real device, utility or ERCOT system, and a human operator approves every
+> recovery action.
 
 **Judging in 60 seconds:** `pip install -e ".[dev]"` then `python -m gridsignal.demo_numbers`
 prints every headline figure below from a fresh clone, offline, with no keys.
@@ -36,7 +39,7 @@ command beside it. No key and no network needed.
 
 ## What we would build next with Base
 
-1. **Live ERCOT feed.** Swap the cached traces for the real-time SPP and day-ahead feeds through the existing ERCOT pull in `gridsignal.ingest`, so finding 1 runs every 15 minutes.
+1. **Live ERCOT feed, continuously.** Already working for one day at a time: `python -m gridsignal.live --incident` fetches yesterday's real-time and day-ahead prices from ercot.com and prices the same incident on them (on 2026-09-26, an ordinary day, it was $42.06 at risk against $4,812 on the bundled scarcity day). Next is running it every 15 minutes so finding 1 is tracked as it happens.
 2. **Real telemetry adapter.** Point the Control Room at a read-only export of fleet heartbeats. The incident, pricing and approval flow stay unchanged; nothing dispatches without a human.
 3. **Correlated-risk map.** Group devices by firmware ring, gateway and feeder, and price the worst single fault before the next scarcity day instead of during it.
 4. **Member-facing backup ledger.** Show each member, per event, that their promised reserve was untouched. Trust is the product.

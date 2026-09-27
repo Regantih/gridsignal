@@ -180,7 +180,8 @@ class ControlRoomEngine:
             ends_at=window_end,
             price_source=(
                 f"ERCOT {self.prices.market} settlement point prices, "
-                f"{self.prices.location} {self.prices.date} (cached Parquet)"
+                f"{self.prices.location} {self.prices.date} "
+                f"({'fetched live from ercot.com' if self.prices.live else 'cached Parquet'})"
             ),
         )
         self._hold_partner_reserve()

@@ -1,8 +1,10 @@
 # GridSignal Control Room — demo guide
 
-**Simulation only.** The fleet, the failure, the frequency and the recovery are deterministic
-local mock data. The only real data is cached historical ERCOT settlement and day-ahead prices,
-read from Parquet files in this repo, used to put the incident in dollars. The app never connects
+**Real ERCOT prices, simulated fleet.** The fleet, the failure, the frequency and the recovery are
+deterministic local mock data. Prices are real ERCOT settlement and day-ahead data: cached
+historical days read from Parquet files in this repo, or yesterday's day fetched live from
+ercot.com when the Live ERCOT prices toggle is on (off by default, so the demo numbers never
+move). The app never connects
 to a real battery, gateway, utility, ERCOT operational endpoint or any control system, and it
 issues no dispatch commands.
 

@@ -28,6 +28,7 @@ from gridsignal import (
     insight,
     install,
     judgment_report,
+    live,
     member,
     pipeline,
     replay,
@@ -65,6 +66,7 @@ from gridsignal.mesh.cards import CardStatus
 from gridsignal.mesh.scenarios import available_scenarios as available_chaos_scenarios
 from gridsignal.prices import (
     DEFAULT_SCENARIO,
+    PriceTrace,
     available_scenarios,
     energy_value_usd,
     load_scenario,
@@ -326,16 +328,32 @@ def focus_backup_member() -> tuple[str, str]:
     return backup_ledger.focus_member()
 
 
+@st.cache_data(ttl=1800, show_spinner="Fetching live ERCOT prices from ercot.com...")
+def live_ercot_trace(day: str) -> PriceTrace:
+    """Yesterday's full ERCOT operating day, fetched from ercot.com, cached 30 minutes."""
+    return live.fetch_live_trace(day)
+
+
 def engine() -> ControlRoomEngine:
     """One engine per (price scenario, fleet size); rebuilt when the operator switches."""
+    live_on = bool(st.session_state.get("live_ercot", False))
     key = (
         st.session_state.get("scenario", DEFAULT_SCENARIO),
         st.session_state.get("fleet_size", FLEET_SIZE),
+        live_on,
     )
     if st.session_state.get("engine_key") != key:
-        st.session_state.engine = ControlRoomEngine(
-            price_trace=load_scenario(key[0]), fleet_size=key[1]
-        )
+        trace = None
+        if live_on:
+            try:
+                trace = live_ercot_trace(live.latest_complete_day())
+            except live.LiveDataError as exc:
+                st.session_state.live_error = str(exc)
+        if trace is None:
+            trace = load_scenario(key[0])
+        else:
+            st.session_state.live_error = None
+        st.session_state.engine = ControlRoomEngine(price_trace=trace, fleet_size=key[1])
         st.session_state.engine_key = key
     return st.session_state.engine
 
@@ -446,11 +464,11 @@ def render_header() -> None:
         caption("Distributed home-battery fleet orchestration — Texas (simulated)")
     with right:
         st.markdown(
-            "<div class='gs-sim'><b>SIMULATION ONLY.</b> Deterministic mock fleet, priced with "
-            "a cached real ERCOT settlement-price trace. "
-            "No real devices, utilities or ERCOT systems are contacted. "
-            "<b>A human operator approves every recovery action</b> — nothing is "
-            "dispatched automatically.</div>",
+            "<div class='gs-sim'><b>Real ERCOT prices, simulated fleet.</b> Incidents are "
+            "priced on real ERCOT settlement prices (bundled, or fetched live). The devices "
+            "are simulated because no outside team can reach Base's fleet; load a telemetry "
+            "file and the same workflow runs on it. Nothing is ever dispatched: "
+            "<b>a human operator approves every recovery action</b>.</div>",
             unsafe_allow_html=True,
         )
 
@@ -1511,6 +1529,26 @@ def render_scenario_controls() -> None:
         )
         chosen = next(s for s in scenarios if s.key == st.session_state.get("scenario", keys[0]))
         caption(chosen.blurb)
+        st.toggle("Live ERCOT prices", key="live_ercot", value=False)
+        if st.session_state.get("live_ercot"):
+            try:
+                live_ercot_trace(live.latest_complete_day())
+                st.session_state.live_error = None
+            except live.LiveDataError as exc:
+                st.session_state.live_error = str(exc)
+            if st.session_state.get("live_error"):
+                st.warning(
+                    f"Live fetch failed: {st.session_state.live_error}. "
+                    f"Using the bundled {chosen.label.lower()} instead."
+                )
+            else:
+                caption(
+                    "Prices the incident on yesterday's full ERCOT operating day, fetched "
+                    "now from ercot.com (LZ_HOUSTON, 15-minute settlement prices). "
+                    "Ordinary days are cheap, which is the point of finding 1."
+                )
+        else:
+            caption("Off: the bundled day above, so every run gives the same numbers.")
         st.radio(
             "Fleet scale",
             FLEET_SIZES,

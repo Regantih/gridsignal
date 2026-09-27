@@ -68,6 +68,8 @@ class PriceTrace:
     # real-time trace. Published the afternoon before, so planning from it is not
     # lookahead.
     dam: pd.DataFrame | None = None
+    # True when fetched from ercot.com at run time by ``gridsignal.live``, not bundled.
+    live: bool = False
 
     @property
     def peak_mwh(self) -> float:

@@ -671,3 +671,24 @@ def test_the_agent_mesh_keeps_the_install_wave_behind_advanced(
     app.session_state["advanced"] = True
     app.run()
     assert "Install wave" in " ".join(h.value for h in app.subheader)
+
+
+def test_live_ercot_is_off_by_default_so_the_demo_numbers_never_move() -> None:
+    app = fresh()
+    assert app.session_state["live_ercot"] is False
+    assert "cached Parquet" in app.session_state["engine"].grid_event.price_source
+
+
+def test_live_ercot_falls_back_to_the_bundled_day_when_ercot_is_unreachable() -> None:
+    from gridsignal import live
+
+    def offline(_url: str) -> str:
+        raise live.LiveDataError("could not reach ERCOT (ConnectError)")
+
+    app = fresh()
+    with mock.patch.object(live, "_get", offline):
+        app.session_state["live_ercot"] = True
+        app.run()
+    assert not app.exception, app.exception
+    assert any("Live fetch failed" in w.value for w in app.warning)
+    assert "cached Parquet" in app.session_state["engine"].grid_event.price_source
