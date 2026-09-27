@@ -17,6 +17,10 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 > real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
 > anything. A human operator must approve every recovery action.
 
+**Judging in 60 seconds:** `pip install -e ".[dev]"` then `python -m gridsignal.demo_numbers`
+prints every headline figure below from a fresh clone, offline, with no keys.
+[docs/JUDGING_MAP.md](docs/JUDGING_MAP.md) maps each rubric line to the file, test or screen that proves it.
+
 ## What the data shows (five findings, each reproducible)
 
 Every number below is recomputed from bundled real ERCOT prices and the simulated fleet by the
