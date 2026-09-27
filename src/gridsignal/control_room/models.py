@@ -197,6 +197,47 @@ class AuditEvent:
 
 
 @dataclass
+class Playbook:
+    """Recovery an operator has approved in advance, inside written limits.
+
+    The Control Room normally waits for a person before it reassigns any capacity. The
+    twin's stress test (``gridsignal.twin``) found that wait costs the very interval a
+    unit drops in: over 30 simulated 2025-like years it keeps a 75% commitment on about
+    96.6% of days, against 99.8% when the same recovery runs the moment the loss is seen.
+    A playbook keeps the human decision and moves it earlier: the operator approves the
+    rule once, with limits, and every incident outside the limits still waits for them.
+    """
+
+    playbook_id: str
+    approved_by: str
+    approved_at: datetime
+    expires_at: datetime
+    #: Largest single loss (kW) the playbook may recover without asking.
+    max_kw: float
+    #: Largest number of devices one incident may take out and still be covered. A
+    #: failure wider than this is correlated (a gateway ring, a feeder) and is exactly
+    #: what the twin says the fleet cannot absorb blind, so it goes to a person.
+    max_devices: int
+    executions: int = 0
+    revoked_at: datetime | None = None
+
+    def refusal(self, lost_kw: float, devices: int, now: datetime) -> str | None:
+        """Why this playbook cannot execute a recovery, or ``None`` if it can."""
+        if self.revoked_at is not None:
+            return f"playbook {self.playbook_id} was revoked at {self.revoked_at:%H:%M:%S}"
+        if now > self.expires_at:
+            return f"playbook {self.playbook_id} expired at {self.expires_at:%H:%M:%S}"
+        if devices > self.max_devices:
+            return (
+                f"{devices:,} devices out is wider than the playbook's {self.max_devices:,}-device "
+                "limit: a correlated outage goes to a person"
+            )
+        if lost_kw > self.max_kw + 1e-9:
+            return f"{lost_kw:,.1f} kW lost is more than the playbook's {self.max_kw:,.1f} kW limit"
+        return None
+
+
+@dataclass
 class Incident:
     incident_id: str
     device_id: str
@@ -220,6 +261,11 @@ class Incident:
     # told how much of the recovery its own battery absorbed.
     assigned_kw_before_recovery: dict[str, float] = field(default_factory=dict)
     approval_required: bool = True
+    #: Set when a pre-approved recovery playbook executed the plan instead of a person
+    #: approving this incident: the playbook id and who approved the playbook.
+    executed_under: str | None = None
+    #: Why the playbook did not cover this incident, so it waited for a person.
+    escalation_reason: str | None = None
     approved_by: str | None = None
     approved_at: datetime | None = None
     resolved_at: datetime | None = None

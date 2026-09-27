@@ -16,10 +16,12 @@ dependencies = [
   # Calls to Jev, the decision layer. Only used when an API key is set; the default
   # run replays recorded fixtures and makes no network calls.
   "httpx>=0.27",
+  # The twin's price world model and fleet stress test (gridsignal.twin).
+  "numpy>=1.26",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.4", "pytest-xdist>=3.6"]
+dev = ["pytest>=8", "ruff>=0.4", "pytest-xdist>=3.6", "matplotlib>=3.8"]
 # Only needed for the live-ERCOT pipeline, not for the Control Room demo.
 ercot = ["gridstatus>=0.27", "scikit-learn>=1.4"]
 # Only needed for scripts/capture_demo.py, the scripted screen recording.
@@ -51,3 +53,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+# Generates a prose report: long human sentences read better unbroken.
+"src/gridsignal/twin/report.py" = ["E501"]

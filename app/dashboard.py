@@ -5,6 +5,7 @@ Run with:  streamlit run app/dashboard.py
 
 from __future__ import annotations
 
+import html
 import math
 import re
 import threading
@@ -71,6 +72,7 @@ from gridsignal.prices import (
     load_scenario,
 )
 from gridsignal.signals import Signal
+from gridsignal.twin import planner as twin_planner
 
 try:  # a hosted app can hot-reload this file before the package is reinstalled
     from gridsignal import live
@@ -210,6 +212,15 @@ GLOSSARY: dict[str, str] = {
     "tenant": ("A block of batteries a partner utility dispatches; this fleet may never bid them."),
     "ring": "One stage of a firmware rollout: lab, 1% canary, 10%, 50%, then the rest.",
     "spike": "An interval whose price jumps far above the recent rolling baseline.",
+    "playbook": (
+        "A recovery rule an operator approves in advance, with limits; inside them the fleet "
+        "recovers at once, outside them it waits for a person."
+    ),
+    "commitment": "The kW the fleet has promised the grid for this event.",
+    "world model": (
+        "A generator of realistic ERCOT price years, learned from five years of real "
+        "15-minute prices."
+    ),
 }
 
 
@@ -218,7 +229,7 @@ GLOSSARY: dict[str, str] = {
 MAP_MARKERS = 400
 GRID_TILES = 48
 
-VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why")
+VIEWS = ("Control Room", "Planner", "Member App", "Grid Signals", "Agent Mesh", "Why")
 CARD_COLOR = {
     CardStatus.VERIFIED: "#16a34a",
     CardStatus.STALE: "#f59e0b",
@@ -374,6 +385,7 @@ def prewarm() -> None:
     st.session_state.prewarmed = True
     threading.Thread(target=judgment_report.cached_build, daemon=True).start()
     threading.Thread(target=backup_proof, daemon=True).start()
+    threading.Thread(target=twin_planner.world_model, daemon=True).start()
 
 
 def pill(text: str, color: str) -> str:
@@ -429,8 +441,10 @@ def explain(label: str) -> str | None:
 
 def term(word: str, key: str | None = None) -> str:
     """Inline jargon, underlined, with its plain-language meaning on hover."""
-    meaning = GLOSSARY[key or word.lower()]
-    return f"<span class='gs-term' title='{meaning}'>{word}</span>"
+    # Double-quoted: glossary sentences carry apostrophes ("member's"), which closed a
+    # single-quoted attribute early and printed the raw tag on screen.
+    meaning = html.escape(GLOSSARY[key or word.lower()], quote=False).replace('"', "&quot;")
+    return f"<span class='gs-term' title=\"{meaning}\">{word}</span>"
 
 
 def caption(text: str, box: DeltaGenerator | None = None) -> None:
@@ -472,7 +486,8 @@ def render_header() -> None:
             "priced on real ERCOT settlement prices (bundled, or fetched live). The devices "
             "are simulated because no outside team can reach Base's fleet; load a telemetry "
             "file and the same workflow runs on it. Nothing is ever dispatched: "
-            "<b>a human operator approves every recovery action</b>.</div>",
+            "<b>a human operator approves every recovery action</b>, one incident at a "
+            "time or in advance through a playbook with limits.</div>",
             unsafe_allow_html=True,
         )
 
@@ -1312,7 +1327,11 @@ def render_money(incident: Incident) -> None:
             recovered,
             "Dollars recovered",
             money(incident.dollars_recovered),
-            note=f"{incident.restored_kw:.1f} kW reassigned after approval",
+            note=(
+                f"{incident.restored_kw:.1f} kW reassigned under the playbook"
+                if incident.executed_under
+                else f"{incident.restored_kw:.1f} kW reassigned after approval"
+            ),
         )
     else:
         metric(
@@ -1334,10 +1353,21 @@ def render_approval(eng: ControlRoomEngine, incident: Incident) -> None:
         st.warning(
             "Human approval required. The orchestrator has planned the recovery but will not "
             "reassign any capacity until an operator approves."
+            + (
+                f" The recovery playbook does not cover it: {incident.escalation_reason}."
+                if incident.escalation_reason
+                else ""
+            )
         )
         if st.button("Approve Recovery Plan", type="primary", use_container_width=True):
             eng.approve_recovery()
             st.rerun()
+    elif incident.status is IncidentStatus.RESOLVED and incident.executed_under:
+        st.success(
+            f"Recovered at {incident.resolved_at:%H:%M:%S} under {incident.executed_under}, "
+            "inside its limits and without waiting an interval for approval. Revoke the "
+            "playbook in the sidebar to go back to approval on every incident."
+        )
     elif incident.status is IncidentStatus.RESOLVED:
         # The summary itself is the recover step of the timeline and an audit entry; a
         # third copy here is what made the screen read as three different reports.
@@ -1747,13 +1777,14 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
         if st.button("Reset Demo", use_container_width=True):
             eng.reset()
             st.rerun()
+        render_playbook_controls(eng)
         st.divider()
         st.markdown("**Scenario**")
         st.markdown(
             "1. Stable fleet during an ERCOT peak event\n"
             f"2. {FOCUS_DEVICE_ID} loses telemetry\n"
             "3. Incident opened, impact + plan explained\n"
-            "4. **Human approves** the plan\n"
+            "4. **Human approves** the plan, or the playbook they approved runs it\n"
             "5. Work reassigned, device quarantined\n"
             "6. Audit timeline records everything"
         )
@@ -1761,8 +1792,34 @@ def render_demo_controls(eng: ControlRoomEngine) -> None:
         caption(
             "Safety boundary: this tool is a simulation. It performs no dispatch, "
             "no device commands and no utility integration. Recovery executes only "
-            "after explicit human approval."
+            "after explicit human approval: of the incident, or of a playbook with "
+            "limits, approved in advance."
         )
+
+
+def render_playbook_controls(eng: ControlRoomEngine) -> None:
+    """Approve or revoke the recovery playbook. Lives in the sidebar, next to the fault."""
+    st.divider()
+    st.markdown("**Recovery mode**")
+    pb = eng.playbook
+    if pb is None or pb.revoked_at is not None:
+        caption(
+            "Approval on every incident. The Planner's stress test finds this keeps a "
+            "75% commitment on about 96.6% of days: the fix lands an interval late."
+        )
+        if st.button("Approve recovery playbook", use_container_width=True):
+            eng.approve_playbook()
+            st.rerun()
+        return
+    caption(
+        f"Playbook {pb.playbook_id} approved by {pb.approved_by}: a loss of up to "
+        f"{pb.max_kw:,.1f} kW from up to {pb.max_devices:,} device(s) recovers at once, "
+        f"until {pb.expires_at:%H:%M}. Wider outages still wait for a person. "
+        f"Executed {pb.executions:,} time(s)."
+    )
+    if st.button("Revoke playbook", use_container_width=True):
+        eng.revoke_playbook()
+        st.rerun()
 
 
 def render_signal_chart(plan: pd.DataFrame) -> None:
@@ -3123,6 +3180,221 @@ def _mark(report: drills.DrillReport, drill: str, mode: str) -> str:
     return f"{row.root_cause} {'✓' if row.correct else '✗'}"
 
 
+# ---------------------------------------------------------------------------- Planner
+
+POLICY_COLOR = {"naive": "#94a3b8", "gridsignal": "#f59e0b", "gridsignal_auto": "#14b8a6"}
+
+
+@st.cache_resource(show_spinner=False, max_entries=24)
+def fleet_plan(signature: tuple, scenario: str, target: float) -> twin_planner.CommitmentPlan:
+    """The planner's stress test for one fleet state. ``signature`` keys the cache."""
+    return twin_planner.plan_commitment(
+        assumptions=twin_planner.FleetAssumptions(**dict(signature)),
+        scenario=scenario,
+        target=target,
+        years=3,
+    )
+
+
+@st.cache_data(show_spinner=False)
+def twin_study() -> dict:
+    """The full 30-year study and the world-model validation shipped with the repo."""
+    import json
+
+    from gridsignal.twin.data import TWIN_DIR
+
+    return {
+        "stress": json.loads((TWIN_DIR / "stress.json").read_text()),
+        "validation": json.loads((TWIN_DIR / "validation.json").read_text()),
+    }
+
+
+def days_missed(kept: float) -> str:
+    """Kept-day rate as days missed per year: 99.7% reads as 1.1, which people can picture."""
+    return f"{365 * (1 - kept):,.1f}"
+
+
+def render_planner(eng: ControlRoomEngine) -> None:
+    st.markdown("<div class='gs-kicker'>Before the event</div>", True)
+    st.subheader("How much should this fleet promise the grid?")
+    st.markdown(
+        f"The Control Room recovers from failures during an event. The Planner decides "
+        f"the {term('commitment')} before it: it takes this fleet (unit mix, charge, house "
+        f"loads, degraded units, member reserve), runs it through simulated years of ERCOT "
+        f"prices from a {term('world model')} learned from 2021 to 2025, drops units at "
+        "random and in feeder-wide clusters, and finds the largest share of "
+        f"{term('headroom')} that still keeps the promise.",
+        unsafe_allow_html=True,
+    )
+    left, right = st.columns(2)
+    scenario = left.selectbox("Price scenario", list(twin_planner.SCENARIOS), key="twin_scenario")
+    target = right.select_slider(
+        "Keep the promise on",
+        options=[0.95, 0.98, 0.99, 0.995],
+        value=0.99,
+        format_func=lambda x: f"{x:.1%} of days".replace(".0%", "%"),
+        key="twin_target",
+    )
+    a = twin_planner.assumptions_from_engine(eng)
+    signature = tuple(sorted(a.__dict__.items()))
+    with st.spinner("Stress-testing this fleet on 3 simulated years..."):
+        plan = fleet_plan(signature, scenario, target)
+    current = eng.current_commit_ratio()
+    rec = plan.recommended_ratio
+
+    m1, m2, m3, m4 = st.columns(4)
+    metric(
+        m1,
+        "Recommended commitment",
+        f"{rec:.0%}" if rec else "none safe",
+        note=f"of headroom, {power(rec * eng.headroom_kw())}" if rec else "lower the target",
+    )
+    metric(m2, "Today's commitment", f"{current:.0%}", note=power(eng.grid_event.target_kw))
+    metric(
+        m3,
+        "Days missed, approval",
+        days_missed(plan.kept_at("gridsignal", current)),
+        note="per year, at today's commitment",
+    )
+    metric(
+        m4,
+        "Days missed, playbook",
+        days_missed(plan.kept_at("gridsignal_auto", current)),
+        note="per year, at today's commitment",
+    )
+    st.info(plan.headline(current))
+
+    fig = go.Figure()
+    for policy in twin_planner.stress.POLICIES:
+        pts = sorted(plan.curve[policy].items())
+        fig.add_trace(
+            go.Scatter(
+                x=[r * 100 for r, _ in pts],
+                y=[k * 100 for _, k in pts],
+                name=twin_planner.POLICY_LABEL[policy],
+                mode="lines+markers",
+                line={"color": POLICY_COLOR[policy], "width": 3},
+            )
+        )
+    fig.add_hline(y=target * 100, line_dash="dash", line_color="#dc2626")
+    fig.add_vline(x=current * 100, line_dash="dot", line_color="#e2e8f0")
+    fig.add_annotation(x=current * 100, y=100.4, text="today", showarrow=False)
+    fig.update_layout(
+        height=340,
+        margin={"l": 0, "r": 0, "t": 20, "b": 0},
+        xaxis_title="Share of measured headroom committed (%)",
+        yaxis_title="Days the promise was kept (%)",
+        legend={"orientation": "h", "y": -0.25},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    caption(
+        f"A day is kept when every 15-minute interval in every zone delivers at least 97% of "
+        f"the commitment. {plan.homes:,} simulated homes shaped like this fleet, {plan.years} "
+        f"simulated years, every policy on the same days and the same failures. Closest any "
+        f"battery came to its member reserve: {max(plan.min_reserve_margin_kwh, 0):.3f} kWh."
+    )
+
+    st.markdown("**Act on it**")
+    act1, act2 = st.columns(2)
+    if rec and abs(rec - current) > 0.005:
+        if act1.button(f"Set commitment to {rec:.0%}", type="primary", use_container_width=True):
+            eng.set_commitment(rec, basis=f"Planner: {plan.headline()}")
+            st.rerun()
+    else:
+        act1.success(f"The commitment is at {current:.0%}.")
+    pb = eng.playbook
+    if pb is None or pb.revoked_at is not None:
+        if act2.button("Approve recovery playbook", use_container_width=True, key="plan_pb"):
+            eng.approve_playbook()
+            st.rerun()
+    else:
+        act2.success(
+            f"Playbook {pb.playbook_id} is live: up to {pb.max_kw:,.1f} kW from "
+            f"{pb.max_devices:,} device(s) per incident."
+        )
+    caption(
+        "Both are logged in the Control Room's audit timeline under the operator's name. "
+        "The recommendation is advice; a person sets the commitment."
+    )
+
+    render_planner_study()
+
+
+def render_planner_study() -> None:
+    study = twin_study()
+    s, v = study["stress"], study["validation"]
+    st.divider()
+    st.markdown("<div class='gs-kicker'>The full study</div>", True)
+    st.subheader(f"{s['years_per_scenario']} simulated years per scenario, 1,000 homes")
+    rows = []
+    for name, sc in s["scenarios"].items():
+        sr = sc["safe_ratio"]
+        best = sr["gridsignal_auto"] or 0.5
+        at = next(
+            r
+            for r in sc["results"]
+            if r["policy"] == "gridsignal_auto" and abs(r["commit_ratio"] - best) < 1e-9
+        )
+        rows.append(
+            {
+                "Scenario": name,
+                "No recovery": f"{sr['naive']:.0%}" if sr["naive"] else "none",
+                "Approval each time": f"{sr['gridsignal']:.0%}" if sr["gridsignal"] else "none",
+                "Playbook": f"{sr['gridsignal_auto']:.0%}" if sr["gridsignal_auto"] else "none",
+                "Energy value per year": money(at["value_usd_per_year"], cents=False),
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    caption(
+        "Largest commitment keeping 99% of days. Prices move the value about threefold "
+        "between a calm and a scarce year; they barely move the safe commitment. "
+        "Reliability is set by the fleet, not the market."
+    )
+    with st.expander("Is the price world model any good?"):
+        a, t, r = v["all years, latest regime"], v["trailing year"], v["reproduce"]
+        st.markdown(
+            f"Fit on the years before, simulate the next year 80 times, check whether the "
+            f"real year lands in the 5th to 95th percentile band, on 7 metrics for 2023, "
+            f"2024 and 2025. The world model: **{a['world_covered']} of {a['checks']}**. "
+            f"Replaying last year's real days: **{a['bootstrap_covered']} of {a['checks']}**. "
+            f"Fit on the trailing year only: {t['world_covered']} of {t['checks']}. Asked "
+            f"to imitate a named year: {r['covered']} of {r['checks']}."
+        )
+        caption(
+            "Its bands are wide on purpose (it carries year-to-year level risk), so this is "
+            "honest uncertainty, not a sharp forecast. Nothing fitted on history predicted "
+            "how fast ERCOT's spikes vanished: days over $250 went 116, 94, 44, 25 from "
+            "2022 to 2025. Scarcity is a scenario here, not a prediction."
+        )
+    with st.expander("What if the fleet assumptions are wrong?"):
+        st.dataframe(
+            pd.DataFrame(
+                [
+                    {
+                        "Assumption": x["assumption"].replace("_", " "),
+                        "Value": x["value"],
+                        "Approval each time": f"{x['gridsignal_safe']:.0%}"
+                        if x["gridsignal_safe"]
+                        else "none",
+                        "Playbook": f"{x['gridsignal_auto_safe']:.0%}"
+                        if x["gridsignal_auto_safe"]
+                        else "none",
+                    }
+                    for x in s["sensitivity"]
+                ]
+            ),
+            hide_index=True,
+            use_container_width=True,
+        )
+        caption(
+            "Failure rates are assumptions, not measurements. The one that matters most is "
+            "how much of a zone one outage takes out: at half a zone the playbook-safe "
+            "commitment falls to 50%. That is the first number to measure on a real fleet."
+        )
+
+
 def main() -> None:
     prewarm()
     render_header()
@@ -3140,6 +3412,10 @@ def main() -> None:
         )
         return
     eng = engine()
+    if st.session_state.get("view") == "Planner":
+        render_planner(eng)
+        render_demo_controls(eng)
+        return
     if st.session_state.get("view") == "Member App":
         render_member(eng)
         render_demo_controls(eng)

@@ -29,7 +29,7 @@ APP = str(Path(__file__).resolve().parents[1] / "app" / "dashboard.py")
 
 #: Every view, rendered once for the whole module. Each render is a full app run, so
 #: tests that only read a screen share one instead of paying for it again.
-VIEWS = ("Control Room", "Member App", "Grid Signals", "Agent Mesh", "Why")
+VIEWS = ("Control Room", "Planner", "Member App", "Grid Signals", "Agent Mesh", "Why")
 
 
 @pytest.fixture(scope="module")
@@ -478,6 +478,15 @@ def test_inline_jargon_is_underlined_with_its_meaning_on_hover() -> None:
     assert dashboard.GLOSSARY["headroom"] in markup
 
 
+def test_an_apostrophe_in_the_meaning_cannot_close_the_tooltip_early() -> None:
+    markup = dashboard.term("headroom")  # "...after its member's backup reserve..."
+    assert "member's" in dashboard.GLOSSARY["headroom"]
+    assert markup.startswith("<span class='gs-term' title=\"") and markup.endswith(
+        ">headroom</span>"
+    )
+    assert markup.count('"') == 2
+
+
 def test_one_design_system_drives_every_card() -> None:
     css = dashboard.CSS
     for token in (
@@ -692,3 +701,31 @@ def test_live_ercot_falls_back_to_the_bundled_day_when_ercot_is_unreachable() ->
     assert not app.exception, app.exception
     assert any("Live fetch failed" in w.value for w in app.warning)
     assert "cached Parquet" in app.session_state["engine"].grid_event.price_source
+
+
+def test_the_planner_sets_the_commitment_and_the_playbook_recovers_the_fault() -> None:
+    """The whole loop: plan before the event, approve the rule once, recover at once."""
+    app = fresh("Planner", timeout=600)
+    values = {m.label: m.value for m in app.metric}
+    assert values["Recommended commitment"] == "75%"
+    assert values["Today's commitment"] == "77%"
+    assert float(values["Days missed, approval"]) > float(values["Days missed, playbook"])
+    next(b for b in app.button if b.label.startswith("Set commitment")).click().run()
+    assert {m.label: m.value for m in app.metric}["Today's commitment"] == "75%"
+    next(b for b in app.button if b.label == "Approve recovery playbook").click().run()
+    assert any("Playbook PB-001 is live" in s.value for s in app.success)
+
+    app.session_state["view"] = "Control Room"
+    app.run()
+    next(b for b in app.button if b.label.startswith("Trigger")).click().run()
+    assert not app.exception, app.exception
+    assert any("under playbook PB-001" in s.value for s in app.success)
+    assert not any(b.label == "Approve Recovery Plan" for b in app.button)
+    audit = " ".join(m.value for m in app.markdown)
+    assert "commitment" in audit.lower() and "PB-001" in audit
+
+
+def test_without_the_playbook_the_fault_still_waits_for_approval() -> None:
+    app = fresh()
+    next(b for b in app.button if b.label.startswith("Trigger")).click().run()
+    assert any(b.label == "Approve Recovery Plan" for b in app.button)

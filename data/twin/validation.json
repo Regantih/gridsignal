@@ -1,0 +1,850 @@
+{
+ "all years, latest regime": {
+  "rows": [
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "median_price",
+    "actual": 21.7,
+    "world_lo": 20.258953891968442,
+    "world_hi": 105.81269342451252,
+    "boot_lo": 45.8975,
+    "boot_hi": 48.25875,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "p99_price",
+    "actual": 571.7809,
+    "world_lo": 209.46901346534244,
+    "world_hi": 466.9903713293898,
+    "boot_lo": 398.693,
+    "boot_hi": 717.7321899999994,
+    "world_covers": false,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "days_over_250",
+    "actual": 94.0,
+    "world_lo": 77.9,
+    "world_hi": 181.1,
+    "boot_lo": 103.0,
+    "boot_hi": 128.05,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "days_over_1000",
+    "actual": 34.0,
+    "world_lo": 6.0,
+    "world_hi": 21.049999999999997,
+    "boot_lo": 18.0,
+    "boot_hi": 31.14999999999999,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "evening_peak_share",
+    "actual": 0.5824175824175825,
+    "world_lo": 0.4146978021978022,
+    "world_hi": 0.5001373626373626,
+    "boot_lo": 0.4092032967032967,
+    "boot_hi": 0.4947802197802198,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "best_2h_window_mean",
+    "actual": 224.81817307692307,
+    "world_lo": 101.95280381355153,
+    "world_hi": 260.2710764497203,
+    "boot_lo": 180.80668956043954,
+    "boot_hi": 251.53110250686814,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2022",
+    "test": 2023,
+    "metric": "zone_spread_p95",
+    "actual": 12.509999999999998,
+    "world_lo": 10.813218803742936,
+    "world_hi": 45.59702539053989,
+    "boot_lo": 22.138774999999992,
+    "boot_hi": 27.285149999999977,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "median_price",
+    "actual": 20.02,
+    "world_lo": 7.3793850541706325,
+    "world_hi": 50.824077527505224,
+    "boot_lo": 21.3595,
+    "boot_hi": 21.94,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "p99_price",
+    "actual": 139.2015000000001,
+    "world_lo": 223.88666474891383,
+    "world_hi": 630.0975701682313,
+    "boot_lo": 394.458165,
+    "boot_hi": 898.4189450000003,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "days_over_250",
+    "actual": 44.0,
+    "world_lo": 59.0,
+    "world_hi": 132.54999999999984,
+    "boot_lo": 81.95,
+    "boot_hi": 105.0,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "days_over_1000",
+    "actual": 11.0,
+    "world_lo": 18.0,
+    "world_hi": 33.0,
+    "boot_lo": 27.0,
+    "boot_hi": 42.0,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "evening_peak_share",
+    "actual": 0.6575342465753424,
+    "world_lo": 0.4956164383561644,
+    "world_hi": 0.5946575342465753,
+    "boot_lo": 0.5368493150684932,
+    "boot_hi": 0.6112328767123288,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "best_2h_window_mean",
+    "actual": 91.55906506849314,
+    "world_lo": 139.81802125925105,
+    "world_hi": 273.1453747682539,
+    "boot_lo": 179.29629023972603,
+    "boot_hi": 276.58914126712335,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2023",
+    "test": 2024,
+    "metric": "zone_spread_p95",
+    "actual": 14.130000000000003,
+    "world_lo": 4.406061245761825,
+    "world_hi": 27.792092695254237,
+    "boot_lo": 11.328500000000002,
+    "boot_hi": 14.7635,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "median_price",
+    "actual": 26.32,
+    "world_lo": 8.695858284761417,
+    "world_hi": 46.97727132580424,
+    "boot_lo": 19.81,
+    "boot_hi": 20.39375,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "p99_price",
+    "actual": 131.20829999999995,
+    "world_lo": 56.16106156504165,
+    "world_hi": 252.12126269982167,
+    "boot_lo": 120.69307499999998,
+    "boot_hi": 168.90976999999987,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "days_over_250",
+    "actual": 25.0,
+    "world_lo": 21.0,
+    "world_hi": 96.39999999999998,
+    "boot_lo": 34.0,
+    "boot_hi": 53.14999999999999,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "days_over_1000",
+    "actual": 5.0,
+    "world_lo": 2.95,
+    "world_hi": 9.0,
+    "boot_lo": 5.0,
+    "boot_hi": 16.0,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "evening_peak_share",
+    "actual": 0.6565934065934066,
+    "world_lo": 0.6206043956043956,
+    "world_hi": 0.7006868131868131,
+    "boot_lo": 0.6152472527472528,
+    "boot_hi": 0.7032967032967034,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "best_2h_window_mean",
+    "actual": 79.49167239010988,
+    "world_lo": 40.934759505035785,
+    "world_hi": 137.30265124276724,
+    "boot_lo": 76.32403056318681,
+    "boot_hi": 114.63041947115386,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2021-2024",
+    "test": 2025,
+    "metric": "zone_spread_p95",
+    "actual": 18.295499999999954,
+    "world_lo": 5.574040380534155,
+    "world_hi": 28.631549548109053,
+    "boot_lo": 12.785,
+    "boot_hi": 15.510999999999997,
+    "world_covers": true,
+    "boot_covers": false
+   }
+  ],
+  "world_covered": 13,
+  "bootstrap_covered": 7,
+  "checks": 21
+ },
+ "trailing year": {
+  "rows": [
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "median_price",
+    "actual": 21.7,
+    "world_lo": 30.14784463640177,
+    "world_hi": 66.86329858214228,
+    "boot_lo": 45.8975,
+    "boot_hi": 48.25875,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "p99_price",
+    "actual": 571.7809,
+    "world_lo": 219.78487017283314,
+    "world_hi": 378.6719680947092,
+    "boot_lo": 398.693,
+    "boot_hi": 717.7321899999994,
+    "world_covers": false,
+    "boot_covers": true
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "days_over_250",
+    "actual": 94.0,
+    "world_lo": 77.0,
+    "world_hi": 120.05,
+    "boot_lo": 103.0,
+    "boot_hi": 128.05,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "days_over_1000",
+    "actual": 34.0,
+    "world_lo": 5.95,
+    "world_hi": 17.049999999999997,
+    "boot_lo": 18.0,
+    "boot_hi": 31.14999999999999,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "evening_peak_share",
+    "actual": 0.5824175824175825,
+    "world_lo": 0.40906593406593406,
+    "world_hi": 0.4781593406593407,
+    "boot_lo": 0.4092032967032967,
+    "boot_hi": 0.4947802197802198,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "best_2h_window_mean",
+    "actual": 224.81817307692307,
+    "world_lo": 99.3744652001916,
+    "world_hi": 184.77570727452212,
+    "boot_lo": 180.80668956043954,
+    "boot_hi": 251.53110250686814,
+    "world_covers": false,
+    "boot_covers": true
+   },
+   {
+    "train": "2022-2022",
+    "test": 2023,
+    "metric": "zone_spread_p95",
+    "actual": 12.509999999999998,
+    "world_lo": 15.275928046186884,
+    "world_hi": 31.886261947333963,
+    "boot_lo": 22.138774999999992,
+    "boot_hi": 27.285149999999977,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "median_price",
+    "actual": 20.02,
+    "world_lo": 13.677651782044062,
+    "world_hi": 29.49145251777214,
+    "boot_lo": 21.3595,
+    "boot_hi": 21.94,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "p99_price",
+    "actual": 139.2015000000001,
+    "world_lo": 211.0135840323685,
+    "world_hi": 474.28044280317874,
+    "boot_lo": 394.458165,
+    "boot_hi": 898.4189450000003,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "days_over_250",
+    "actual": 44.0,
+    "world_lo": 60.95,
+    "world_hi": 91.14999999999999,
+    "boot_lo": 81.95,
+    "boot_hi": 105.0,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "days_over_1000",
+    "actual": 11.0,
+    "world_lo": 16.0,
+    "world_hi": 31.049999999999997,
+    "boot_lo": 27.0,
+    "boot_hi": 42.0,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "evening_peak_share",
+    "actual": 0.6575342465753424,
+    "world_lo": 0.5012328767123289,
+    "world_hi": 0.5782191780821917,
+    "boot_lo": 0.5368493150684932,
+    "boot_hi": 0.6112328767123288,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "best_2h_window_mean",
+    "actual": 91.55906506849314,
+    "world_lo": 127.2680635423027,
+    "world_hi": 214.43951295072512,
+    "boot_lo": 179.29629023972603,
+    "boot_hi": 276.58914126712335,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2023-2023",
+    "test": 2024,
+    "metric": "zone_spread_p95",
+    "actual": 14.130000000000003,
+    "world_lo": 7.887443465683557,
+    "world_hi": 15.82710275282371,
+    "boot_lo": 11.328500000000002,
+    "boot_hi": 14.7635,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "median_price",
+    "actual": 26.32,
+    "world_lo": 12.941665930111025,
+    "world_hi": 28.139163292905863,
+    "boot_lo": 19.81,
+    "boot_hi": 20.39375,
+    "world_covers": true,
+    "boot_covers": false
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "p99_price",
+    "actual": 131.20829999999995,
+    "world_lo": 81.62684331942717,
+    "world_hi": 162.69656316785475,
+    "boot_lo": 120.69307499999998,
+    "boot_hi": 168.90976999999987,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "days_over_250",
+    "actual": 25.0,
+    "world_lo": 27.95,
+    "world_hi": 51.0,
+    "boot_lo": 34.0,
+    "boot_hi": 53.14999999999999,
+    "world_covers": false,
+    "boot_covers": false
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "days_over_1000",
+    "actual": 5.0,
+    "world_lo": 3.0,
+    "world_hi": 11.0,
+    "boot_lo": 5.0,
+    "boot_hi": 16.0,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "evening_peak_share",
+    "actual": 0.6565934065934066,
+    "world_lo": 0.6314560439560439,
+    "world_hi": 0.7116758241758242,
+    "boot_lo": 0.6152472527472528,
+    "boot_hi": 0.7032967032967034,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "best_2h_window_mean",
+    "actual": 79.49167239010988,
+    "world_lo": 59.59540117464438,
+    "world_hi": 100.56036755692215,
+    "boot_lo": 76.32403056318681,
+    "boot_hi": 114.63041947115386,
+    "world_covers": true,
+    "boot_covers": true
+   },
+   {
+    "train": "2024-2024",
+    "test": 2025,
+    "metric": "zone_spread_p95",
+    "actual": 18.295499999999954,
+    "world_lo": 9.566436881466583,
+    "world_hi": 18.43378819503769,
+    "boot_lo": 12.785,
+    "boot_hi": 15.510999999999997,
+    "world_covers": true,
+    "boot_covers": false
+   }
+  ],
+  "world_covered": 9,
+  "bootstrap_covered": 7,
+  "checks": 21
+ },
+ "reproduce": {
+  "rows": [
+   {
+    "year": 2021,
+    "metric": "median_price",
+    "actual": 26.4,
+    "world_lo": 24.687426881110362,
+    "world_hi": 26.72722330122545,
+    "world_median": 25.51765869643148,
+    "covers": true
+   },
+   {
+    "year": 2021,
+    "metric": "p99_price",
+    "actual": 8789.3545,
+    "world_lo": 108.26299957955302,
+    "world_hi": 10047.901888029155,
+    "world_median": 2361.619320081286,
+    "covers": true
+   },
+   {
+    "year": 2021,
+    "metric": "days_over_250",
+    "actual": 104.0,
+    "world_lo": 60.95,
+    "world_hi": 91.05,
+    "world_median": 74.0,
+    "covers": false
+   },
+   {
+    "year": 2021,
+    "metric": "days_over_1000",
+    "actual": 19.0,
+    "world_lo": 3.95,
+    "world_hi": 20.0,
+    "world_median": 9.0,
+    "covers": true
+   },
+   {
+    "year": 2021,
+    "metric": "evening_peak_share",
+    "actual": 0.3901098901098901,
+    "world_lo": 0.37074175824175826,
+    "world_hi": 0.44793956043956046,
+    "world_median": 0.4065934065934066,
+    "covers": true
+   },
+   {
+    "year": 2021,
+    "metric": "best_2h_window_mean",
+    "actual": 276.1795295329671,
+    "world_lo": 76.21790416436761,
+    "world_hi": 461.38662333339613,
+    "world_median": 219.94773221764427,
+    "covers": true
+   },
+   {
+    "year": 2021,
+    "metric": "zone_spread_p95",
+    "actual": 13.728499999999986,
+    "world_lo": 9.642557612115416,
+    "world_hi": 21.339916994428915,
+    "world_median": 12.622442898243088,
+    "covers": true
+   },
+   {
+    "year": 2022,
+    "metric": "median_price",
+    "actual": 47.21,
+    "world_lo": 48.12511583634027,
+    "world_hi": 50.73081805715108,
+    "world_median": 49.38042858537469,
+    "covers": false
+   },
+   {
+    "year": 2022,
+    "metric": "p99_price",
+    "actual": 534.1817999999997,
+    "world_lo": 298.1397246781052,
+    "world_hi": 421.08673629744305,
+    "world_median": 342.5346718267647,
+    "covers": false
+   },
+   {
+    "year": 2022,
+    "metric": "days_over_250",
+    "actual": 116.0,
+    "world_lo": 91.95,
+    "world_hi": 123.0,
+    "world_median": 105.0,
+    "covers": true
+   },
+   {
+    "year": 2022,
+    "metric": "days_over_1000",
+    "actual": 24.0,
+    "world_lo": 8.95,
+    "world_hi": 21.049999999999997,
+    "world_median": 15.0,
+    "covers": false
+   },
+   {
+    "year": 2022,
+    "metric": "evening_peak_share",
+    "actual": 0.45879120879120877,
+    "world_lo": 0.4092032967032967,
+    "world_hi": 0.49725274725274726,
+    "world_median": 0.4464285714285714,
+    "covers": true
+   },
+   {
+    "year": 2022,
+    "metric": "best_2h_window_mean",
+    "actual": 215.59949862637362,
+    "world_lo": 138.49229851982085,
+    "world_hi": 189.4861338604452,
+    "world_median": 157.80890931626362,
+    "covers": false
+   },
+   {
+    "year": 2022,
+    "metric": "zone_spread_p95",
+    "actual": 24.53000000000001,
+    "world_lo": 23.585960135904056,
+    "world_hi": 29.498063569614764,
+    "world_median": 26.833239433509178,
+    "covers": true
+   },
+   {
+    "year": 2023,
+    "metric": "median_price",
+    "actual": 21.7,
+    "world_lo": 20.916726127956707,
+    "world_hi": 21.542819734125356,
+    "world_median": 21.185975431752382,
+    "covers": false
+   },
+   {
+    "year": 2023,
+    "metric": "p99_price",
+    "actual": 571.7809,
+    "world_lo": 277.6811913039596,
+    "world_hi": 763.4393129989455,
+    "world_median": 469.20894770128893,
+    "covers": true
+   },
+   {
+    "year": 2023,
+    "metric": "days_over_250",
+    "actual": 94.0,
+    "world_lo": 67.9,
+    "world_hi": 92.14999999999999,
+    "world_median": 77.5,
+    "covers": false
+   },
+   {
+    "year": 2023,
+    "metric": "days_over_1000",
+    "actual": 34.0,
+    "world_lo": 22.0,
+    "world_hi": 37.0,
+    "world_median": 29.0,
+    "covers": true
+   },
+   {
+    "year": 2023,
+    "metric": "evening_peak_share",
+    "actual": 0.5824175824175825,
+    "world_lo": 0.4778846153846154,
+    "world_hi": 0.5714285714285714,
+    "world_median": 0.5274725274725275,
+    "covers": false
+   },
+   {
+    "year": 2023,
+    "metric": "best_2h_window_mean",
+    "actual": 224.81817307692307,
+    "world_lo": 156.8762123897885,
+    "world_hi": 268.8320039987589,
+    "world_median": 216.31917101139837,
+    "covers": true
+   },
+   {
+    "year": 2023,
+    "metric": "zone_spread_p95",
+    "actual": 12.509999999999998,
+    "world_lo": 11.09204789264564,
+    "world_hi": 13.635931485509888,
+    "world_median": 12.308132659324247,
+    "covers": true
+   },
+   {
+    "year": 2024,
+    "metric": "median_price",
+    "actual": 20.02,
+    "world_lo": 18.849002590912608,
+    "world_hi": 19.716863871576912,
+    "world_median": 19.27278744200273,
+    "covers": false
+   },
+   {
+    "year": 2024,
+    "metric": "p99_price",
+    "actual": 139.2015000000001,
+    "world_lo": 100.46096276219012,
+    "world_hi": 129.4828605042589,
+    "world_median": 112.59475170178828,
+    "covers": false
+   },
+   {
+    "year": 2024,
+    "metric": "days_over_250",
+    "actual": 44.0,
+    "world_lo": 26.0,
+    "world_hi": 43.0,
+    "world_median": 34.5,
+    "covers": false
+   },
+   {
+    "year": 2024,
+    "metric": "days_over_1000",
+    "actual": 11.0,
+    "world_lo": 1.0,
+    "world_hi": 9.0,
+    "world_median": 4.0,
+    "covers": false
+   },
+   {
+    "year": 2024,
+    "metric": "evening_peak_share",
+    "actual": 0.6575342465753424,
+    "world_lo": 0.6378082191780823,
+    "world_hi": 0.7042465753424657,
+    "world_median": 0.6712328767123288,
+    "covers": true
+   },
+   {
+    "year": 2024,
+    "metric": "best_2h_window_mean",
+    "actual": 91.55906506849314,
+    "world_lo": 59.91725667259479,
+    "world_hi": 86.42411017375768,
+    "world_median": 69.6619472312654,
+    "covers": false
+   },
+   {
+    "year": 2024,
+    "metric": "zone_spread_p95",
+    "actual": 14.130000000000003,
+    "world_lo": 11.276842694128998,
+    "world_hi": 13.395667207091103,
+    "world_median": 12.520854825231236,
+    "covers": false
+   },
+   {
+    "year": 2025,
+    "metric": "median_price",
+    "actual": 26.32,
+    "world_lo": 25.497230954119768,
+    "world_hi": 26.73708795325356,
+    "world_median": 26.096332472691685,
+    "covers": true
+   },
+   {
+    "year": 2025,
+    "metric": "p99_price",
+    "actual": 131.20829999999995,
+    "world_lo": 119.80357236540654,
+    "world_hi": 139.8237174486072,
+    "world_median": 129.9072679532904,
+    "covers": true
+   },
+   {
+    "year": 2025,
+    "metric": "days_over_250",
+    "actual": 25.0,
+    "world_lo": 15.0,
+    "world_hi": 30.049999999999997,
+    "world_median": 23.0,
+    "covers": true
+   },
+   {
+    "year": 2025,
+    "metric": "days_over_1000",
+    "actual": 5.0,
+    "world_lo": 1.0,
+    "world_hi": 7.049999999999997,
+    "world_median": 3.5,
+    "covers": true
+   },
+   {
+    "year": 2025,
+    "metric": "evening_peak_share",
+    "actual": 0.6565934065934066,
+    "world_lo": 0.6592032967032967,
+    "world_hi": 0.7225274725274725,
+    "world_median": 0.6854395604395604,
+    "covers": false
+   },
+   {
+    "year": 2025,
+    "metric": "best_2h_window_mean",
+    "actual": 79.49167239010988,
+    "world_lo": 73.22531697518501,
+    "world_hi": 86.5718310470287,
+    "world_median": 78.41579649374344,
+    "covers": true
+   },
+   {
+    "year": 2025,
+    "metric": "zone_spread_p95",
+    "actual": 18.295499999999954,
+    "world_lo": 16.54908527777535,
+    "world_hi": 19.497819404193645,
+    "world_median": 17.921839877336836,
+    "covers": true
+   }
+  ],
+  "covered": 20,
+  "checks": 35
+ },
+ "model": {
+  "explained_variance": 0.9192845072716462,
+  "components": 12,
+  "clusters": 16,
+  "level_sigma": 0.48412481378096967,
+  "train_days": 1821,
+  "first": "2021-01-01",
+  "last": "2025-12-31"
+ }
+}

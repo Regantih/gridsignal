@@ -25,6 +25,7 @@ from gridsignal.control_room.models import (
     GridEvent,
     Incident,
     IncidentStatus,
+    Playbook,
     Reading,
     Rejection,
     Role,
@@ -66,6 +67,12 @@ DELIVERABILITY_KW_PER_DEVICE = 6.0
 #: Nameplate tolerance on an imported reading: meters round and packs age, so a little
 #: over nameplate is a reading and well over is a broken row.
 CAPACITY_TOLERANCE = 1.02
+#: Default playbook limits. A playbook may recover a loss of up to this share of the
+#: event target on its own...
+PLAYBOOK_MAX_KW_SHARE = 0.10
+#: ...from at most this share of the operator's devices in one incident (never fewer
+#: than one device). Wider failures are correlated and escalate to a person.
+PLAYBOOK_MAX_DEVICE_SHARE = 0.01
 POWER_TOLERANCE = 1.10
 
 OWNERS: dict[Role, str] = {
@@ -152,6 +159,9 @@ class ControlRoomEngine:
         self.prices = price_trace or load_price_trace()
         self.priority_zone: str | None = None
         self.reserve_fraction = home.DEFAULT_RESERVE_FRACTION
+        #: Share of measured export headroom promised to the grid, set by
+        #: :meth:`set_commitment`. ``None`` keeps the flat per-home target.
+        self.commit_ratio: float | None = None
         self.reset()
 
     # ------------------------------------------------------------------ setup
@@ -169,6 +179,9 @@ class ControlRoomEngine:
         self.alarms: list[Alarm] = []
         self.overrides: list[OverrideRecord] = []
         self._incident_seq = 0
+        self._playbook_seq = 0
+        self.playbook: Playbook | None = None
+        self.playbooks: list[Playbook] = []
         self.mine: list[Device] = [d for d in self.devices if d.is_operator_controlled]
         self.grid_event = GridEvent(
             name="ERCOT peak-demand response window",
@@ -184,6 +197,7 @@ class ControlRoomEngine:
                 f"({'fetched live from ercot.com' if self.prices.live else 'cached Parquet'})"
             ),
         )
+        self.commit_ratio = None
         self._hold_partner_reserve()
         self._allocate_dispatch()
         self._log(
@@ -699,6 +713,150 @@ class ControlRoomEngine:
         )
         return outcome
 
+    # ------------------------------------------------------------------ commitment
+
+    def headroom_kw(self) -> float:
+        """Total exportable kW across the operator's dispatchable devices right now."""
+        return round(sum(self.exportable_kw(d) for d in self.mine), 2)
+
+    def current_commit_ratio(self) -> float:
+        """The event target as a share of measured export headroom."""
+        headroom = self.headroom_kw()
+        return round(self.grid_event.target_kw / headroom, 4) if headroom > 0 else 0.0
+
+    def set_commitment(
+        self,
+        ratio: float,
+        approver: str = OWNERS[Role.FLEET_OPERATOR],
+        basis: str = "",
+    ) -> float:
+        """Promise ``ratio`` of measured export headroom to the grid event.
+
+        The commitment is a market-facing promise, so a person sets it; ``basis`` records
+        why (normally the twin's stress-test recommendation). The member reserve is
+        untouched: headroom is already net of it. Returns the kW committed.
+        """
+        if not 0.0 < ratio <= 1.0:
+            raise ValueError(f"commit ratio must be in (0, 1], got {ratio}")
+        before = self.grid_event.target_kw
+        self.commit_ratio = ratio
+        self.grid_event.target_kw = round(ratio * self.headroom_kw(), 1)
+        committed = self._allocate_dispatch()
+        self._log(
+            actor=approver,
+            kind="commitment_set",
+            summary=(
+                f"Commitment set to {ratio:.0%} of measured headroom: "
+                f"{self.grid_event.target_kw:,.0f} kW (was {before:,.0f} kW)"
+            ),
+            detail=(basis + " " if basis else "")
+            + f"{committed:,.0f} kW allocated across the fleet; the member reserve is unchanged.",
+        )
+        return committed
+
+    # ------------------------------------------------------------------ playbook
+
+    def approve_playbook(
+        self,
+        approver: str = OWNERS[Role.FLEET_OPERATOR],
+        max_kw: float | None = None,
+        max_devices: int | None = None,
+        expires_at: datetime | None = None,
+    ) -> Playbook:
+        """A person approves the recovery rule once, with limits, before the event.
+
+        Inside the limits, a detected loss is quarantined and re-shared immediately and
+        logged against this approval. Outside them (too many kW, too many devices, after
+        expiry or once revoked) the incident waits for a person exactly as before. The
+        member reserve is never a limit to set: no recovery path can spend it.
+        """
+        if max_kw is None:
+            max_kw = round(PLAYBOOK_MAX_KW_SHARE * self.grid_event.target_kw, 1)
+        if max_devices is None:
+            max_devices = max(1, int(PLAYBOOK_MAX_DEVICE_SHARE * len(self.mine)))
+        if max_kw <= 0 or max_devices < 1:
+            raise ValueError("a playbook needs a positive kW limit and at least one device")
+        if self.playbook is not None and self.playbook.revoked_at is None:
+            self.revoke_playbook(approver, reason="replaced by a new playbook")
+        self._playbook_seq += 1
+        self._tick(10)
+        playbook = Playbook(
+            playbook_id=f"PB-{self._playbook_seq:03d}",
+            approved_by=approver,
+            approved_at=self._clock,
+            expires_at=expires_at or self.grid_event.ends_at,
+            max_kw=round(max_kw, 2),
+            max_devices=max_devices,
+        )
+        self.playbook = playbook
+        self.playbooks.append(playbook)
+        self._log(
+            actor=approver,
+            kind="playbook_approved",
+            summary=f"Recovery playbook {playbook.playbook_id} approved",
+            detail=(
+                f"Covers a single loss of up to {playbook.max_kw:,.1f} kW from up to "
+                f"{playbook.max_devices:,} device(s), until {playbook.expires_at:%H:%M}. "
+                "Inside these limits a lost unit is quarantined and its work re-shared "
+                "within the interval; anything outside waits for a person. The member "
+                "reserve is never spent."
+            ),
+        )
+        return playbook
+
+    def revoke_playbook(self, actor: str = OWNERS[Role.FLEET_OPERATOR], reason: str = "") -> None:
+        """Return to approval on every incident."""
+        if self.playbook is None or self.playbook.revoked_at is not None:
+            return
+        self.playbook.revoked_at = self._clock
+        self._log(
+            actor=actor,
+            kind="playbook_revoked",
+            summary=f"Recovery playbook {self.playbook.playbook_id} revoked",
+            detail=(reason + ". " if reason else "")
+            + "Every incident now waits for operator approval.",
+        )
+
+    def _run_playbook(self, incident: Incident) -> bool:
+        """Execute ``incident``'s recovery under the live playbook if it is covered."""
+        playbook = self.playbook
+        if playbook is None:
+            return False
+        devices = len(incident.cohort) or 1
+        reason = playbook.refusal(incident.lost_kw, devices, self._clock)
+        if reason is not None:
+            incident.escalation_reason = reason
+            self._log(
+                actor="orchestrator",
+                kind="playbook_escalation",
+                summary=f"{incident.incident_id} is outside the playbook, escalated to a person",
+                detail=reason[0].upper() + reason[1:] + ".",
+            )
+            return False
+        self._tick(5)
+        playbook.executions += 1
+        incident.approval_required = False
+        incident.executed_under = (
+            f"playbook {playbook.playbook_id} (approved by {playbook.approved_by} at "
+            f"{playbook.approved_at:%H:%M:%S})"
+        )
+        incident.approved_by = f"{playbook.playbook_id} / {playbook.approved_by}"
+        incident.approved_at = self._clock
+        incident.status = IncidentStatus.RECOVERING
+        self._log(
+            actor=f"playbook {playbook.playbook_id}",
+            kind="playbook_execution",
+            summary=f"{incident.incident_id} recovered under playbook {playbook.playbook_id}",
+            detail=(
+                f"{incident.lost_kw:,.1f} kW from {devices:,} device(s) is inside the limits "
+                f"{playbook.approved_by} approved at {playbook.approved_at:%H:%M:%S} "
+                f"({playbook.max_kw:,.1f} kW, {playbook.max_devices:,} device(s)). "
+                "Executing now instead of waiting an interval for approval."
+            ),
+        )
+        self._execute_recovery(incident)
+        return True
+
     # ------------------------------------------------------------------ failure
 
     def trigger_device_failure(self, device_id: str = FOCUS_DEVICE_ID) -> Incident:
@@ -801,6 +959,8 @@ class ControlRoomEngine:
             summary=f"{incident.incident_id} opened at severity {incident.severity.value}",
             detail=incident.impact,
         )
+        if self._run_playbook(incident):
+            return incident
 
         self._tick(15)
         incident.status = IncidentStatus.AWAITING_APPROVAL
@@ -808,7 +968,12 @@ class ControlRoomEngine:
             actor="orchestrator",
             kind="recommendation",
             summary="Recovery plan proposed, waiting for human approval",
-            detail=incident.recommended_action,
+            detail=incident.recommended_action
+            + (
+                f" Not covered by the playbook: {incident.escalation_reason}."
+                if incident.escalation_reason
+                else ""
+            ),
         )
         return incident
 
@@ -905,7 +1070,29 @@ class ControlRoomEngine:
                 "longer be confirmed and is removed from the commitment rather than assumed."
             ),
         )
-        self._absorb_loss(dropped, f"stale telemetry wave ({len(hit):,} homes)")
+        merged = self._absorb_loss(dropped, f"stale telemetry wave ({len(hit):,} homes)")
+        if merged is None and dropped > 0 and self.playbook is not None:
+            reason = self.playbook.refusal(dropped, len(hit), self._clock)
+            if reason is None:
+                self._tick(5)
+                self.playbook.executions += 1
+                committed = self._allocate_dispatch()
+                self._log(
+                    actor=f"playbook {self.playbook.playbook_id}",
+                    kind="playbook_execution",
+                    summary=f"Stale loss re-shared under playbook {self.playbook.playbook_id}",
+                    detail=(
+                        f"{dropped:,.1f} kW from {len(hit):,} homes is inside the approved limits; "
+                        f"{committed:,.0f} kW now committed of {self.grid_event.target_kw:,.0f} kW."
+                    ),
+                )
+            else:
+                self._log(
+                    actor="orchestrator",
+                    kind="playbook_escalation",
+                    summary="Stale-telemetry loss is outside the playbook, left for a person",
+                    detail=reason[0].upper() + reason[1:] + ".",
+                )
         return dropped
 
     # ------------------------------------------------------------------ recovery
@@ -933,6 +1120,11 @@ class ControlRoomEngine:
             summary=f"Recovery plan approved for {incident.incident_id}",
             detail="Operator approval recorded. Execution starts from this point only.",
         )
+        return self._execute_recovery(incident)
+
+    def _execute_recovery(self, incident: Incident) -> Incident:
+        """Quarantine the failed devices and re-share the commitment. Callers gate it:
+        either a person approved this incident, or a live playbook covered it."""
 
         ring = [self.device(i) for i in (incident.cohort or [incident.device_id])]
         for member in ring:
@@ -982,6 +1174,12 @@ class ControlRoomEngine:
                 task.detail = "Site visit scheduled for the next business morning."
             else:
                 task.status = TaskStatus.DONE
+                if task.role is Role.FLEET_OPERATOR and incident.executed_under:
+                    task.title = "Review the playbook recovery"
+                    task.detail = (
+                        f"Executed under {incident.executed_under}. Review it in the audit "
+                        "timeline; revoke the playbook to return to approval on every incident."
+                    )
 
         self._tick(20)
         incident.status = IncidentStatus.RESOLVED
@@ -1074,8 +1272,13 @@ class ControlRoomEngine:
             )
         elif resolved:
             last = resolved[-1]
+            how = (
+                f"was recovered under {last.executed_under}"
+                if last.executed_under
+                else f"was approved by {last.approved_by}"
+            )
             parts.append(
-                f"{last.incident_id} ({last.device_id}) was approved by {last.approved_by} "
+                f"{last.incident_id} ({last.device_id}) {how} "
                 f"and reassigning healthy devices recovered "
                 f"${last.dollars_recovered:,.2f} of the ${last.dollars_at_risk:,.2f} at risk."
             )
