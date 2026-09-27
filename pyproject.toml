@@ -57,3 +57,5 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # Generates a prose report: long human sentences read better unbroken.
 "src/gridsignal/twin/report.py" = ["E501"]
+# The app puts this checkout's src/ on sys.path before importing gridsignal (stale host installs).
+"app/dashboard.py" = ["E402"]
