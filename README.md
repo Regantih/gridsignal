@@ -12,6 +12,8 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
 **Live demo:** [https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/](https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/)
 
+**Updated after the video was recorded:** the video shows commit [`993505c`](https://github.com/Regantih/gridsignal/tree/993505c). Since then: documentation fixes, the findings section below, and a new **Live ERCOT prices** toggle (off by default, so every number in the video still reproduces). Full list in the [v1.0 release notes](https://github.com/Regantih/gridsignal/releases/tag/v1.0-submission).
+
 > **Real ERCOT data, simulated fleet.** Every price is real ERCOT settlement data: bundled
 > historical days for repeatable numbers, or fetched live from ercot.com with the **Live ERCOT
 > prices** toggle (or `python -m gridsignal.live --incident`). The battery fleet is simulated
