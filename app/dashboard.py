@@ -81,7 +81,10 @@ from gridsignal.prices import (
     load_scenario,
 )
 from gridsignal.signals import Signal
+from gridsignal.twin import feed as twin_feed
+from gridsignal.twin import learn as twin_learn
 from gridsignal.twin import planner as twin_planner
+from gridsignal.twin import risk as twin_risk
 
 try:  # a hosted app can hot-reload this file before the package is reinstalled
     from gridsignal import live
@@ -229,6 +232,14 @@ GLOSSARY: dict[str, str] = {
     "world model": (
         "A generator of realistic ERCOT price years, learned from five years of real "
         "15-minute prices."
+    ),
+    "learned rates": (
+        "Failure rates estimated from a telemetry history instead of assumed; each one "
+        "starts from the assumption and moves as far as the evidence says."
+    ),
+    "feeder": (
+        "Homes on one distribution line, which lose power together. Simulated here as the "
+        "four quadrants of each zone."
     ),
 }
 
@@ -3195,14 +3206,75 @@ POLICY_COLOR = {"naive": "#94a3b8", "gridsignal": "#f59e0b", "gridsignal_auto": 
 
 
 @st.cache_resource(show_spinner=False, max_entries=24)
-def fleet_plan(signature: tuple, scenario: str, target: float) -> twin_planner.CommitmentPlan:
-    """The planner's stress test for one fleet state. ``signature`` keys the cache."""
+def fleet_plan(
+    signature: tuple, scenario: str, target: float, live_day: str | None = None
+) -> twin_planner.CommitmentPlan:
+    """The planner's stress test for one fleet state. ``signature`` keys the cache;
+    ``live_day`` (the feed's newest settled day) re-runs the live scenario when it moves."""
     return twin_planner.plan_commitment(
         assumptions=twin_planner.FleetAssumptions(**dict(signature)),
         scenario=scenario,
         target=target,
         years=3,
     )
+
+
+LEARN_SYNTHETIC = "Synthetic 60-day history (known rates)"
+LEARN_UPLOAD = "Upload a telemetry history (.jsonl)"
+
+
+@st.cache_resource(show_spinner=False)
+def learn_fleet() -> ControlRoomEngine:
+    """The 1,000-device fleet the synthetic history is generated for (rates are per unit,
+    so what it learns carries to any fleet size)."""
+    return ControlRoomEngine(fleet_size=1_000)
+
+
+@st.cache_resource(show_spinner=False, max_entries=4)
+def calibration_for(source: str, upload: bytes | None = None) -> twin_learn.Calibration:
+    """Learned failure rates from the synthetic history or an uploaded export."""
+    eng = learn_fleet()
+    groups = twin_risk.device_groups(eng)
+    feeders = {k: v["feeder"] for k, v in groups.items()}
+    zones = {d.device_id: d.zone for d in eng.mine}
+    if upload is not None:
+        frame, rejected = twin_learn.frame_from_lines(upload.decode("utf-8").splitlines())
+        label = f"uploaded history ({rejected:,} rows rejected by the importer)"
+    else:
+        lines = twin_learn.synthetic_history(
+            list(eng.mine),
+            days=60,
+            feeders=feeders,
+            ring_of={k: v["ring"] for k, v in groups.items()},
+        )
+        frame, _ = twin_learn.frame_from_lines(lines)
+        label = "SYNTHETIC 60-day history, generated with known rates"
+    return twin_learn.learn(frame, zones, feeders, source=label)
+
+
+def active_calibration() -> twin_learn.Calibration | None:
+    """The calibration the operator switched on, or None to plan on the assumptions."""
+    if not st.session_state.get("twin_learned", False):
+        return None
+    upload = st.session_state.get("twin_upload_bytes")
+    source = st.session_state.get("twin_learn_source", LEARN_SYNTHETIC)
+    try:
+        if source == LEARN_UPLOAD and upload:
+            return calibration_for(LEARN_UPLOAD, upload)
+        return calibration_for(LEARN_SYNTHETIC)
+    except ValueError as exc:
+        st.session_state.twin_learn_error = str(exc)
+        return None
+
+
+@st.cache_data(ttl=twin_feed.REFRESH_S, show_spinner="Refreshing ERCOT prices from ercot.com...")
+def refresh_feed(bucket: int) -> dict:
+    """One refresh per 15-minute bucket, shared by every session. ``bucket`` keys it."""
+    try:
+        s = twin_feed.refresh(max_days=30)
+        return {"ok": True, "status": s.__dict__}
+    except (twin_feed.FeedError, OSError) as exc:
+        return {"ok": False, "error": str(exc)}
 
 
 @st.cache_data(show_spinner=False)
@@ -3235,8 +3307,14 @@ def render_planner(eng: ControlRoomEngine) -> None:
         f"{term('headroom')} that still keeps the promise.",
         unsafe_allow_html=True,
     )
+    live_on = bool(st.session_state.get("live_ercot", False))
+    if live_on:
+        import time as _time
+
+        st.session_state.twin_feed = refresh_feed(int(_time.time() // twin_feed.REFRESH_S))
+    menu = twin_planner.scenarios(live=True)
     left, right = st.columns(2)
-    scenario = left.selectbox("Price scenario", list(twin_planner.SCENARIOS), key="twin_scenario")
+    scenario = left.selectbox("Price scenario", list(menu), key="twin_scenario")
     target = right.select_slider(
         "Keep the promise on",
         options=[0.95, 0.98, 0.99, 0.995],
@@ -3244,10 +3322,24 @@ def render_planner(eng: ControlRoomEngine) -> None:
         format_func=lambda x: f"{x:.1%} of days".replace(".0%", "%"),
         key="twin_target",
     )
+    st.toggle(
+        "Plan with learned failure rates",
+        key="twin_learned",
+        help=GLOSSARY["learned rates"],
+    )
     a = twin_planner.assumptions_from_engine(eng)
+    cal = active_calibration()
+    if cal is not None:
+        a = cal.apply(a)
+        caption(
+            f"Failure rates learned from the {cal.source}: a unit drops at "
+            f"{a.device_hazard_per_h:.4f}/h (assumed 0.0040), a cluster takes "
+            f"{a.feeder_event_share:.0%} of a zone (assumed 25%). See the learning loop below."
+        )
     signature = tuple(sorted(a.__dict__.items()))
+    live_day = twin_feed.last_full_day() if scenario == twin_planner.LIVE_SCENARIO else None
     with st.spinner("Stress-testing this fleet on 3 simulated years..."):
-        plan = fleet_plan(signature, scenario, target)
+        plan = fleet_plan(signature, scenario, target, live_day)
     current = eng.current_commit_ratio()
     rec = plan.recommended_ratio
 
@@ -3328,7 +3420,310 @@ def render_planner(eng: ControlRoomEngine) -> None:
         "The recommendation is advice; a person sets the commitment."
     )
 
+    render_risk_map(eng, cal)
+    render_learning_loop()
+    render_live_feed()
     render_planner_study()
+
+
+RISK_COLOR = {
+    twin_risk.PLAYBOOK: "#14b8a6",
+    twin_risk.PERSON: "#f59e0b",
+    twin_risk.UNCOVERED: "#dc2626",
+}
+
+
+def render_risk_map(eng: ControlRoomEngine, cal: twin_learn.Calibration | None) -> None:
+    st.divider()
+    st.markdown("<div class='gs-kicker'>Who fails together</div>", True)
+    st.subheader("Correlated-risk map")
+    groups = twin_risk.groups(eng, cal)
+    counts = twin_risk.summary(groups)
+    feeders = [g for g in groups if g.kind == "feeder"]
+    rings = [g for g in groups if g.kind == "gateway ring"]
+    worst = max(feeders, key=lambda g: g.worst_zone_share) if feeders else None
+    st.markdown(
+        f"One unit failing is cheap: the playbook re-shares it in the same interval. What "
+        f"breaks a promise is a group of homes that fails at once. This fleet has "
+        f"{len(feeders)} {term('feeders', 'feeder')} and {len(rings)} gateway firmware rings. "
+        "For each one: the committed kW that would go with it, whether the playbook may "
+        "recover it without a person, and whether the rest of its zone has the spare "
+        "headroom to cover it at all.",
+        unsafe_allow_html=True,
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    metric(
+        m1,
+        "Promise at risk",
+        f"{counts[twin_risk.UNCOVERED]:,}",
+        note="groups the zone can't cover",
+    )
+    metric(m2, "Waits for a person", f"{counts[twin_risk.PERSON]:,}", note="outside the playbook")
+    metric(m3, "Playbook recovers", f"{counts[twin_risk.PLAYBOOK]:,}", note="groups, at once")
+    metric(
+        m4,
+        "Largest feeder",
+        f"{worst.worst_zone_share:.0%}" if worst else "none",
+        note=f"of {worst.zones[0]}'s commitment" if worst else "",
+    )
+    if worst is not None:
+        assumed = twin_planner.FleetAssumptions().feeder_event_share
+        if abs(worst.worst_zone_share - assumed) <= 0.05:
+            compare = (
+                f"The stress test assumes one cluster takes {assumed:.0%} of a zone and "
+                "recommends about 75%: the map and the simulation agree on where the edge is."
+            )
+        elif worst.worst_zone_share > assumed:
+            compare = (
+                f"That is more than the {assumed:.0%} the stress test assumes: with few homes "
+                "per feeder one feeder is a large part of its zone, so the plan is optimistic "
+                "for this fleet until the feeder share is measured."
+            )
+        else:
+            compare = (
+                f"That is less than the {assumed:.0%} the stress test assumes, so the plan is "
+                "conservative for this fleet's feeders."
+            )
+        st.info(
+            f"{worst.key} holds {worst.worst_zone_share:.0%} of its zone's committed kW. If it "
+            f"trips, the rest of the zone can cover it only at commitments up to "
+            f"{worst.covering_ratio:.0%}; today's is {eng.current_commit_ratio():.0%}. " + compare
+        )
+
+    by_device = twin_risk.device_groups(eng)
+    status_of = {g.key: g.status for g in feeders}
+    pts = pd.DataFrame(
+        [
+            {
+                "lat": d.lat,
+                "lon": d.lon,
+                "Device": d.device_id,
+                "Feeder": by_device[d.device_id]["feeder"],
+                "Ring": by_device[d.device_id]["ring"],
+                "Status": status_of.get(by_device[d.device_id]["feeder"], twin_risk.PLAYBOOK),
+                "kW": d.assigned_kw,
+            }
+            for d in eng.mine
+        ]
+    )
+    if len(pts) > 1_500:
+        pts = pts.sample(1_500, random_state=7)
+    fig = px.scatter(
+        pts,
+        x="lon",
+        y="lat",
+        color="Status",
+        color_discrete_map=RISK_COLOR,
+        hover_data=["Device", "Feeder", "Ring", "kW"],
+        category_orders={"Status": list(twin_risk.STATUS_ORDER)},
+    )
+    fig.update_traces(marker={"size": 7, "opacity": 0.8})
+    for g in feeders:
+        fig.add_annotation(
+            x=g.lon, y=g.lat, text=g.key.split("-")[-1], showarrow=False, font={"size": 10}
+        )
+    fig.update_layout(
+        height=360,
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        xaxis_title="",
+        yaxis_title="",
+        legend={"orientation": "h", "y": -0.12, "title": ""},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    rows = [
+        {
+            "Group": g.key,
+            "Kind": g.kind,
+            "Devices": f"{len(g.devices):,}",
+            "Committed": power(g.lost_kw, 1),
+            "Of its zone": f"{g.worst_zone_share:.0%}",
+            "Zone covers it up to": f"{g.covering_ratio:.0%}",
+            "Seen failing together": f"{g.seen_together}" if cal is not None else "no history",
+            "Status": g.status,
+        }
+        for g in groups[:15]
+    ]
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+    caption(
+        "Feeders are simulated (each zone's quadrants); a real deployment reads the utility's "
+        "feeder ID and nothing else changes. Gateway rings follow the fleet's firmware "
+        "rollout. 'Seen failing together' counts correlated drops in the telemetry history "
+        "when learned rates are on. Reproduce with python -m gridsignal.twin risk."
+    )
+
+
+def render_learning_loop() -> None:
+    st.divider()
+    st.markdown("<div class='gs-kicker'>Learning loop</div>", True)
+    st.subheader("Replace the assumed failure rates with measured ones")
+    st.markdown(
+        "The weakest input to the plan is how often units fail. This loop reads a telemetry "
+        "history in the Control Room's own import format, counts independent drops, "
+        "finds drops that happen together on one gateway, feeder or firmware build, and "
+        "moves each rate from its assumption as far as the evidence says "
+        f"({term('learned rates')}).",
+        unsafe_allow_html=True,
+    )
+    source = st.radio(
+        "History", [LEARN_SYNTHETIC, LEARN_UPLOAD], horizontal=True, key="twin_learn_source"
+    )
+    if source == LEARN_UPLOAD:
+        up = st.file_uploader(
+            "Telemetry history (.jsonl)", type=["jsonl", "json", "txt"], key="twin_upload"
+        )
+        if up is not None:
+            st.session_state.twin_upload_bytes = up.getvalue()
+        if not st.session_state.get("twin_upload_bytes"):
+            caption("Upload an export in the documented format to learn from it.")
+            return
+    try:
+        with st.spinner("Reading the history through the telemetry importer..."):
+            cal = calibration_for(
+                source,
+                st.session_state.get("twin_upload_bytes") if source == LEARN_UPLOAD else None,
+            )
+    except ValueError as exc:
+        st.warning(f"Could not learn from this history: {exc}")
+        return
+    m1, m2, m3, m4 = st.columns(4)
+    metric(m1, "Reports read", f"{cal.reports:,}", note=f"{cal.devices:,} devices, {cal.days} days")
+    metric(m2, "Drops", f"{cal.failures:,}", note=f"{cal.independent_failures:,} on their own")
+    metric(m3, "Correlated drops", f"{len(cal.clusters):,}", note="3+ units, same slot and cause")
+    metric(m4, "Device-hours", f"{cal.exposure_h:,.0f}", note="observed up")
+
+    def fmt(name: str, x: float) -> str:
+        return f"{x:.4f}" if name == "device_hazard_per_h" else f"{x:.1%}"
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {
+                    "Rate": e.label,
+                    "Assumed": fmt(e.name, e.prior),
+                    "Learned": fmt(e.name, e.learned),
+                    "90% range": f"{fmt(e.name, e.low)} to {fmt(e.name, e.high)}",
+                    "Evidence": e.evidence,
+                }
+                for e in cal.estimates.values()
+            ]
+        ),
+        hide_index=True,
+        use_container_width=True,
+    )
+    for n in cal.notes:
+        caption(n[0].upper() + n[1:] + ".")
+    if source == LEARN_SYNTHETIC:
+        t = twin_learn.SyntheticTruth()
+        caption(
+            f"SYNTHETIC: the history was generated with a drop rate of {t.device_hazard_per_h}/h, "
+            f"{t.degraded_share:.0%} of units derated and feeder outages on {t.feeder_event_p:.0%} "
+            "of zone-days, so you can see the estimator find them. Nothing here is a measurement "
+            "of a real fleet. Switch on 'Plan with learned failure rates' above to re-plan on "
+            "these numbers. Reproduce with python -m gridsignal.twin learn."
+        )
+
+
+def render_live_feed() -> None:
+    st.divider()
+    st.markdown("<div class='gs-kicker'>Live ERCOT feed</div>", True)
+    st.subheader("Every settled 15-minute price since the study froze")
+    if st.session_state.get("live_ercot", False):
+        # Re-run just this panel every 15 minutes while the page is open.
+        st.fragment(run_every=twin_feed.REFRESH_S)(_live_feed_panel)()
+    else:
+        _live_feed_panel()
+
+
+def _live_feed_panel() -> None:
+    if st.session_state.get("live_ercot", False):
+        import time as _time
+
+        st.session_state.twin_feed = refresh_feed(int(_time.time() // twin_feed.REFRESH_S))
+    status = twin_feed.describe(twin_feed.load_store())
+    result = st.session_state.get("twin_feed")
+    m1, m2, m3, m4 = st.columns(4)
+    metric(m1, "Days collected", f"{status.days_in_store:,}", note=f"since {status.first_day}")
+    from datetime import date as _date
+    from datetime import datetime as _dt
+
+    today = _dt.now(live.CENTRAL).date() if live is not None else _date.today()
+    behind = (
+        max((today - _date.fromisoformat(status.last_full_day)).days - 1, 0)
+        if status.last_full_day
+        else 0
+    )
+    metric(m2, "Settled days behind", f"{behind:,}", note=f"last settled {status.last_full_day}")
+    metric(
+        m3,
+        "Intervals today",
+        f"{status.intervals_today} of 96",
+        note=f"latest ending {(status.latest_interval or '')[-5:]} Central",
+    )
+    metric(
+        m4,
+        "Refresh",
+        "Auto" if st.session_state.get("live_ercot") else "Off",
+        note="every 15 minutes while Live ERCOT prices is on",
+    )
+    if result is not None and not result["ok"]:
+        st.warning(
+            f"The last refresh could not reach ERCOT: {result['error']}. Showing the stored days."
+        )
+    days = twin_feed.live_days()
+    if days is not None and len(days):
+        hot = int((days.prices.max((1, 2)) > 250).sum())
+        caption(
+            f"{len(days)} settled days in 2026 for Houston, North and South, read from ERCOT's "
+            f"public real-time price display. {hot} of them touched $250/MWh in some zone. "
+            "The scenario 'This year so far (live feed)' refits the world model on these days "
+            "plus 2021 to 2025, and refits again each time a new day settles."
+        )
+    so_far = twin_feed.today_prices(today=today)
+    if so_far is None:
+        caption(
+            "No intervals for today in the store yet. Switch on Live ERCOT prices to fetch them."
+        )
+        return
+    check = twin_feed.check_today(twin_planner.world_model(live=True), so_far, today.month)
+    fig = go.Figure()
+    x = [f"{(i * 15) // 60:02d}:{(i * 15) % 60:02d}" for i in range(check.intervals)]
+    fig.add_trace(
+        go.Scatter(x=x, y=check.band_high[0], line={"width": 0}, showlegend=False, hoverinfo="skip")
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=check.band_low[0],
+            fill="tonexty",
+            fillcolor="rgba(20,184,166,0.18)",
+            line={"width": 0},
+            name="World model, 5 to 95%",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=x,
+            y=check.actual[0],
+            name="Houston today (real)",
+            line={"color": "#f59e0b", "width": 3},
+        )
+    )
+    fig.update_layout(
+        height=300,
+        margin={"l": 0, "r": 0, "t": 10, "b": 0},
+        yaxis_title="$/MWh",
+        legend={"orientation": "h", "y": -0.2},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    caption(
+        f"Today so far: {check.intervals} settled intervals, {check.inside_share:.0%} of "
+        f"zone-intervals {check.verdict}. The band is 200 days the live world model draws for "
+        "this month; a day that keeps landing outside it is a regime the model has not learned yet."
+    )
 
 
 def render_planner_study() -> None:

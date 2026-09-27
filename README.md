@@ -71,14 +71,46 @@ commitment *before* it, and its main finding changed how the Control Room recove
   of 21) with deliberately wide bands, and nothing fitted on history predicted how fast ERCOT's
   spikes vanished (days over $250: 116, 94, 44, 25 from 2022 to 2025).
 
+### Three loops around the Planner
+
+- **Live ERCOT feed** (`python -m gridsignal.twin feed [--watch]`). Every settled 15-minute
+  real-time price for Houston, North and South since the study froze, read from ERCOT's public
+  daily display pages and kept in `data/twin/ercot_rtm_live.parquet` (262 full days of 2026 at
+  commit time). With **Live ERCOT prices** on, the Planner refreshes it every 15 minutes while
+  the page is open: missing days are backfilled, today's page is re-read, and a settled price
+  that changes is counted, not silently replaced. The scenario **This year so far (live feed)**
+  refits the world model on 2021 to 2026 and refits again when a new day settles; the frozen
+  study keeps its 2021 to 2025 model so `docs/twin` still reproduces. Today's intervals are
+  checked against the band the model draws for this month, so a regime the model has not
+  learned shows up the same day.
+- **Learning loop** (`python -m gridsignal.twin learn [--file history.jsonl]`). Reads a
+  telemetry history in the Control Room's own import format (same validating importer),
+  counts independent drops against device-hours observed up, and finds drops that land in the
+  same 15-minute slot on one gateway, feeder or firmware build. Each failure rate starts from
+  the stress test's assumption as a prior and moves as far as the evidence says, with a 90%
+  range; **Plan with learned failure rates** re-plans on them. The bundled history is
+  SYNTHETIC with known rates, and `tests/test_twin_loop.py` checks the estimator finds them
+  (drop rate, derated share, outage rate and outage size). A real export runs the same code.
+- **Correlated-risk map** (`python -m gridsignal.twin risk`). Every feeder and gateway ring in
+  the fleet on screen, with the committed kW that fails with it, whether the playbook may
+  recover it without a person, whether the rest of its zone can cover it at all, and the
+  highest commitment at which it could. At 1,000 homes each simulated feeder holds 21 to 29% of
+  its zone, so most cannot be covered at today's 79%: the same edge the stress test finds from
+  the other direction (it assumes 25% and recommends 75%). Feeders are simulated as each zone's
+  quadrants; a real deployment reads the utility's feeder ID.
+
 Full study: [docs/twin/REPORT.md](docs/twin/REPORT.md). Reproduce with
 `python -m gridsignal.twin report` (about 20 minutes) or `python -m gridsignal.twin stress --quick`.
 
 ## What we would build next with Base
 
-1. **Live ERCOT feed, continuously.** Already working for one day at a time: `python -m gridsignal.live --incident` fetches yesterday's real-time and day-ahead prices from ercot.com and prices the same incident on them (on 2026-09-26, an ordinary day, it was $42.06 at risk against $4,812 on the bundled scarcity day). Next is running it every 15 minutes so finding 1 is tracked as it happens.
-2. **Real telemetry adapter.** Point the Control Room at a read-only export of fleet heartbeats. The incident, pricing and approval flow stay unchanged; nothing dispatches without a human.
-3. **Correlated-risk map.** Group devices by firmware ring, gateway and feeder, and price the worst single fault before the next scarcity day instead of during it.
+1. **Real telemetry into the learning loop.** The loop, importer and planner are built; what is
+   missing is a read-only export of a real fleet's heartbeats. The first number it would settle
+   is how much of a zone one outage takes, the input the plan is most sensitive to.
+2. **Real feeder IDs on the risk map.** Replace the simulated quadrants with the utility's feeder
+   and transformer IDs, then price the worst single fault before the next scarcity day.
+3. **Feed-driven alerts.** The live feed already flags a day the world model did not expect;
+   next is paging the operator when it happens during an event window.
 4. **Member-facing backup ledger.** Show each member, per event, that their promised reserve was untouched. Trust is the product.
 5. **ADER eligibility case.** Use finding 3 as evidence for which product rules matter most to a home fleet.
 
