@@ -187,9 +187,10 @@ def test_the_dry_run_counts_the_sweep_and_the_suite_it_actually_has() -> None:
 
 
 def test_roster_invents_no_names() -> None:
-    """A template for the team to fill in, not a guess at who they are."""
+    """Only the confirmed team, the same person the README credits, and no guessed contacts."""
     roster = (DOCS / "ROSTER.md").read_text()
-    assert "your name here" in roster
+    assert "Hemanth Reganti" in roster
+    assert "Hemanth Reganti" in (DOCS.parent / "README.md").read_text()
     assert not re.search(r"@\w+\.(com|org|io)", roster)
 
 

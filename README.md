@@ -8,6 +8,8 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
 **Tracks:** Orchestration (Control Room) + Open Grid Data
 
+**Live demo:** [https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/](https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/)
+
 > **Simulation only.** The fleet, the failure and the recovery are deterministic local mock data;
 > only the ERCOT settlement prices are real (a cached public price trace). It does not connect to
 > real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
