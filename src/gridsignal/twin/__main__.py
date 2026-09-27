@@ -1,4 +1,10 @@
-"""Command line: ``python -m gridsignal.twin {validate,stress,report} [--quick]``."""
+"""Command line for the twin.
+
+python -m gridsignal.twin validate|stress|report [--quick]   # the frozen study
+python -m gridsignal.twin feed [--watch]                     # live ERCOT prices
+python -m gridsignal.twin learn [--file history.jsonl]       # measured failure rates
+python -m gridsignal.twin risk [--fleet 1000]                # who fails together
+"""
 
 from __future__ import annotations
 
@@ -80,11 +86,105 @@ def cmd_stress(quick: bool) -> dict:
     return out
 
 
+def cmd_feed(watch_: bool, every: int) -> None:
+    from gridsignal.twin import feed
+
+    if watch_:
+        feed.watch(every)
+        return
+    s = feed.refresh()
+    print(
+        f"live ERCOT store: {s.days_in_store} days ({s.first_day} to {s.last_full_day} settled), "
+        f"latest interval ending {s.latest_interval}, {s.intervals_today} intervals today, "
+        f"{s.days_fetched} page(s) fetched, {s.revised_intervals} revised"
+    )
+    for err in s.errors:
+        print(f"  could not load {err}")
+
+
+def _engine(fleet: int, playbook: bool = False):
+    from gridsignal.control_room import ControlRoomEngine
+
+    eng = ControlRoomEngine(fleet_size=fleet)
+    if playbook:
+        eng.approve_playbook("M. Alvarez (Fleet Operator)")
+    return eng
+
+
+def cmd_learn(path: str | None, fleet: int, days: int, quick: bool) -> None:
+    from gridsignal.twin import learn, planner, risk
+
+    eng = _engine(fleet)
+    groups = risk.device_groups(eng)
+    feeders = {k: v["feeder"] for k, v in groups.items()}
+    if path:
+        with open(path, encoding="utf-8") as fh:
+            frame, rejected = learn.frame_from_lines(fh)
+        source = path
+    else:
+        lines = learn.synthetic_history(
+            list(eng.mine),
+            days=days,
+            feeders=feeders,
+            ring_of={k: v["ring"] for k, v in groups.items()},
+        )
+        frame, rejected = learn.frame_from_lines(lines)
+        source = f"SYNTHETIC {days}-day history (known rates: {learn.SyntheticTruth()})"
+    cal = learn.learn(frame, {d.device_id: d.zone for d in eng.mine}, feeders, source=source)
+    print(f"learned from {source}")
+    print(
+        f"  {cal.reports:,} reports ({rejected:,} rejected by the importer), {cal.devices:,} "
+        f"devices, {cal.days} days, {cal.failures:,} drops, {len(cal.clusters)} correlated"
+    )
+    for e in cal.estimates.values():
+        print(
+            f"  {e.label}: assumed {e.prior:.4g}, learned {e.learned:.4g} "
+            f"(90% {e.low:.4g} to {e.high:.4g}); {e.evidence}"
+        )
+    for n in cal.notes:
+        print(f"  note: {n}")
+    years = 2 if quick else 4
+    before = planner.plan_commitment(eng, years=years)
+    after = planner.plan_commitment(eng, years=years, calibration=cal)
+    print(
+        f"  safe commitment with the playbook: {before.recommended_ratio:.0%} assumed, "
+        f"{after.recommended_ratio:.0%} learned ({years} simulated years each)"
+    )
+
+
+def cmd_risk(fleet: int) -> None:
+    from gridsignal.twin import risk
+
+    eng = _engine(fleet, playbook=True)
+    groups = risk.groups(eng)
+    print(f"{fleet:,}-device fleet, playbook approved: {risk.summary(groups)}")
+    for g in groups[:12]:
+        print(
+            f"  {g.status:<22} {g.kind:<12} {g.key:<14} {len(g.devices):>5} devices "
+            f"{g.lost_kw:>9,.1f} kW ({g.worst_zone_share:.0%} of its zone), "
+            f"uncovered {g.uncovered_kw:,.1f} kW"
+        )
+
+
 def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(prog="python -m gridsignal.twin")
-    ap.add_argument("command", choices=["validate", "stress", "report"])
+    ap.add_argument("command", choices=["validate", "stress", "report", "feed", "learn", "risk"])
     ap.add_argument("--quick", action="store_true", help="small run for CI and smoke tests")
+    ap.add_argument("--watch", action="store_true", help="feed: refresh every --every seconds")
+    ap.add_argument("--every", type=int, default=900, help="feed --watch interval, seconds")
+    ap.add_argument("--file", help="learn: telemetry history, JSON lines")
+    ap.add_argument("--fleet", type=int, default=1_000, help="learn/risk: simulated fleet size")
+    ap.add_argument("--days", type=int, default=90, help="learn: synthetic history length")
     args = ap.parse_args(argv)
+    if args.command == "feed":
+        cmd_feed(args.watch, args.every)
+        return
+    if args.command == "learn":
+        cmd_learn(args.file, args.fleet, 30 if args.quick else args.days, args.quick)
+        return
+    if args.command == "risk":
+        cmd_risk(args.fleet)
+        return
     REPORTS.mkdir(exist_ok=True)
     if args.command in ("validate", "report"):
         v = cmd_validate(args.quick)

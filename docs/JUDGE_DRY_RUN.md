@@ -30,11 +30,11 @@ than add strength, so Completeness stays where it was.
 ## Technical Execution — Completeness — 14 / 15
 
 **For.** The core workflow runs end to end and is exercised by machines, not by hand:
-`scripts/no_crash_sweep.py` drives 29 CLI entry points — including the telemetry importer and
+`scripts/no_crash_sweep.py` drives 31 CLI entry points — including the telemetry importer and
 the transport benchmark — and 52 dashboard interactions: all five views, both price days, three
 fleet scales, the failure/approve/override/reset loop, every scenario in the picker, both map
 modes, the Advanced toggle. It runs with API keys stripped and an unroutable proxy, in CI,
-inside four minutes. 707 tests pass with no key and no network. The README quick start was then
+inside four minutes. 728 tests pass with no key and no network. The README quick start was then
 run from an empty directory on a 2 vCPU box before submission (clone to a serving app in under
 a minute), which is how the one remaining deviation
 was found and fixed: the relative benchmark guard read low when the suite was sharded across

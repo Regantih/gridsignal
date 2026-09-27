@@ -54,6 +54,8 @@ CLI_COMMANDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("what-if console at 10k", ("-m", "gridsignal.whatif", "--fleet", "10000")),
     ("deliverability report", ("-m", "gridsignal.deliverability_report")),
     ("degradation-aware dispatch", ("-m", "gridsignal.degradation")),
+    ("correlated-risk map at 1k", ("-m", "gridsignal.twin", "risk", "--fleet", "1000")),
+    ("learning loop, quick", ("-m", "gridsignal.twin", "learn", "--quick")),
     (
         "judgment report",
         ("-m", "gridsignal.judgment_report", "--no-save-calibration"),
