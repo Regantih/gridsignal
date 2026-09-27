@@ -34,7 +34,7 @@ than add strength, so Completeness stays where it was.
 the transport benchmark — and 52 dashboard interactions: all five views, both price days, three
 fleet scales, the failure/approve/override/reset loop, every scenario in the picker, both map
 modes, the Advanced toggle. It runs with API keys stripped and an unroutable proxy, in CI,
-inside four minutes. 653 tests pass with no key and no network. The README quick start was then
+inside four minutes. 707 tests pass with no key and no network. The README quick start was then
 run from an empty directory on a 2 vCPU box before submission (clone to a serving app in under
 a minute), which is how the one remaining deviation
 was found and fixed: the relative benchmark guard read low when the suite was sharded across

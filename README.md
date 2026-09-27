@@ -20,7 +20,8 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 > because no outside team can reach Base's devices; the **Load telemetry file** panel accepts
 > device heartbeats in a documented format, and the same incident workflow runs on them. It never
 > sends a command to a real device, utility or ERCOT system, and a human operator approves every
-> recovery action.
+> recovery action: one incident at a time, or in advance through a recovery playbook with written
+> limits (see the Planner below).
 
 **Judging in 60 seconds:** `pip install -e ".[dev]"` then `python -m gridsignal.demo_numbers`
 prints every headline figure below from a fresh clone, offline, with no keys.
@@ -38,6 +39,40 @@ command beside it. No key and no network needed.
 | 3 | **The pilot rules, not the battery, cap ancillary revenue.** Inside ERCOT's ADER pilot a home battery may sell only ECRS and Non-Spin: median **$0.15**/battery/day, with one day (2024-05-08) carrying 66% of the total. Across all five products the mean would be $3.70, 85% of it Reg Down. **The rules remove 91% of that mean.** | Ancillary capacity is rare-day money, not an annuity. The biggest lever is regulatory (Reg Down eligibility), not a better model. | `python -m gridsignal.ancillary` |
 | 4 | **The backup promise is load-bearing and it costs something.** 648 simulated members, 957 runs, 4,454 intervals: **0** took a member's promised backup. Remove the floor and change nothing else: **335 intervals breach, spending 1,564.9 kWh** of promised backup. | Base sells resilience first. The guard is what keeps market dispatch from quietly spending the member's outage reserve. | `python -m gridsignal.backup_ledger` |
 | 5 | **Honest out-of-sample edge: thin, and we say so.** Home-first dispatch beats a naive clock schedule on 5 of 7 held-out days, median **+$0.13**, mean **-$0.79** (one bad day). Against a battery that does nothing: median **$1.64**/day. Simple rules also beat the LLM decision layer on a blind 24-answer key, **21/24 vs 17/24**. | Scheduling is not where the edge is; reliability and real-time coordination are. Rules stay in charge, the model advises, a human approves. | `python -m gridsignal.holdout` and `python -m gridsignal.judgment_report` |
+
+## After the hackathon: the Planner and the recovery playbook
+
+The Control Room recovers from failures *during* an event. The new **Planner** view decides the
+commitment *before* it, and its main finding changed how the Control Room recovers.
+
+- **A world model of ERCOT prices** (`gridsignal.twin`), learned from 1,821 real days of 15-minute
+  real-time prices (NP6-905-CD, Houston, North and South load zones, 2021 to 2025). It generates
+  new price years (none copies a real day, a test checks this) for a chosen regime: 2025-like,
+  2023-like, Uri-like 2021, or a scarcity knob.
+- **The Control Room's own fleet, stress-tested.** The Planner reads the live fleet from the engine
+  (unit mix, charge, house loads, degraded units, member reserve), scales it to 1,000 simulated
+  homes, and runs it through simulated years with random unit failures and feeder-wide outages.
+  The dispatch math is the engine's own (parity-tested in `tests/test_twin.py`).
+- **The finding.** Over 30 simulated 2025-like years, a fleet that waits for approval on every
+  incident keeps a 75% commitment on **96.6%** of days, and no tested commitment reaches 99%: the
+  fix lands one 15-minute interval late, and that interval is short. Run the *same* recovery the
+  moment the loss is seen and 75% is kept on **99.8%** of days. The hackathon build commits about
+  **77%** of headroom, right at that edge.
+- **So the Control Room now has a recovery playbook.** An operator approves the rule once, with
+  limits (default: a single loss up to 10% of the target, from up to 1% of devices, until the event
+  ends). Inside the limits a failure is quarantined and re-shared at once and logged against that
+  approval. Outside them it waits for a person exactly as before. A gateway-ring failure at 1,000
+  devices takes out 16 at once and is escalated: correlated outages are what the stress test says
+  the fleet cannot absorb blind. The member reserve is never a limit to set, because no path can
+  spend it.
+- **Honest limits.** Failure rates are assumptions; the sensitivity table shows the one that
+  matters most is how much of a zone one outage takes out (at half a zone the safe commitment
+  falls to 50%). The world model beats replaying last year (13 of 21 next-year checks against 7
+  of 21) with deliberately wide bands, and nothing fitted on history predicted how fast ERCOT's
+  spikes vanished (days over $250: 116, 94, 44, 25 from 2022 to 2025).
+
+Full study: [docs/twin/REPORT.md](docs/twin/REPORT.md). Reproduce with
+`python -m gridsignal.twin report` (about 20 minutes) or `python -m gridsignal.twin stress --quick`.
 
 ## What we would build next with Base
 
@@ -611,6 +646,16 @@ superseded. Format and rules: <code>data/telemetry/README.md</code>.
 python -m gridsignal.telemetry                                      # bundled sample
 python -m gridsignal.telemetry data/telemetry/synthetic_bad_rows.jsonl   # one row per reason
 ```
+
+### Planner
+
+Pick a price scenario and how often the promise must hold (default 99% of days). The Planner
+stress-tests the fleet the Control Room is running on 3 simulated years (about 10 seconds, cached)
+and shows the recommended commitment, today's commitment, days missed per year with approval on
+every incident versus with the playbook, and the reliability curve. **Set commitment** and
+**Approve recovery playbook** act on the Control Room's engine and land in its audit timeline
+under the operator's name. Below that: the full 30-year study per scenario, how well the price
+world model forecasts real years, and what happens if the fleet assumptions are wrong.
 
 ### Member App
 
