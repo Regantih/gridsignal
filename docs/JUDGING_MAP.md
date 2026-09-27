@@ -13,7 +13,7 @@ Run everything below from a fresh clone after `pip install -e ".[dev]"`.
 |---|---|
 | Failure → incident → human approval → quarantine + reassignment → recovery, end to end | `src/gridsignal/control_room/engine.py`, screen: **Control Room** |
 | Every state transition asserted, including approving out of order and replaying after reset | `tests/test_control_room.py` (`pytest -q tests/test_control_room.py`) |
-| All four views render, and the demo buttons can be pressed in any order | `tests/test_dashboard.py` — drives the real app through Streamlit's `AppTest` |
+| All five views render, and the demo buttons can be pressed in any order | `tests/test_dashboard.py` — drives the real app through Streamlit's `AppTest` |
 | Runs offline with no key, no network, no account | bundled `data/processed/*.parquet`, `data/jev_fixtures/*.json`; whole suite passes air-gapped |
 | One documented start command | `streamlit run app/dashboard.py` (README Quick Start) |
 

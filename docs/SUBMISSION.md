@@ -77,7 +77,7 @@ Control Room segment.
 The README quick start was run from an empty directory on a 2 vCPU Linux box before submitting:
 clone 1.3 s, `python3.11 -m venv .venv` 2.3 s, `pip install -e ".[dev]"` 14.7 s,
 `python -m gridsignal.demo_numbers` 14.8 s, `streamlit run app/dashboard.py` serving in under
-25 s, full suite 606 tests green with `AI_GATEWAY_API_KEY` and `TYPESAFE_API_KEY` unset. The
+25 s, full suite 644 tests green with `AI_GATEWAY_API_KEY` and `TYPESAFE_API_KEY` unset. The
 one deviation it found — the relative benchmark guard in `tests/test_perf.py` reading low when
 the suite is sharded across two cores — is fixed by judging the best of paired samples.
 

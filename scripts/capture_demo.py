@@ -1,6 +1,6 @@
 """Scripted screen capture of the demo, as a fallback for a deployed URL.
 
-Starts the dashboard on a spare port, walks the four views with Playwright, drives the whole
+Starts the dashboard on a spare port, walks the five views with Playwright, drives the whole
 failure-to-recovery loop, and writes stills plus a WebM (converted to MP4 when ffmpeg is on
 PATH) to docs/media/. No credentials: the app runs keyless and offline, and nothing here reads
 an API key.

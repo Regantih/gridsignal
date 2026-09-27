@@ -1136,7 +1136,7 @@ video.
 
 ## Interface conventions
 
-One design system drives all four views (`CSS`, `metric()`, `caption()` in
+One design system drives all five views (`CSS`, `metric()`, `caption()` in
 [`app/dashboard.py`](app/dashboard.py)), and `tests/test_dashboard.py` fails the build when a
 screen breaks it:
 
@@ -1172,10 +1172,10 @@ reset — screenshotting each step and recording the session. No credentials, no
 ```bash
 pip install -e ".[capture]"
 python -m playwright install chromium
-python scripts/no_crash_sweep.py        # 58 checks, ~60s, exits non-zero on any traceback
+python scripts/no_crash_sweep.py        # 81 checks, ~60s, exits non-zero on any traceback
 ```
 
-Every CLI entry point with real arguments (not `--help`) and every control on all four screens —
+Every CLI entry point with real arguments (not `--help`) and every control on all five screens —
 both price days, all three fleet scales, the failure/approve/offer loop, both map modes, every
 congestion zone, six member homes, every expander and slider, all five chaos replays, both
 firmware builds — run with the API keys stripped and an unroutable proxy set, so any code path
@@ -1274,7 +1274,7 @@ unchanged on the rules.
 | `tests/test_dashboard.py` | Every view renders; the Grid Signals headline never shows the scenario day alone; the Agent Mesh registry and log |
 | `tests/test_insight.py` | The insight claim: the foresight ceiling really is a ceiling, scarcity days hide more value than ordinary ones, divergence is a scarcity phenomenon |
 | `tests/test_docs.py` | The write-up is 150–300 words in the required order and the demo script fits under 5:00 |
-| `scripts/capture_demo.py` | Playwright walkthrough that screenshots and records the four views into `docs/media/` |
+| `scripts/capture_demo.py` | Playwright walkthrough that screenshots and records the five views into `docs/media/` |
 | `tests/test_dam.py` | Day-ahead plan shape, hour-to-interval alignment, each deviation rule, no-lookahead, DAM provenance |
 
 See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
