@@ -1,0 +1,9 @@
+{
+  "location": "LZ_HOUSTON",
+  "market": "DAY_AHEAD_HOURLY",
+  "date": "2024-12-20",
+  "source": "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER",
+  "fetched_at": "2026-09-26T01:41:12+00:00",
+  "intervals": 24,
+  "units": "$/MWh"
+}

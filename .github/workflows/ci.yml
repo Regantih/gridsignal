@@ -1,12 +1,98 @@
 name: ci
 on: [push, pull_request]
+
+# Four jobs run side by side instead of one long one: lint, the fast half of the suite,
+# the slow half (fleet-scale sweeps, app renders, full reports) and the no-crash sweep,
+# which is itself split into its command-line and dashboard halves. Coverage is unchanged:
+# every test and every sweep check still runs on every push.
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
-      - run: pytest -q
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv pip install --system -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        half: [fast, slow]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv pip install --system -e ".[dev]"
+      - name: pytest (${{ matrix.half }} half, keyless and offline)
+        run: |
+          if [ "${{ matrix.half }}" = "slow" ]; then
+            pytest -q -m slow -n auto
+          else
+            pytest -q -m "not slow" -n auto
+          fi
+
+  sweep:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [cli, app]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv pip install --system -e ".[dev,capture]"
+      - name: cache the browser the dashboard sweep drives
+        if: matrix.part == 'app'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+      - if: matrix.part == 'app'
+        run: python -m playwright install --with-deps chromium
+      - name: no-crash sweep (${{ matrix.part }}, keyless and offline)
+        run: python scripts/no_crash_sweep.py --${{ matrix.part }} --json sweep-${{ matrix.part }}.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: no-crash-sweep-${{ matrix.part }}
+          path: sweep-${{ matrix.part }}.json
+
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv pip install --system -e ".[dev]"
+      - name: benchmark (10,000 agents, p50/p95/throughput/memory)
+        run: python -m gridsignal.perf --sizes 10000 --repeats 3 --json perf.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark
+          path: perf.json

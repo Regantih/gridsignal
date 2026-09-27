@@ -1,0 +1,163 @@
+{
+  "entries": {
+    "3e2be48d48e775704be7d7e9": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.42,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.74,
+            "1": 0.14,
+            "2": 0.12
+          },
+          "question_id": "backup_risk",
+          "score": 0.39,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "device_fault",
+          "confidence": 0.33,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.47,
+            "gateway_outage": 0.35,
+            "grid_event": 0.07,
+            "spoofed_agent": 0.09,
+            "telemetry_lag": 0.02
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-012": {
+          "choice": null,
+          "confidence": 0.7,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.3,
+            "yes": 0.7
+          },
+          "question_id": "trust_BAT-012",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-020": {
+          "choice": null,
+          "confidence": 0.72,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.28,
+            "yes": 0.72
+          },
+          "question_id": "trust_BAT-020",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-040": {
+          "choice": null,
+          "confidence": 0.72,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.28,
+            "yes": 0.72
+          },
+          "question_id": "trust_BAT-040",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 321.9,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-012",
+        "trust_BAT-020",
+        "trust_BAT-040"
+      ]
+    },
+    "a772d59fa12771122b43cc10": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.54,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.78,
+            "1": 0.14,
+            "2": 0.08
+          },
+          "question_id": "backup_risk",
+          "score": 0.31,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "device_fault",
+          "confidence": 0.5,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.6,
+            "gateway_outage": 0.27,
+            "grid_event": 0.04,
+            "spoofed_agent": 0.07,
+            "telemetry_lag": 0.02
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-027": {
+          "choice": null,
+          "confidence": 0.73,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.27,
+            "yes": 0.73
+          },
+          "question_id": "trust_BAT-027",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-037": {
+          "choice": null,
+          "confidence": 0.71,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.29,
+            "yes": 0.71
+          },
+          "question_id": "trust_BAT-037",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-045": {
+          "choice": null,
+          "confidence": 0.73,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.27,
+            "yes": 0.73
+          },
+          "question_id": "trust_BAT-045",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 295.5,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-027",
+        "trust_BAT-037",
+        "trust_BAT-045"
+      ]
+    }
+  },
+  "model": "typesafe-ai/jev",
+  "note": "Recorded Jev answers for simulated fleet state; replayed when no API key is set.",
+  "recorded_at": "2026-09-26T05:07:49+00:00",
+  "scenario": "single_device",
+  "transport": "vercel-ai-gateway"
+}

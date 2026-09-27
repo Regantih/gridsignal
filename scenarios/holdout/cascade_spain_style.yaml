@@ -1,0 +1,45 @@
+name: Cascade, Spain-style compound event
+description: >
+  A compound event that arrives in waves so the faults interact: a simulated generation
+  trip pulls frequency down, two gateway rings drop while the fleet is already short,
+  and a telemetry wave then hides which of the survivors is still delivering. Inspired
+  as context only by ENTSO-E's account of the 28 April 2025 Iberian blackout, which it
+  attributes to many interacting factors including voltage-control gaps, rapid output
+  reductions and generator disconnections. Nothing here reproduces that event: every
+  frequency, outage and price value in this drill is simulated.
+held_out: true
+seed: 42
+agents:
+  batteries: 1000
+event:
+  scenario: scarcity
+stale_after_s: 120
+duration_s: 1200
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 60
+coordinator:
+  llm: false
+injections:
+  - kind: generation_trip
+    at_s: 30
+    hz: 59.88
+    kw: 900
+  - kind: gateway_outage
+    devices: [BAT-042]
+    at_s: 75
+  - kind: gateway_outage
+    devices: [BAT-118]
+    at_s: 110
+  - kind: stale_telemetry
+    devices: [BAT-003, BAT-011, BAT-027, BAT-055, BAT-064, BAT-090]
+    at_s: 150
+
+# The wave that started it is a grid-side supply loss; the gateway rings and the stale
+# telemetry are what it knocked over on the way through.
+ground_truth:
+  root_cause: grid_event
+  note: >
+    Simulated generation trip first, gateway ring losses and a stale-telemetry wave
+    second. The rules were written for single-cause injections, so a compound event is
+    genuinely outside what either the rules or the Jev prompts were written for.

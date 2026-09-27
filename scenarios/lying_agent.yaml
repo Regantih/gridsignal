@@ -1,0 +1,33 @@
+name: Lying agent and stale telemetry
+description: >
+  A gateway firmware ring goes dark, one agent edits its capability card after signing
+  it to claim 500 kW it does not have, and a handful of healthy agents stop sending
+  heartbeats. The registry rejects the forged card and lets the silent ones go stale,
+  so neither can win an award.
+seed: 42
+agents:
+  batteries: 1000
+event:
+  scenario: scarcity
+stale_after_s: 120
+duration_s: 900
+approval:
+  approver: T. Okafor (Reliability Engineer)
+  delay_s: 60
+coordinator:
+  llm: false
+injections:
+  - kind: gateway_outage
+    devices: [BAT-042]
+    at_s: 45
+  - kind: lying_agent
+    device: BAT-113
+    claim_kw: 500
+    at_s: 50
+  - kind: stale_telemetry
+    devices: [BAT-201, BAT-202, BAT-203, BAT-204]
+    at_s: 55
+
+# The forged card and the silent telemetry are noise: the lost kW comes from the gateway ring.
+ground_truth:
+  root_cause: gateway_outage

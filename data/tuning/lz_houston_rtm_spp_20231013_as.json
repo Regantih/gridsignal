@@ -1,0 +1,16 @@
+{
+  "location": "ERCOT system-wide",
+  "market": "DAM_ANCILLARY",
+  "date": "2023-10-13",
+  "source": "https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER",
+  "fetched_at": "2026-09-26T06:07:50+00:00",
+  "intervals": 24,
+  "products": [
+    "regup",
+    "regdn",
+    "rrs",
+    "ecrs",
+    "nonspin"
+  ],
+  "units": "$/MW per hour of capacity held"
+}

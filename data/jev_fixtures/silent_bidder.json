@@ -1,0 +1,394 @@
+{
+  "entries": {
+    "17693d6c8ae067ac12ab086d": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.39,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.7,
+            "1": 0.2,
+            "2": 0.1
+          },
+          "question_id": "backup_risk",
+          "score": 0.41,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "gateway_outage",
+          "confidence": 0.15,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.05,
+            "gateway_outage": 0.33,
+            "grid_event": 0.09,
+            "spoofed_agent": 0.25,
+            "telemetry_lag": 0.28
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-012": {
+          "choice": null,
+          "confidence": 0.59,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.41,
+            "yes": 0.59
+          },
+          "question_id": "trust_BAT-012",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-020": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "trust_BAT-020",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-040": {
+          "choice": null,
+          "confidence": 0.67,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.33,
+            "yes": 0.67
+          },
+          "question_id": "trust_BAT-040",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 379.8,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-012",
+        "trust_BAT-020",
+        "trust_BAT-040"
+      ]
+    },
+    "20a9b6043cb2b73edd7a84bd": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.49,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.16,
+            "2": 0.09
+          },
+          "question_id": "backup_risk",
+          "score": 0.34,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "telemetry_lag",
+          "confidence": 0.12,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.09,
+            "gateway_outage": 0.29,
+            "grid_event": 0.12,
+            "spoofed_agent": 0.2,
+            "telemetry_lag": 0.3
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-027": {
+          "choice": null,
+          "confidence": 0.71,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.29,
+            "yes": 0.71
+          },
+          "question_id": "trust_BAT-027",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-037": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "trust_BAT-037",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-045": {
+          "choice": null,
+          "confidence": 0.7,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.3,
+            "yes": 0.7
+          },
+          "question_id": "trust_BAT-045",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 328.5,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-027",
+        "trust_BAT-037",
+        "trust_BAT-045"
+      ]
+    },
+    "4cbbc49ebc38dba1d0e6d6f4": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.52,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.77,
+            "1": 0.15,
+            "2": 0.08
+          },
+          "question_id": "backup_risk",
+          "score": 0.32,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "telemetry_lag",
+          "confidence": 0.42,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.05,
+            "gateway_outage": 0.22,
+            "grid_event": 0.03,
+            "spoofed_agent": 0.17,
+            "telemetry_lag": 0.53
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-027": {
+          "choice": null,
+          "confidence": 0.72,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.28,
+            "yes": 0.72
+          },
+          "question_id": "trust_BAT-027",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-037": {
+          "choice": null,
+          "confidence": 0.68,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.32,
+            "yes": 0.68
+          },
+          "question_id": "trust_BAT-037",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-045": {
+          "choice": null,
+          "confidence": 0.69,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.31,
+            "yes": 0.69
+          },
+          "question_id": "trust_BAT-045",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 362.5,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-027",
+        "trust_BAT-037",
+        "trust_BAT-045"
+      ]
+    },
+    "9f95bdc60c1eac80716a3cec": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.4,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.71,
+            "1": 0.18,
+            "2": 0.11
+          },
+          "question_id": "backup_risk",
+          "score": 0.4,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "telemetry_lag",
+          "confidence": 0.34,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.04,
+            "gateway_outage": 0.22,
+            "grid_event": 0.04,
+            "spoofed_agent": 0.23,
+            "telemetry_lag": 0.47
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-012": {
+          "choice": null,
+          "confidence": 0.57,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.43,
+            "yes": 0.57
+          },
+          "question_id": "trust_BAT-012",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-016": {
+          "choice": null,
+          "confidence": 0.65,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.35,
+            "yes": 0.65
+          },
+          "question_id": "trust_BAT-016",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-036": {
+          "choice": null,
+          "confidence": 0.67,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.33,
+            "yes": 0.67
+          },
+          "question_id": "trust_BAT-036",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 339.7,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-012",
+        "trust_BAT-016",
+        "trust_BAT-036"
+      ]
+    },
+    "c576901e3073409c82c3ffd5": {
+      "answers": {
+        "backup_risk": {
+          "choice": null,
+          "confidence": 0.51,
+          "kind": "score",
+          "probabilities": {
+            "0": 0.75,
+            "1": 0.17,
+            "2": 0.08
+          },
+          "question_id": "backup_risk",
+          "score": 0.33,
+          "yes": null
+        },
+        "root_cause": {
+          "choice": "telemetry_lag",
+          "confidence": 0.4,
+          "kind": "choice",
+          "probabilities": {
+            "device_fault": 0.03,
+            "gateway_outage": 0.2,
+            "grid_event": 0.04,
+            "spoofed_agent": 0.2,
+            "telemetry_lag": 0.53
+          },
+          "question_id": "root_cause",
+          "score": null,
+          "yes": null
+        },
+        "trust_BAT-012": {
+          "choice": null,
+          "confidence": 0.55,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.45,
+            "yes": 0.55
+          },
+          "question_id": "trust_BAT-012",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-016": {
+          "choice": null,
+          "confidence": 0.63,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.37,
+            "yes": 0.63
+          },
+          "question_id": "trust_BAT-016",
+          "score": null,
+          "yes": true
+        },
+        "trust_BAT-036": {
+          "choice": null,
+          "confidence": 0.65,
+          "kind": "noul",
+          "probabilities": {
+            "no": 0.35,
+            "yes": 0.65
+          },
+          "question_id": "trust_BAT-036",
+          "score": null,
+          "yes": true
+        }
+      },
+      "latency_ms": 282.1,
+      "model": "typesafe-ai/jev",
+      "questions": [
+        "backup_risk",
+        "root_cause",
+        "trust_BAT-012",
+        "trust_BAT-016",
+        "trust_BAT-036"
+      ]
+    }
+  },
+  "model": "typesafe-ai/jev",
+  "note": "Recorded Jev answers for simulated fleet state; replayed when no API key is set.",
+  "recorded_at": "2026-09-26T06:16:06+00:00",
+  "scenario": "silent_bidder",
+  "transport": "vercel-ai-gateway"
+}

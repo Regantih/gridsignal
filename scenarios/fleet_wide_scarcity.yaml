@@ -1,0 +1,34 @@
+name: Fleet-wide scarcity squeeze
+description: >
+  Three load zones lose their uplink during the scarcity event, which is more capacity
+  than the rest of the fleet has spare. The mesh covers what it can and escalates the
+  remainder to a human instead of pretending the commitment is met.
+seed: 42
+agents:
+  batteries: 1000
+event:
+  scenario: scarcity
+stale_after_s: 120
+duration_s: 1200
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 60
+coordinator:
+  llm: false
+injections:
+  - kind: zone_outage
+    zone: LZ_HOUSTON
+    at_s: 45
+  - kind: zone_outage
+    zone: LZ_NORTH
+    at_s: 60
+  - kind: zone_outage
+    zone: LZ_SOUTH
+    at_s: 75
+  - kind: zone_outage
+    zone: LZ_WEST
+    at_s: 90
+
+# Four zone gateways drop; the lost kW is a gateway outage, not per-device faults.
+ground_truth:
+  root_cause: gateway_outage

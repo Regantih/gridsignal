@@ -1,10 +1,23 @@
 .venv/
 __pycache__/
 *.pyc
+*.egg-info/
 .env
 data/raw/*
 data/processed/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+# Bundled ERCOT price sample so the demo runs offline.
+!data/processed/*_sample.parquet
+!data/processed/*_sample.json
+!data/processed/*_sample_dam.parquet
+!data/processed/*_sample_dam.json
+!data/processed/*_sample_as.parquet
+!data/processed/*_sample_as.json
 .streamlit/secrets.toml
 .DS_Store
+data/traces/
+
+# Playwright raw recording; the committed capture is docs/media/demo.mp4
+docs/media/demo.webm
+docs/media/raw/

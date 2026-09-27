@@ -1,0 +1,5 @@
+# For Streamlit Community Cloud, which installs from requirements.txt.
+# Installing the repo itself pulls the runtime dependencies declared in pyproject.toml
+# and puts the `gridsignal` package on the path for app/dashboard.py.
+# Local development should use: pip install -e ".[dev]"
+.

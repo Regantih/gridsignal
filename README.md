@@ -1,77 +1,1524 @@
 # GridSignal
 
-Turning ERCOT grid data into battery dispatch signals that Base Power members can act on.
+Turning ERCOT grid data into battery dispatch signals that Base Power members can act on —
+plus **GridSignal Control Room**, a simulation-only operator view that keeps a distributed
+home-battery fleet coordinated when a device fails.
 
 Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
-**Tracks:** Open Grid Data + Most Commercializable
+**Tracks:** Orchestration (Control Room) + Open Grid Data
+
+> **Simulation only.** The fleet, the failure and the recovery are deterministic local mock data;
+> only the ERCOT settlement prices are real (a cached public price trace). It does not connect to
+> real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
+> anything. A human operator must approve every recovery action.
 
 ## Problem
 
-TODO (1 to 2 sentences): what most people miss in ERCOT data, and why it matters to a home battery owner.
+A home-battery fleet is only worth what it can reliably deliver during a grid event. When a single
+device goes dark mid-event, the operator has to notice it, understand what it costs the fleet's
+commitment, decide what to do, and coordinate engineers and field techs — usually across dashboards,
+chat and spreadsheets, under time pressure.
 
 ## Solution
 
-TODO: the core loop in one paragraph. Ingest ERCOT prices, load and generation, then detect and forecast scarcity and price-spike windows by load zone, then recommend charge, hold or export, and show the dollar value captured.
+GridSignal Control Room closes that loop in one screen: telemetry loss becomes a typed incident with
+a root-cause hypothesis and quantified impact, the orchestrator proposes a recovery plan and fans out
+role-specific tasks, **a human approves**, and only then is the failed device quarantined and its
+committed kW reassigned across healthy headroom — with an immutable audit timeline of the whole
+sequence.
+
+The impact is priced against **real ERCOT data**: the grid event sits on the most expensive
+two-hour window of a real LZ_HOUSTON trading day, so the incident shows dollars at risk
+(`kW x hours x $/MWh`) before approval and dollars recovered after it.
+
+Two dials in the sidebar make that number mean something at Base's scale:
+
+- **Price scenario** — a normal peak day (2026-09-22, peak $199.74/MWh) or a real ERCOT
+  scarcity day (2023-09-06, peak $5,147.65/MWh, settlement at the offer cap plus reserve adders).
+- **Fleet scale** — 48, 1,000 or 10,000 simulated devices. The failure is a gateway firmware
+  ring that covers one device in 48, so a 10,000-device fleet loses 166 dispatchable devices
+  to the same root cause. On the scarcity day that is **$4,812 at risk and $4,751 recovered**
+  from one operator approval, versus $1.67 on the 48-device normal day. Reproduce every figure
+  in this section with `python -m gridsignal.demo_numbers`.
+
+## Why this matters to Base
+
+The short version is in the app: **View → Why** (or `python -m gridsignal.why`) states the
+problem, the approach, the evidence and the limits with every number recomputed live.
+
+Base Power sells homeowners a battery and sells the grid the fleet those batteries add up to. Both
+promises break in the same place: a device that stops answering during the two hours that pay for
+the year. This repo is built around that minute.
+
+- **The commitment survives the failure.** A lost device is detected, priced, quarantined and its
+  kW reassigned across healthy headroom, with the member's backup reserve protected. On the
+  bundled scarcity day one operator approval is the difference between $4,812 at risk and $4,751
+  recovered across 10,000 devices, 8,000 of which the mesh is allowed to dispatch.
+- **A person still signs.** Nothing dispatches without a named human approval, and the whole
+  sequence lands in an append-only audit timeline — the shape a utility-facing operation has to
+  have before it can be trusted with real hardware.
+- **It scales to the fleet Base is building, not the one in the demo.** Building a 10,000-device
+  fleet in memory, raising the incident and recomputing the whole allocation takes ~137 ms of
+  compute, and building a 10,000-agent registry, sweeping its heartbeats and clearing one
+  contract-net auction takes ~264 ms. These are in-process compute timings on simulated state:
+  no network, no device round trips, no field latency.
+- **The homeowner is a first-class view.** The same event rendered as backup hours and dollars
+  earned, with no incident IDs — the support conversation, not the ops console.
+- **The market read is honest.** The dispatch policy is scored on real ERCOT days it was never
+  tuned on, losing days included, because a number Base cannot reproduce is worth nothing to Base.
 
 ## Quick Start
+
+One command starts the demo from a fresh clone (after install):
 
 ```bash
 git clone https://github.com/Regantih/gridsignal.git
 cd gridsignal
-python -m venv .venv && source .venv/bin/activate
+python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env          # add keys if you use the ERCOT API
-python -m gridsignal.pipeline # ingest -> detect -> forecast -> signals
-streamlit run app/dashboard.py
+streamlit run app/dashboard.py     # -> http://localhost:8501
 ```
+
+Requires Python 3.11 or newer. No API keys, accounts or network access are required: the ERCOT
+price traces and the recorded Jev answers are bundled in the repo.
+
+Timed from an empty directory on a 2 vCPU Linux box before submission: clone 1.3 s, venv 2.3 s,
+install 14.7 s, `python -m gridsignal.demo_numbers` 14.8 s, app serving within 25 s of the
+`streamlit` command, and the full suite green with `AI_GATEWAY_API_KEY` and `TYPESAFE_API_KEY`
+unset.
+
+### Environment variables (all optional)
+
+Copy [`.env.example`](.env.example) to `.env` only if you want a live path; every variable is
+optional and the app runs fully offline without any of them.
+
+| Variable | Used for | Without it |
+|---|---|---|
+| `AI_GATEWAY_API_KEY` | Jev via Vercel AI Gateway (`POST /v1/evaluate`, model `typesafe-ai/jev`) | Recorded Jev answers replay from `data/jev_fixtures/`; then deterministic rules, labelled "rules (Jev offline)" |
+| `TYPESAFE_API_KEY` | Jev direct (`POST /v1/systemone`, model `jev-latest`) | as above |
+| `ERCOT_API_USERNAME` / `ERCOT_API_PASSWORD` / `ERCOT_API_SUBSCRIPTION_KEY` | Only if you swap `gridstatus` for ERCOT's official API | `gridstatus` reads the same public reports with no credentials |
+| `DEFAULT_ZONE` | Load zone for refreshes | `LZ_HOUSTON` |
+
+No key is ever written to a fixture, trace, log or commit.
+
+Refresh the cached prices from ERCOT's public MIS reports (needs the `[ercot]` extra and network,
+still no credentials):
+
+```bash
+python -m gridsignal.ingest --date 2026-09-22          # LZ_HOUSTON real-time 15-min SPP
+python -m gridsignal.ingest --scarcity-year 2023       # highest-priced day of that year
+```
+
+## Tests and formatting
+
+```bash
+pytest -q                 # failure -> incident -> approval -> recovery state flow
+pytest -q -n auto         # same tests, split across cores
+pytest -q -m "not slow"   # everything except fleet-scale sweeps, app renders and reports
+ruff check .
+ruff format --check .
+```
+
+CI runs the two halves (`-m slow` and `-m "not slow"`), lint, the command-line sweep, the
+dashboard sweep and the benchmark as parallel jobs; coverage is the same as one serial run.
+
+## Using the dashboard
+
+The sidebar **View** switch picks between the five pages:
+
+### Control Room
+
+- **Advanced panels** (sidebar, **off by default**) — off, the screens show only the story
+  [`docs/DEMO.md`](docs/DEMO.md) narrates: overview, home-first, fleet map, price trace,
+  incident, approval, recovery and the audit trail. On, it adds the full-fleet replay, spare
+  capacity, the storm reserve policy, the congestion dispatch preference, mutual aid, the
+  portable-generator note, the install wave and the calibration line described below.
+- **Trigger BAT-042 Failure** (sidebar) — simulate the telemetry blackout.
+- **Approve Recovery Plan** (incident panel) — the human gate; nothing moves until it is clicked.
+- **Reset Demo** (sidebar) — replay the story without reloading the browser.
+- **Price scenario / Fleet scale** (sidebar) — switch between the normal and scarcity ERCOT days
+  and between 48, 1,000 and 10,000 devices; either rebuilds the simulation from its stable state.
+- **Congestion dispatch preference** (incident column) — discharge one zone's batteries to their
+  headroom first, ordered by the bundled ERCOT basis; the target, the member reserve and the
+  approval gate are unchanged, and the choice is written to the audit log.
+- **Home-first dispatch** (panel under the overview) — every battery serves its own simulated
+  household load out of storage first and exports only the surplus, so
+  `export kW = discharge kW − home load kW`. The panel splits total discharge into what members'
+  homes took and what reached the grid, and breaks both down by unit type and by tenant.
+- **Member reserve floor** (panel below the map) — raise the reserve before a forecast storm and
+  the panel prices the trade: kW no longer exported, the revenue given up over the event window,
+  and the backup hours that buys. Applying it reallocates the fleet and writes a `reserve_policy`
+  entry to the audit log.
+
+#### Spare capacity: offered, or held for a named reason
+
+A fleet that covers its event target and then sits on tens of MW of idle inverter is leaving
+money on the table, so the Control Room accounts for **every** spare kW. The **Spare capacity**
+panel offers the headroom that is left after the member reserve and the existing commitments,
+and lists what it holds back and why: member backup reserve, energy serving the member's own
+home, offline/degraded units, another tenant's batteries, a simulated feeder export cap
+(`DELIVERABILITY_KW_PER_DEVICE = 6 kW` per operator-controlled unit, a modelling assumption),
+or a price below the cycle-wear floor. Offering it writes a `surplus_offered` entry to the audit
+log; holding it writes `surplus_held` with the reasons.
+
+On the bundled scarcity window at **$138.39/MWh over 2.00 h**, one command
+(`python -m gridsignal.surplus`) reports:
+
+| Simulated fleet | Event target | Offered on top | Simulated revenue | After modelled wear |
+|---|---:|---:|---:|---:|
+| 48 devices | 171 kW | 46 kW | $12.69 | $12.23 |
+| 10,000 devices | 36,000 kW | 9,425 kW | $2,608.63 | $2,514.38 |
+
+At 10,000 devices the held-back blocks are 24,500 kW of member backup reserve, 19,329 kW serving
+members' own homes and 21,330 kW of the partner utility's tenant — no unexplained idle capacity.
+Prices are real cached ERCOT prints; the fleet, the feeder cap and the wear cost are simulated.
+Tests: `tests/test_control_room.py` (offer, named reasons, reserve floor after offering, a cheap
+window held with the price named, and the per-zone feeder cap).
+
+#### Full-fleet scarcity replay (one demo scene)
+
+A panel under the home-first split replays the whole fleet against the real **2023-09-06
+LZ_HOUSTON** scarcity day and injects three faults inside the price peak at once: the gateway
+firmware ring behind `BAT-042` goes dark, 3% of homes stop reporting, and 12 agents re-publish
+edited cards claiming 480 kW they do not have. One command reproduces it:
+
+```bash
+python -m gridsignal.replay          # 10,000 batteries; --devices to scale down
+```
+
+| 10,000 simulated batteries, real $4,222.48/MWh peak over 1.97 h | Result |
+|---|---:|
+| kW lost to the three faults | 1,638 kW |
+| At risk with no orchestration (the kW never comes back) | $13,618 |
+| Spare headroom left in the healthy fleet when the faults landed | 9,617 kW (5.9x the kW lost) |
+| Protected after one human approval | $13,436 (99%) |
+| Not recovered: the 3.4 simulated minutes the fleet spent degraded | $182 |
+| Spoofed capacity refused on signature | 480 kW, 12 cards |
+| Wall-clock runtime | 0.7 s |
+
+**The 99% is not a guarantee, and it is deliberately not 100%.** Reassigned kW only earns from
+the moment the approval lands, so the minutes the fleet spent degraded are priced as lost — the
+recovery is valued over the 1.94 h left after the fix, not the whole window. Even that much came
+back only because 9,617 kW of uncommitted, deliverable headroom — 5.9x the 1,638 kW lost — was
+still sitting in the healthy fleet above every member's reserve. Recovery is capped by that headroom: on a fleet already
+committed to its target, or with the faults hitting a larger share of it, the same orchestration
+would recover only part. The replay prints the headroom next to the recovery for that reason.
+
+The prices are real cached ERCOT settlement prints; the batteries, the faults and the spoofing
+are simulated. Stale homes are dropped from the commitment rather than assumed good, spoofed
+cards fail their HMAC and never reach the coordinator, and the reassignment itself waits for the
+operator's approval click. Tests: `tests/test_replay.py`.
+
+#### Ancillary co-optimization (energy and capacity from one battery)
+
+A home battery spends most of the day holding still. ERCOT pays for that: five day-ahead
+ancillary products buy the *ability* to move, not the movement. GridSignal sells the capacity the
+energy plan leaves idle, subject to the same backup reserve and to a deliverability rule — an
+award is only offered when the state of charge can sustain it for the product's full duration
+(Reg Up/RRS 1 h, ECRS 2 h, Non-Spin 4 h) above the member's reserve, and only one product is sold
+per hour so no kW is promised twice. Where day-ahead capacity pays more than the day-ahead energy
+curve, the export is withheld and the energy is rented instead; both prices are published before
+the trade day, so nothing here uses hindsight.
+
+**Bids are restricted to what the ERCOT ADER pilot actually allows**, which is the only route an
+aggregation of home batteries has into these markets today. From the *ADER Pilot Project
+Governing Document Phase 3.3* (3 June 2026) and the *ADER Telemetry Validation, SCED and AS
+Qualification Procedure 3.0* (27 February 2026), both published at
+[ercot.com/mktrules/pilots/ader](https://www.ercot.com/mktrules/pilots/ader): an ADER may offer
+**Non-Spin and ECRS only**, each capped at **100 MW system-wide**, with no QSE registering more
+than **90%** of either limit; total registered ADER capacity is capped at **500 MW system-wide**;
+an aggregation must offer at least 100 kW and each premise 1 MW or less. Those numbers are
+encoded in `ADER_PILOT` in `src/gridsignal/ancillary.py` and enforced per bid: 90 MW shared
+across 10,000 simulated batteries is **9.0 kW each**, and Reg Up, Reg Down and RRS are simply not
+offered.
+
+Enforcement is not the bidder's own opinion of itself. Every offer — the hour's export as well as
+its capacity offer — is built, handed to the validator in `src/gridsignal/guardrails.py`, and only
+sent if it comes back clean; see [market guardrails](#market-guardrails-every-offer-is-validated-before-it-leaves)
+below for the rules and their sources.
+
+```bash
+python -m gridsignal.ancillary       # real ERCOT AS clearing prices, simulated battery
+```
+
+| 7 held-out days, per battery per day, **inside the ADER pilot rules** | Legacy 13.5 kWh / 5 kW | Base Core-style 40 kWh / 20 kW |
+|---|---:|---:|
+| Uplift over energy alone, **median day** | +$0.05 | **+$0.15** |
+| Uplift over energy alone, mean | +$2.21 | +$0.32 |
+| Ancillary capacity, 7 days | $19.43 | $2.22 |
+| Backup reserve violations | 0 | 0 |
+| Offers refused by a guardrail | 0 | 0 |
+
+The legacy unit's mean is larger than the Base Core-style unit's because a 5 kW inverter has far
+less energy revenue to give up: it withholds export in 5 hours to rent capacity instead, where the
+bigger unit never finds that trade worth taking.
+
+**Lead with the median: the mean is one day.** Per held-out day, Base Core-style unit, ECRS and
+Non-Spin only:
+
+| Day | Uplift | ECRS | Non-Spin | Mean cleared price |
+|---|---:|---:|---:|---:|
+| 2023-04-06 | $0.03 | $0.00 | $0.04 | $0.98/MW-h |
+| **2024-05-08** | **$1.47** | **$1.10** | $0.38 | **$12.12/MW-h** |
+| 2024-12-20 | $0.02 | $0.00 | $0.01 | $0.71/MW-h |
+| 2025-04-07 | $0.18 | $0.17 | $0.00 | $4.80/MW-h |
+| 2025-05-03 | $0.26 | $0.09 | $0.17 | $5.17/MW-h |
+| 2026-09-23 | $0.15 | $0.00 | $0.13 | $1.66/MW-h |
+| 2026-09-24 | $0.11 | $0.00 | $0.10 | $1.39/MW-h |
+
+Inside the pilot rules a held-out day pays a median +$0.15 and a mean +$0.32 per battery, with
+2024-05-08 alone carrying 66% of the total — the day ECRS and Non-Spin cleared far above the
+rest. Ancillary capacity is not a daily annuity for a home battery: it is a rare-day
+product, and a business case built on the mean is built on one May afternoon. On the 2023-09-06
+scarcity day the Base Core-style unit earns $87.19 of energy plus $2.54 of pilot-eligible
+capacity.
+
+**Comparison only, not an offer.** Scoring the same days
+against all five products gives a median of $0.82 and a mean of $3.70 per battery per day —
+which no aggregation of home batteries may do today — and 85% of it is **Reg Down**, money for
+having room to charge. The pilot rules cost
+$3.38/battery/day of that mean (**91%**): the product that pays is the one an ADER is not allowed
+to sell. That comparison also fails its own price-taker test at fleet scale — 10,000 × 20 kW is
+200 MW against the 392 MW of Reg Down ERCOT procured in the checked hour (51%) — and 200 MW is
+itself 40% of the 500 MW the pilot allows to be registered system-wide. The CLI prints every one
+of these checks.
+
+Prices are real ERCOT day-ahead clearing prices; capacity payments only (deployment energy is not
+modelled), and every battery, load profile and award is simulated. Tests:
+`tests/test_ancillary.py`.
+
+#### Market guardrails: every offer is validated before it leaves
+
+A bidder that polices itself is not a guardrail. `src/gridsignal/guardrails.py` holds ERCOT's
+published limits as a list of rules, each carrying the document it is read off, and the
+co-optimizer cannot emit an offer that has not come back clean from `guardrails.check()`. A
+refused offer is dropped whole and counted — never trimmed to fit, because trimming would be a
+second bidder hidden inside the validator.
+
+| Guardrail | Rule | Source |
+|---|---|---|
+| Offer cap | No offer above the System-Wide Offer Cap: $5,000/MWh energy, $5,000/MW-h ancillary ($2,000 once the low cap is in force) | PUCT Subst. R. [25.509](https://ftp.puc.texas.gov/public/puct-info/agency/rulesnlaws/subrules/electric/25.509/25.509.pdf)(6), ERCOT Nodal Protocols §4.4.11 |
+| Energy floor | No energy offer below −$251/MWh, the Energy Offer Curve floor | Nodal Protocols §4.4.9.3.1, the floor [NPRR385](https://www.ercot.com/mktrules/issues/NPRR385) aligns to |
+| Pilot products | ECRS and Non-Spin only; Reg Up, Reg Down and RRS are not ADER products | [ADER Governing Document](https://www.ercot.com/mktrules/pilots/ader) Phase 3.3 §3, AS Qualification Procedure 3.0 |
+| Pilot volume | 100 MW each system-wide, no QSE above 90% of either | ADER Governing Document Phase 3.3 §3 |
+| Pilot premise | Aggregation ≥ 100 kW, each premise ≤ 1 MW | ADER Governing Document Phase 3.3 §2 |
+| Pilot registration | ≥ 100 kW registered to offer at all, ≤ 500 MW of ADER capacity across the whole pilot (this fleet: 200 MW) | ADER Governing Document Phase 3.3 §2 and §3 |
+| No double-sold kW | Energy plus every capacity offer on one battery in one hour stays inside the inverter | Nodal Protocols §4.4.7.2.2 (AS Offer Validation) |
+| Duration | The award is only offered if the pack can sustain it for the product's full hours above reserve | **modelled** — simplifies ERCOT's ESR qualification; the requirement itself is in the AS Qualification Procedure 3.0 |
+| Reserve | No energy or capacity offered out of the member's backup | **modelled** — this product's promise to the homeowner, not a market rule |
+
+The three rules this repo invented are labelled `modelled` in the code and in the CLI output, so
+none of them is ever cited as ERCOT's.
+
+```bash
+python -m gridsignal.guardrails      # the rules, their sources, and the proof they bite
+```
+
+Across the 7 bundled held-out days and both simulated battery types, **182 offers are built and
+0 refused** — the bidder is inside the rules. That is only worth believing because the same
+guardrails are shown to bite: a property sweep builds **200 random offer books (4,972 offers)**
+under deliberately hostile conditions (prices above the cap and below the floor, packs emptier
+than their reserve, products the pilot forbids) and **not one offer breaks a rule**, while the
+identical conditions with the clamp and the refusal removed produce **22,652 violations across
+five rules**. Tests: `tests/test_guardrails.py`, one invalid offer per guardrail plus the sweep.
+
+The validator never clamps. A price above the cap is refused and named, not quietly pulled down
+to $5,000 — a validator that corrects its caller is a second bidder in disguise, and the caller
+never learns it was wrong. `clamp_price()` exists for a bidder building its own prices, and the
+property sweep's hostile generator is one such caller.
+
+The backup reserve is enforced in the settlement, not just checked afterwards: anything that
+offers into a market settles through `backtest.value_captured(..., backup_kwh=...)`, so no export
+and no ordinary household load can take a pack below the member's promised energy. The standalone
+arbitrage studies keep `backup_kwh=0` — they are a study of the price signal, not a product, and
+say so.
+
+#### Backup promise ledger
+
+`python -m gridsignal.backup_ledger` is the receipt for that promise. A fifth of every pack is the
+member's, held for an outage — on a Base Core-style 40 kWh unit, 8.0 kWh, about 6.7 hours of
+essential household load at 1.2 kW. The ledger walks every path that moves a member's stored
+energy and records, per member and per interval, how much was promised, how much was standing
+there, and how much (if any) was delivered out of the promise: the market backtest on both pack
+sizes and both dispatch models across the held-out days, the Control Room's dispatch across the
+grid event on both price days, and every award in every bundled chaos scenario. **648 simulated
+members, 957 runs, 4,454 intervals, 0 that took a member's backup.**
+
+The pack starts a market day empty and fills, so a low state of charge is not itself a breach:
+what the promise forbids is *delivering* energy that had to come out of the floor, and that is the
+only thing counted. Zero is worth nothing on its own, so the same walk runs again with the floor
+removed and nothing else changed: **335 intervals breach, across 286 runs, spending 1,564.9 kWh of
+promised backup** — the guard is load-bearing, not a property of the schedule. The worst unguarded
+run on each path is printed beside the totals. Simulated fleet and household load, real cached
+ERCOT prices; on screen as **Control Room → Backup promise ledger**, tested in
+`tests/test_backup_ledger.py`.
+
+#### What-if console
+
+`python -m gridsignal.whatif` (and **Control Room → What-if console**) prices a hypothetical
+against the fleet already on screen, without touching it. The operator picks or types the
+scenario — `20% of LZ_HOUSTON offline at 17:00`, `gateway ring 3 dark`, `price spike to $3,000`,
+`BAT-042 offline` — and a parser, not a model, turns it into a question the same control-room
+engine answers: who drops out, what it costs, who can cover it and what the plan is.
+
+On the simulated 10,000-device fleet, `20% of LZ_HOUSTON offline at 17:00` drops 1,777.8 kW
+across **400 devices in LZ_HOUSTON**, **$492.05 of exposure** over the remaining hours at cached
+ERCOT prices, all of it coverable by spare export headroom elsewhere; `price spike to $3,000`
+is reported as **9,424.2 kW uncommitted**, worth **$56,545.50 of upside** — upside, not
+exposure, because nothing has failed. Every answer lands in about 25 ms on a 2 vCPU box
+(machine-dependent; the test budget is 2 s at 10,000 devices).
+
+The console is deliberately inert: it reads the engine and returns numbers, it never assigns a
+kW, opens an incident or writes the audit trail, and the plan it prints ends with the human
+approval step. The member's backup reserve is outside the recoverable headroom by construction,
+the utility partner's units are neither counted as our loss nor used as our cover, and any offer
+in the plan still has to pass `gridsignal.guardrails` before it could leave. Tested in
+`tests/test_whatif.py` (parser, arithmetic, no-mutation, timing).
+
+#### Base's two business models, scored on the same simulated fleet
+
+Base has described two ways the same battery earns: a **retail-choice** model, where Base is the
+member's retail provider and sells the battery's energy and grid services itself, and a
+**utility-partner** model, where the utility controls dispatch and pays Base for access (public
+interview with Base's COO, [sourcery.vc](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b),
+3 Aug 2026). `src/gridsignal/business.py` runs both over the same seven bundled held-out days and
+the same simulated Base Core-style battery, so the difference is arithmetic, not opinion.
+
+```bash
+python -m gridsignal.business   # both models, the assumptions, and the break-even fee
+```
+
+| | retail-choice | utility-partner |
+|---|---|---|
+| who picks the dispatch hour | Base, from the price | the utility, from its own peak |
+| who carries price risk | Base | the utility |
+| who bills the member | Base, as the retail provider | the utility |
+| who may sell ECRS and Non-Spin | Base, inside the ADER pilot | the utility's QSE |
+| who enforces the backup promise | Base | Base, over the utility's call |
+| what Base earns | market revenue, variable | an access fee, certain |
+
+Base's access fee is not public, so the model does not invent one: it reports the **break-even
+fee**, what the utility would have to pay for the partner model to match what retail earns on the
+same days, read on the median day first. For the battery alone — its energy and its grid
+services — that is **$33.44 per battery-month**, or **$3.72 per kW-month** on the 9.0 kW the
+pilot lets it register; the mean day is $125.86, and that mean is one scarcity day carrying
+seven. To replace the whole retail relationship, the margin on the member's own supply
+included, **$129.20 per battery-month** (mean $146.53). The gap is the finding: in the retail
+model most of what Base earns is the member's electricity bill, not the battery's market
+revenue, so "the utility pays us for the fleet" and "we sell the member power" are not the same
+business at the same price.
+
+Dispatching on a clock rather than on price leaves
+**$0.65 per battery per day of wholesale value** behind (median), and on 2 of the 7 days the
+called schedule is worth *less than nothing* because it refills through an expensive hour. That is
+what the utility buys and what Base stops carrying. What does not change with the model: with the
+reserve floor removed, the utility's call spends the member's promised
+backup on **7 of 7 days**; with it, on none. The partner picks the hour, Base still answers to the
+member.
+
+Simulated, and the assumptions are printed with the numbers: a modelled 14¢/kWh flat retail rate
+(no Base tariff is public), a modelled 16:00–20:00 call window standing in for a
+[4CP](https://www.ercot.com/mktinfo/4cp)-driven call, and the utility's avoided transmission
+charge, hardware, acquisition and financing all left out, which is why this is a comparison of
+revenue paths and not a P&L. Tests: `tests/test_business.py`.
+
+#### Deliverability proof before every award
+
+A bid is a claim about one instant; an award is a promise about a window. Before any
+energy or ancillary award is committed, `src/gridsignal/mesh/deliverability.py` proves the
+battery can hold the awarded kW for **every hour of the event** — spare energy above the
+member's backup reserve, free inverter power (a degraded unit is derated to 50%, a
+modelling assumption), minus the kW it already owes other awards. A card that is stale or
+rejected proves nothing and delivers zero. What it cannot prove is trimmed to what the
+battery can hold, or refused, and the reason is written to the trace as a
+`deliverability` message; the auction then moves the kW to the next bidder. The proof runs
+twice — when the award is proposed and again at the approval gate, because state drifts
+while an operator is deciding.
+
+```bash
+python -m gridsignal.deliverability_report   # every scenario, with the check and without
+```
+
+Across the five tuned scenarios and the four held-out drills (3,343 awards), the unchecked
+auction would have committed **3.21 kW across 2 awards** it could not have delivered: a
+battery re-bidding, in a second round, energy it already owed its first award. The check
+trimmed one and refused the other, with 0 member backup reserve violations either way. The
+low count is the honest finding — the bid filter already keeps most awards deliverable, and
+the check catches the case it structurally misses, the second award. Everything here is a
+simulated fleet on bundled ERCOT prices. Tests: `tests/test_deliverability.py`.
+
+#### Operator workflow: one incident, not a wall of alarms
+
+A gateway ring going dark is one event, but a per-device monitor pages about it once per
+device per symptom. **Control Room → Operator workflow** turns that back into work an
+operator can actually do:
+
+- **Grouped alarms.** Alarms are grouped by the thing that failed — one gateway ring,
+  within a two-minute window — so a second failure on the same ring later is still its own
+  incident and is never hidden inside the first.
+- **One timeline.** The append-only audit trail is read out as the stages an operator
+  cares about: detect → diagnose → approve → reassign → recover, timed from detection,
+  with the dollars at risk and recovered at the end.
+- **Override any award, with a reason.** The operator can change any battery's award by
+  hand; the reason is required and is written into the same audit trail. What they cannot
+  override is the physics or the tenant boundary: the new award is still capped by
+  exportable headroom above the member's backup reserve, and a battery the partner utility
+  controls is refused.
+
+```bash
+python -m gridsignal.workflow --devices 10000 --stale-wave   # grouping, timeline, logged override
+```
+
+At 10,000 simulated devices, the dark ring raises **332 raw alarms from 166 batteries**
+(telemetry lost, capacity dropped) that group into **1 incident** — 332 alarms per incident
+read as one, instead of 332 pages. Add a fleet-wide stale-telemetry wave and the same
+grouping gives **808 alarms → 48 incidents (16.8 per incident)**, one per affected ring,
+rather than one per alarm. Tests: `tests/test_workflow.py`.
+
+#### Degradation-aware dispatch: what a cycle costs
+
+Every kWh through the pack spends a little of it, and the day-ahead policy above does not
+know that. `src/gridsignal/degradation.py` puts a dollar on the cycle and gates dispatch on
+it. **The wear cost is an assumption of this repo, stated so it can be argued with, not a
+vendor figure, a warranty or a measured degradation curve:** a pack costs
+`replacement $/kWh` and is modelled as delivering `cycle_life` equivalent full cycles, so a
+kWh of throughput costs the ratio of the two.
+
+| Battery type (simulated) | Usable | Assumption | Wear |
+|---|---|---|---|
+| Legacy unit | 13.5 kWh | $400/kWh over 4,000 cycles | **$100.00/MWh** of throughput |
+| Base Core-style unit (40 kWh / 20 kW, per public interview, not an official spec) | 40 kWh | $300/kWh over 6,000 cycles | **$50.00/MWh** of throughput |
+
+Two decisions, because they carry different costs. Taking a cycle at all has to pay for the
+energy *and* the wear, so a day whose best expected export cannot clear
+`day-ahead charge price ÷ round-trip efficiency + wear` is dropped entirely, charge
+included — that is a cycle the battery never spends. Once the cycle is taken the energy is
+bought, so each export is judged only on its own margin against the wear of moving it, and
+anything cheaper is held for a better interval. Both tests read only the day-ahead curve
+and the last settled print, so nothing here looks at a price before it settles
+(`tests/test_degradation.py::test_the_gate_never_reads_a_price_before_it_settles`).
+
+```bash
+python -m gridsignal.degradation   # net dollars after wear and cycles saved, both splits
+```
+
+Per battery per day against the naive schedule, wear charged on the throughput the policy
+adds over that schedule:
+
+| Split | Battery | Gross $ | Wear $ | Net $ | Net, gated $ | Cycles | Gated | Saved |
+|---|---|---|---|---|---|---|---|---|
+| tuning | legacy | -0.04 | 0.00 | -0.04 | **+0.81** | 6.00 | 2.00 | 4.00 |
+| tuning | Base Core-style | -0.25 | 0.00 | -0.25 | **+0.99** | 6.00 | 2.00 | 4.00 |
+| held-out | legacy | -0.22 | 0.00 | -0.22 | **+0.50** | 7.00 | 2.00 | 5.00 |
+| held-out | Base Core-style | -0.79 | 0.00 | -0.79 | **-0.90** | 7.00 | 7.00 | 0.00 |
+
+The wear column is $0.00 because wear is charged on the throughput the policy adds *over
+the naive schedule*, and since home-first dispatch holds storage for the day-ahead peak
+both schedules now fill the pack once a day: the cycle count is the same, so the only
+honest wear charge is on the cycles the gate removes.
+
+These are dollars against a naive schedule that now holds for its own evening peak too, so
+the gross column is negative: the wear question is which dispatch is worth the cycles, and it
+is answered the same way either way.
+
+The finding is the split itself: on the expensive pack the gate earns **+$0.72 per battery
+per day on held-out days and skips 5.00 of 7.00 equivalent full cycles**, because most days
+never had a spread worth grinding a $400/kWh pack for. On the cheaper Base Core-style pack
+the same floor never binds — it saves no cycles and costs $0.11 a day, since the few thin
+exports it withholds print higher than the day-ahead curve expected. Wear-gating is
+therefore a per-unit-type policy, not a fleet-wide one. Shown in **Grid Signals → Held-out
+days**. Tests: `tests/test_degradation.py`.
+
+#### Mixed fleet and control authority (simulated)
+
+The fleet is a blend of legacy units and **Base Core-style units (40 kWh, 20 kW inverter)**.
+Capacity and inverter power live on each agent card, and the Control Room reports revenue,
+export and backup hours by unit type. Those Base Core numbers are taken from a public interview
+with Base's COO ([Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b):
+"Base Core, 40 kWh of storage and 20 kW on the inverter") and are **simulated, not official
+specifications**.
+
+Each card also names who controls the battery: **Base** (retail-choice markets) or a **utility
+partner** (non-retail-choice markets, where the battery is owned by Base but dispatched by the
+utility). `LZ_WEST` is modelled as the partner's territory. The mesh never bids, awards or
+reassigns a battery it does not control — utility units follow the partner's own dispatch
+schedule, appear as a separate tenant in the Control Room, and are excluded from incident
+cohorts and recovery, including during the chaos drills
+(`tests/test_home.py::test_the_operator_never_dispatches_another_tenants_battery`).
+
+### Load telemetry file (replay mode)
+
+The fleet is simulated, but it is not the only way in. The sidebar's **Load telemetry file**
+imports a JSON-lines export into the same devices the Control Room is reading — state of
+charge, status, firmware and gateway land on the live fleet and dispatch is reallocated, so
+a battery that reports itself offline stops carrying the commitment on the screen. Two
+bundled files, both **clearly synthetic** (this repository's own fleet written out in the
+real format by `python scripts/make_telemetry_sample.py`, not a vendor export), or upload
+your own.
+
+```jsonc
+{"device_id": "BAT-001", "ts": "2023-09-06T16:59:43Z", "soc_kwh": 22.12, "power_kw": 0.08,
+ "status": "online", "firmware": "2.4.1", "gateway": "GW-01"}
+```
+
+One object per line; unknown keys are ignored so a richer export still loads. A row is
+rejected, with a reason shown on screen and printed by the CLI, when it is not valid JSON,
+is missing a field, has a timestamp without a UTC offset, carries a non-numeric or
+non-finite reading, names a status outside `online / degraded / offline / unavailable`, is
+**stale** (more than 900 s — one settlement interval — behind the control room's event
+clock) or **ahead of it** (more than 300 s, so one row dated 2099 is refused instead of
+becoming the reference everything else is aged against), names a device this fleet does
+not have, or reports past the device's nameplate.
+Where a device reports twice the newest row wins and the older one is counted as
+superseded. Format and rules: <code>data/telemetry/README.md</code>.
+
+```bash
+python -m gridsignal.telemetry                                      # bundled sample
+python -m gridsignal.telemetry data/telemetry/synthetic_bad_rows.jsonl   # one row per reason
+```
+
+### Member App
+
+The same incident seen from one house, deliberately kept separate from the operator tooling:
+hours of whole-home backup still held in reserve, how much of the discharge is powering the house
+versus exported to the grid, the dollars the battery earned in the event and the dollars it helped
+protect when a neighbour dropped out, plus a plain-English notice about the device issue and its
+resolution. Pick any home in the sidebar; BAT-042 is the one that fails.
+Trigger the failure from the Control Room (or the sidebar controls on this page) and the member
+copy moves from "Your battery is healthy" to "We've lost contact with your battery" to
+"Resolved" — with no incident IDs, kW targets or approval controls exposed to the homeowner.
+
+Member-facing numbers use two explicit assumptions: a **1.2 kW essential household load** for
+backup hours and a **60% member revenue share** of the grid value their battery creates. Neither
+is a Base Power tariff. The UI says **members**, not customers.
+
+Two further member features, both simulated:
+
+- **Generator top-off.** Members who own a small portable generator (optional per member) see the
+  extra kWh and the extra backup hours it buys during a long outage, counted only while it has
+  fuel.
+- **Neighbour mutual aid.** During a neighbourhood island, members who opt in can send a little
+  surplus to an opted-in neighbour flagged as running a medical device. A share is only ever taken
+  from energy a giver holds **above their own reserve**, and the card shows who is sending what
+  and the backup hours it adds for the recipient. Nothing moves until both members confirm.
+  `tests/test_home.py::test_mutual_aid_helps_a_medical_member_without_spending_anyone_else_reserve`
+  proves no sharing member ever drops below reserve.
+
+### Grid Signals
+
+An offline analytics view over the same bundled ERCOT day. The policy is **day-ahead anchored**:
+charge and export windows are planned from the ERCOT DAM curve for that trade date — published
+the afternoon before, so planning from it is not lookahead — and the real-time spike detector
+only overrides the plan where real time has diverged from it (sell into a spike the day-ahead
+curve never priced, refuse to buy a spike, wait out a dud export). Signals are advisory; nothing
+is dispatched.
+
+The headline shows two numbers side by side and never the first one alone: the scenario day at
+the selected fleet scale ($638,900/day across 10,000 batteries on the 2023-09-06 scarcity day) and
+the **held-out record** — home-first, mean −$0.79, median +$0.13 per battery per day, beating the
+naive schedule on 5 of 7 held-out days (see
+[Held-out results](#held-out-results-out-of-sample)). The scarcity day is the least
+representative day in the set; the held-out average is the honest claim.
+
+That scenario-day figure is **uplift, not revenue**. The baseline is the **naive schedule** —
+charge overnight, discharge in the evening on the clock — run over the same modelled 40 kWh /
+20 kW battery, the same day and the same settlement prices. Per battery on 2023-09-06:
+**$127.17 of export revenue** against **$63.28 for the naive schedule**, leaving **$63.89 per
+battery of uplift**, so $1,271,700/day gross and $638,900/day uplift across 10,000 simulated
+batteries. Both come from `python -m gridsignal.demo_numbers`; the same pair is printed on the
+Grid Signals tile.
+
+Same numbers from the CLI:
+
+```bash
+python -m gridsignal.pipeline --scenario scarcity --devices 10000
+python -m gridsignal.holdout          # the held-out scorecard
+python -m gridsignal.demo_numbers     # every number spoken in docs/DEMO.md
+```
+
+The view opens on the **Open Grid Data insight card** (below), then the backtest headline, the
+signal chart, the held-out scorecard and the **congestion panel** — a zone-by-hour basis heatmap,
+the West-to-load-center spread, zone-timed against zone-blind value per battery, and the "where
+to install next" placement sketch ([Congestion](#open-grid-data-congestion-and-where-the-next-battery-is-worth-most)).
+
+Full walkthrough, safety boundaries and the timed 4:40 demo script (three beats, every spoken
+number reproduced by `python -m gridsignal.demo_numbers`): [`docs/DEMO.md`](docs/DEMO.md).
+
+### Agent Mesh
+
+The orchestration layer, run as a mesh of agents instead of a single controller. Every battery,
+gateway ring and load zone registers an **AgentFacts-style capability card** (id, kW and kWh
+available, state of charge, zone, health, last heartbeat) signed with an HMAC key the registry
+generates at startup. When capacity is lost, a **Coordinator** broadcasts a call for capacity,
+healthy agents bid their spare kW at a price that reflects battery wear and how much of the
+homeowner's backup reserve they would be giving up, and the coordinator awards the cheapest set
+that covers the gap — as a *proposal*. Nothing is committed until a named human approves, and a
+repeat trigger or a double-click on approve returns the award already on file rather than
+committing the capacity twice. When the remaining headroom cannot cover the commitment the mesh
+covers what it can and escalates the rest to a person.
+
+The view shows the registry with each card marked **verified / stale / rejected** (a card edited
+after signing fails verification; an agent that stops sending heartbeats goes stale, and neither
+can win an award), the full message log of calls, bids, awards, approvals and escalations, and a
+picker that replays any bundled chaos scenario.
+
+Scenarios are YAML, in the spirit of NANDA Town's agent-town runs, and replay deterministically:
+
+```bash
+python -m gridsignal.simulate scenarios/zone_outage.yaml   # writes data/traces/zone_outage.jsonl
+python -m gridsignal.simulate --all
+```
+
+| Scenario | What it injects | Result |
+|---|---|---|
+| `scenarios/single_device.yaml` | BAT-042 goes dark, 48 agents | 100% covered after one human approval |
+| `scenarios/zone_outage.yaml` | whole LZ_HOUSTON gateway outage, 1,000 agents | partial cover, remainder escalated |
+| `scenarios/lying_agent.yaml` | gateway ring outage + an agent that edits its card to claim 500 kW + silent telemetry | forged card rejected, silent agents stale, gap covered by the rest |
+| `scenarios/silent_bidder.yaml` | two devices fail, then a winning bidder stops answering | its kW returns to the gap and a second round runs, also human-approved |
+| `scenarios/fleet_wide_scarcity.yaml` | four zones lost during the scarcity event | more than the fleet can cover: partial commit and escalation |
+
+Each run writes a JSONL trace (one message per line) and reports time to cover, percent of the
+commitment covered, messages sent, and dollars at risk versus recovered. Everything is arithmetic
+on the seeded fleet: no LLM, no API key, no network. An optional LLM coordinator
+(`src/gridsignal/mesh/llm.py`) can rank bids behind an explicit flag; it is **off by default** and
+falls back to the deterministic ranking when no provider is wired up.
+
+### Why
+
+One screen that states the case for the product: the problem a distributed fleet has that a
+single battery does not, the approach, the evidence and the limits. Every figure on it is
+recomputed from the code when the page loads — the replay, the alarm grouping, the held-out
+scoring, the ancillary split, the wear gate, the blind safety pack and a live timing of the
+mesh — and each line prints the command that reproduces it. Nothing on the page is typed in,
+and `tests/test_why.py` fails if a number is. The same page in the terminal:
+
+```bash
+python -m gridsignal.why
+```
+
+### Firmware rollout and install wave (Agent Mesh → Rollout panel)
+
+A fleet is also a software deployment target: the same orchestration that reassigns kW has to ship
+a build to thousands of devices without breaking the commitment. The rollout job runs the fleet in
+rings — **lab (5 devices) → 1% canary → 10% → 50% → 100%** — and each ring has to clear three
+gates before the next opens: **telemetry heartbeat**, **charge/discharge response**, and
+**backup reserve held**. A ring never advances while a simulated grid event is live or while a home
+in that ring is islanded; it waits, and gives up rather than shipping into the event. Every
+promotion past 10% of the fleet needs a named human, so the two largest rings stop until someone
+approves them. On the first failed gate the job halts and rolls the whole touched population back
+to the previous build.
+
+```bash
+python -m gridsignal.rollout scenarios/rollout_bad_build.yaml   # writes data/traces/rollout_bad_build.jsonl
+python -m gridsignal.rollout scenarios/rollout_good_build.yaml
+python -m gridsignal.install scenarios/install_wave.yaml        # writes data/traces/install_wave.jsonl
+```
+
+| Run | Scale | Result |
+|---|---|---|
+| `rollout_good_build.yaml` | 10,000 simulated devices | all 5 rings, 2 human approvals, 10,000 homes updated, 0 reserve violations |
+| `rollout_bad_build.yaml` | 10,000 simulated devices | halted in the 1% canary on `charge_discharge_response` **420 simulated seconds** after the first device updated; **100 homes touched, 3 affected, 100 rolled back**, 0 reserve violations |
+
+The bad build is the interesting one: it fails *silently*, only on devices above a simulated 35 °C,
+and the heartbeat keeps arriving the whole time. A heartbeat-only gate would have passed it
+straight through to 10,000 homes; the charge/discharge gate catches it inside the first hundred.
+
+The **install wave** is the other direction — units arriving rather than software leaving. Several
+hundred newly installed batteries join the mesh *during* an active event. Each one is commissioned
+by a simulated installer phone check that registers its signed card; a unit that never went through
+that check carries no valid signature and is rejected at the door. An accepted unit starts in
+**probation**, advertising zero biddable kW, and becomes eligible only after it clears the same
+three health gates. In the bundled wave: 400 units arrive, 390 register, 10 are rejected, 383 clear
+probation at ~95 joins/h simulated, the first eligible award lands 300 s after the first arrival,
+and **zero kW is awarded to an unverified or probationary unit** while **no existing commitment
+loses a single kW**. Awarded agents republish what they have *left*, so the same kW is never bid
+twice.
+
+All of it is simulated: no firmware, no installer, no device and no temperature in these scenarios
+is real, and nothing is ever sent to a battery.
+
+### Jev, the decision layer
+
+*Code acts, the rules and the hard vetoes decide, a human approves every commit.* Jev is a
+second opinion that escalates when it disagrees; it has no approve path. The mesh does the
+arithmetic; the decisions that need judgement are put to [Jev](https://docs.typesafe.ai/api),
+TypeSafe AI's decision model, as four explicit questions over the incident snapshot (agent
+cards, telemetry ages, prices, bids, plan coverage):
+
+1. **Root cause**, as a choice between device fault, gateway outage, telemetry lag, spoofed agent
+   and grid event.
+2. **Is this card or bid trustworthy?**, asked *alongside* the HMAC check, not instead of it — the
+   signature catches an edited card, this catches an agent that is validly signed and still
+   behaving oddly.
+3. **Risk to the homeowner's backup**, as a 0–1 score.
+4. **A confidence gate that is read, never acted on**: the gate reads *clear* only when every
+   answer is at least the confidence threshold (default `0.9`), backup risk is low (≤ 0.35), the
+   dollars at stake are under a cap (default $500) and the plan covers the whole gap and flags
+   nobody as untrustworthy. Clear or not, the step goes to the same human approval gate with
+   Jev's probabilities shown next to the button — there is no path in which Jev approves.
+   `Coordinator.approve()` remains the only commit path.
+
+Two transports sit behind one client and whichever key is set wins — Vercel AI Gateway
+(`AI_GATEWAY_API_KEY`, `POST /v1/evaluate`, model `typesafe-ai/jev`, yes/no questions typed
+`boolean`) or TypeSafe direct (`TYPESAFE_API_KEY`, `POST /v1/systemone`, model `jev-latest`,
+typed `noul`). Both normalise to one internal answer shape. Only simulated fleet state is sent;
+keys are read from the environment and never written to fixtures, traces or logs.
+
+**Judges will not have a key, and they do not need one.** Real Jev answers for every bundled
+scenario are recorded in `data/jev_fixtures/*.json` with the model version and timestamp and are
+replayed offline. With no fixture and no key the mesh falls back to deterministic rules and says
+so: **rules (Jev offline)**. The default run and the whole test suite pass with no key
+and no network.
+
+```bash
+python -m gridsignal.jev.evaluate          # rules-only vs Jev, from the recorded answers
+python -m gridsignal.jev.record --refresh  # re-record, only if a key is set
+```
+
+| Decision layer | Root-cause accuracy | Human approvals | Median decision latency |
+| --- | --- | --- | --- |
+| rules-only | 5/5 (100%) | 6 | 0 ms |
+| jev | 3/5 (60%) | 6 | 360 ms |
+
+| Scenario | Injected root cause | rules-only | Jev |
+| --- | --- | --- | --- |
+| `fleet_wide_scarcity` | gateway_outage | gateway_outage ✓ | gateway_outage ✓ |
+| `lying_agent` | gateway_outage | gateway_outage ✓ | spoofed_agent ✗ |
+| `silent_bidder` | device_fault | device_fault ✓ | telemetry_lag ✗ |
+| `single_device` | device_fault | device_fault ✓ | device_fault ✓ |
+| `zone_outage` | gateway_outage | gateway_outage ✓ | gateway_outage ✓ |
+
+Read that honestly. The rules were written against these same five injections, so their 5/5 is a
+ceiling, not evidence they generalise; Jev sees the state cold and gets 3 of 5, missing the two
+scenarios that stack injections (`lying_agent` is a gateway outage *with* a forged card, and it
+names the forgery; `silent_bidder` is two dead devices *and* stale telemetry, and it names the
+staleness). Both are defensible readings of the state and both are wrong about the cause of the
+lost kW. Jev also never cleared the 0.9 gate on any bundled scenario, and every award is
+approved by a person whether it clears or not. Latency is the recorded live round trip
+(median 360 ms); the rules answer in microseconds.
+
+### The operator judgment model (safety pack v2, committed before it was scored)
+
+The four questions above ask *what happened*. A second pack asks *what an operator would weigh
+before letting the fix run*. [`src/gridsignal/jev/principles.yaml`](src/gridsignal/jev/principles.yaml)
+fixes six principles in priority order — and it, plus the blind answer key in
+[`data/holdout_safety_labels.yaml`](data/holdout_safety_labels.yaml), were committed before a
+single question was run:
+
+| # | Principle | Weighs as |
+| --- | --- | --- |
+| 1 | Protect member backup first | hard veto |
+| 2 | Never break ERCOT market rules | hard veto |
+| 3 | Commit only what the fleet can deliver | hard veto |
+| 4 | Prefer reversible steps | soft |
+| 5 | More money at stake needs more certainty | soft |
+| 6 | When in doubt, ask a human | soft |
+
+Jev answers one yes/no question per principle with a probability; the deterministic rules layer
+answers the same six with **confidence 0.0**, so its answers can never be mistaken for judgement.
+A transparent policy combines them into exactly `act`, `act-and-notify` or `ask-a-human`: any hard
+veto answered unsafe (below 0.5) holds the step for a person, the three soft principles are scored
+against their weights, and the bar the score must clear *rises with the money at stake* (+0.10 as
+dollars approach $5,000). Every verdict carries a plain-language reason naming the principles that
+decided it, and the per-principle breakdown is shown in the Control Room next to the approval
+button.
+
+```bash
+python -m gridsignal.judgment_report   # blind score, disagreements, calibration — no key needed
+```
+
+**Blind score on the four held-out drills** (24 answers, scored against the committed key before
+any tuning): rules (Jev offline) **21/24 (88%)**, Jev **17/24 (71%)**. Every disagreement is settled by
+the key and reported with the winner — all four go to the rules layer, and all four are Jev calling
+a backup or market-rule question *unsafe* where the key says it is safe. Jev is the more anxious
+reader of these states; on this pack that costs it accuracy, and it never turned a held-back step
+into an automatic one.
+
+**What the recorded Jev answers change, on versus off.** Every bundled scenario is replayed twice
+on the same seeds — once with the recorded Jev answers, once with them withheld — and the covered
+kW is identical in 5 of 5, while the reported root cause differs in 2. With no approve path the
+model can move the explanation an operator reads and when they are asked, never the dispatch.
+
+```bash
+python -m gridsignal.jev.evaluate   # the on/off table, keyless
+```
+
+**Learning from overrides (simulated).** 96 deterministic episodes are generated across fleet size,
+price day, reserve floor, stale-telemetry share and four labelled complications; a documented
+stand-in operator decides each one with a written reason (80 of the 96 are overrides). This is a
+**simulated** override log — no real Base operator data is used and none is claimed. A grid search
+moves only the three soft weights and the two bars (never the vetoes, the questions or the policy
+shape) on half the operating conditions, and is scored on the half it never saw:
+
+| Agreement with the simulated operator | Fitted half | Held-out half |
+| --- | --- | --- |
+| as committed | 90% | 71% |
+| after tuning | 94% | 83% |
+
+Read that honestly: held-out agreement moves 71% to 83%, which is **+6 of 48 episodes**, and the
+fitted half moves 90% to 94%. It is one simulated operator on 96 episodes — weak evidence that the
+weights transfer and no evidence at all about real operators. The tuned weights
+(`ask a human` 0.30, `certainty for money` 0.30, `reversible` 0.15, act bar 0.70, notify bar 0.60)
+are written to
+`data/judgment_calibration.json` and are what the Control Room judges with; with that file absent
+the product behaves exactly as committed. Jev answers replay from `data/jev_fixtures/judgment_*.json`,
+so the report and the whole suite run with no key and no network.
+
+### Held-out chaos drills (written after the rules were frozen)
+
+The five scenarios above are the ones the detection rules and the Jev questions were written
+against. These four drills were written afterwards, from published accounts of how real grids
+fail, and scored **once** with no change to a detection rule, the recovery logic or a Jev
+question. Both results are below: the frozen baseline first, then the re-scored run after the
+logic was changed in response to it. **Every frequency, outage, load-ramp and islanding value
+here is simulated** — this is
+a simulator, not a reproduction of any real event and not a grid-control system.
+
+```bash
+python -m gridsignal.drills   # rules-only vs Jev on scenarios/holdout/*.yaml
+```
+
+#### Baseline: the first scoring, before anything was changed
+
+| Decision layer | Root-cause accuracy on held-out drills |
+| --- | --- |
+| rules-only | 0/4 |
+| Jev | 1/4 |
+
+| Drill | Injected root cause | rules-only | Jev | kW recovered | Time to recover | Backup reserve violations | Response (cycles) |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `cascade_spain_style` | grid_event | gateway_outage ✗ | gateway_outage ✗ | 909 of 1,099 kW (83%) | 195s | 0 | n/a |
+| `frequency_dip_coordinator_down` | grid_event | device_fault ✗ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 12,900 (over 15) |
+| `large_load_squeeze` | grid_event | device_fault ✗ | spoofed_agent ✗ | 965 of 1,207 kW (80%) | 120s | 0 | n/a |
+| `neighborhood_island` | gateway_outage | device_fault ✗ | grid_event ✗ | 768 of 1,010 kW (76%) | 75s | 0 | n/a |
+
+#### After tuning on held-out
+
+The baseline above is what the system scored before it was touched. Three changes were then made
+in response to it, and the drills re-scored. These numbers are **after tuning on held-out**, so
+read them as a repair of known weaknesses, not as evidence of generalisation:
+
+1. **A local rule on every card.** Each battery's signed card now carries `ffr_kw` (a quarter of
+   its spare power, always above the homeowner reserve) and `ffr_trigger_hz`. On a simulated
+   crossing of 59.85 Hz each battery deploys that pledge itself, with no coordinator in the
+   loop, at an assumed 12-cycle local latency. The deployed kW is booked as a commitment and the
+   card is republished, so the auction cannot sell it twice; when the coordinator returns it is
+   told what was already deployed and auctions only the remainder.
+2. **Grid-side conditions in the state.** The snapshot now carries simulated frequency, the kW
+   attributable to grid-side events versus component failures, islanded homes and self-deployed
+   kW — but only when a drill has them, so a plain component failure sends Jev exactly the state
+   it always did and the tuned-five results are unchanged.
+3. **Two rules that read them.** If grid-side events explain at least half of the missing kW,
+   the cause is the grid; if healthy homes are islanded together, the cause is distribution, not
+   the batteries.
+
+The table below was re-scored again after the external-review fix that made the mesh hold back
+the *same* member reserve the Control Room holds (`reserve_kwh` per member, not a flat 4 kWh
+floor), which changes every bid and therefore every state Jev is asked about; the Jev answers
+were re-recorded against the new state. Reproduce with `python -m gridsignal.drills`.
+
+| Decision layer | Root-cause accuracy (after tuning on held-out, re-scored after the reserve fix) |
+| --- | --- |
+| rules-only | 4/4 |
+| Jev | 2/4 |
+
+| Drill | Injected root cause | rules-only | Jev | kW recovered | Time to recover | Backup reserve violations | Self-deployed locally | Response (cycles) |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cascade_spain_style` | grid_event | grid_event ✓ | gateway_outage ✗ | 947 of 1,039 kW (91%) | 195s | 0 | 0 kW | n/a |
+| `frequency_dip_coordinator_down` | grid_event | grid_event ✓ | grid_event ✓ | 600 of 600 kW (100%) | 225s | 0 | 245 kW | 12 (within 15) |
+| `large_load_squeeze` | grid_event | grid_event ✓ | grid_event ✓ | 979 of 1,206 kW (81%) | 120s | 0 | 0 kW | n/a |
+| `neighborhood_island` | gateway_outage | gateway_outage ✓ | grid_event ✗ | 739 of 887 kW (83%) | 75s | 0 | 0 kW | n/a |
+
+What moved and what did not: the rules went 0/4 → 4/4, and the frequency drill now answers in
+**12 simulated cycles** with 245 kW deployed from the cards themselves before the coordinator is
+back, then covers the remainder at 225 s once it is — the same 600 kW, counted once.
+Jev moved 1/4 → 2/4 on answers re-recorded against the post-reserve-fix state, and its per-drill
+answers moved around in both directions, so the fair reading is still that the deterministic
+rules, not the model, are what improved. Backup reserve violations stayed at **zero** in every
+drill, before and after, and every award went through the human gate either way.
+
+What each drill injects, and what the numbers say:
+
+- **`cascade_spain_style`** — a simulated generation trip that drops frequency to 59.88 Hz, then
+  two gateway losses and a six-device stale-telemetry wave, arriving in waves 30–150 s apart so
+  the faults interact. Compound, cascading failure is the shape the ENTSO-E report on the
+  28 April 2025 Iberian blackout describes — many interacting factors rather than one cause
+  ([entsoe.eu](https://www.entsoe.eu/publications/blackout/28-april-2025-iberian-blackout/)).
+  That report is context for the *shape* of the drill only; nothing here reproduces that event,
+  its causes or its data. At baseline both layers called it a gateway outage — the loudest
+  signal in the snapshot, not the thing that started it; after tuning the rules weigh the
+  900 kW that went missing on the grid side against the 199 kW of gateway losses and name the
+  grid. Jev still says gateway outage.
+- **`frequency_dip_coordinator_down`** — a simulated under-frequency event crossing 59.85 Hz
+  while the coordinator is unreachable for 180 s. The 59.85 Hz trigger and the 15-cycle response
+  window are borrowed as *concepts* from ERCOT's Fast Frequency Response description
+  ([ERCOT Real-Time Market Operations, Sep 2025](https://www.ercot.com/files/docs/2025/09/22/2026_09-Real-Time-Market-Operations.pdf));
+  no ERCOT frequency data is used and nothing is dispatched. The baseline result is the honest
+  one: the fleet covered the full 600 kW gap but only **after the coordinator returned**, at
+  ~12,900 simulated cycles against a 15-cycle concept, because the cards carried no local rule.
+  After tuning on held-out they do, and the first 245 kW lands in 12 simulated cycles.
+- **`neighborhood_island`** — a simulated distribution outage where 200 LZ_AUSTIN homes island on
+  their own batteries. The islanded homes are never bid or awarded, so the mesh protects
+  homeowner backup over export revenue: **zero reserve violations**, 83% of the gap covered by
+  the rest of the fleet and the remainder escalated. Ten simulated minutes later the feeder is
+  restored and those homes resync and republish their cards; nothing has to be unwound, because
+  their stored energy was never sold.
+- **`large_load_squeeze`** — a simulated 1,200 kW data-center-style ramp on top of a device
+  fault, while three validly signed agents publish conflicting inflated capacity. Jev calls it a
+  spoofed agent at baseline; the HMAC check does not, because the cards really are signed, and
+  after tuning the rules call it a grid event because the ramp is 99% of the missing kW. 81% covered,
+  escalated, no reserve spent.
+
+Across all four drills, in both the baseline and the tuned run, the fleet spent **zero**
+homeowner backup reserve and every award went through the human gate. That is the part that held from the start. Root-cause naming did not: 0/4 for the rules,
+1/4 for Jev at baseline. Both layers reach for the injection they were
+shown before rather than "the grid itself moved", which is exactly what a held-out set is for.
+Those are the baseline numbers, scored before any change. The *after tuning on held-out* table
+above shows what changed once the logic was repaired, and is labelled as such throughout.
+
+**Inspiration and attribution.** The agent-card, registry and agent-town-scenario ideas are
+inspired by MIT Project NANDA — [nandatown.projectnanda.org](https://nandatown.projectnanda.org)
+and [github.com/projnanda](https://github.com/projnanda). No NANDA code is vendored, copied or
+depended on here; the registry, the signing scheme, the contract-net protocol and the scenario
+format in this repo are original implementations of those ideas against this simulated fleet.
+
+## Open Grid Data: what the day-ahead curve does not tell you
+
+The usual read of ERCOT scarcity is "the spikes are where the money is". The bundled data says
+something sharper, and it is the thing most people miss: **on the three real scarcity days in this
+repo, only 47% of the value a battery could have captured was visible in the day-ahead curve**.
+The other **$18.83 per battery per scarcity day** exists only in the real-time prints — worth about
+28 whole ordinary trading days ($0.66 each) of perfect optimisation. 19 of 1,440 15-minute
+intervals (1.3%) settled at 5x or more above their day-ahead hour, and **all 19 fell on scarcity
+days**; the twelve ordinary days never diverged once.
+
+The operational consequence for a fleet is specific: a day-ahead schedule is enough on an ordinary
+day (53% of the value is already in the curve, and nothing surprises you), but on a scarcity day
+the schedule is roughly a coin flip against what the day actually paid — so the real-time layer,
+and the ability to keep the fleet coordinated while it runs, is where the scarcity money lives.
+That is the same minute a device failure costs the most, which is why the two tracks in this repo
+are one product.
+
+**Method, so it can be checked.** For each bundled day, two plans settle the *same* real
+15-minute LZ_HOUSTON prints on one 13.5 kWh / 5 kW battery: (a) charge and export windows chosen
+from that date's ERCOT day-ahead curve alone, executed blind; (b) the best single charge/discharge
+cycle that would have been possible knowing the real-time prices — a ceiling nobody can trade, not
+a strategy. "Visible" is (a) ÷ (b), value-weighted across days so a $0.20 day cannot outvote a
+$50 one. A day counts as scarcity if it peaked above $1,000/MWh (3 of 15 days). Code:
+[`src/gridsignal/insight.py`](src/gridsignal/insight.py), tests: `tests/test_insight.py`,
+reproduce with:
+
+```bash
+python -m gridsignal.insight
+```
+
+This is a statement about 15 real LZ_HOUSTON days, not about ERCOT in general, and the foresight
+ceiling is one cycle per day — a two-cycle battery would move both columns.
+
+## Open Grid Data: congestion, and where the next battery is worth most
+
+A second read of the same days, this time across space instead of time. West Texas generates;
+Houston, Dallas, Austin and San Antonio consume; when the lines between them bind, the same
+15-minute interval settles at different prices in different zones. The bundled set now carries
+**all eight ERCOT load zones plus the hub average** for every one of the 15 trade dates, so the
+spread can be measured rather than asserted.
+
+Two spreads, per 15-minute interval, per zone:
+
+- **zone-to-hub basis** = zone SPP − `HB_HUBAVG` SPP — what a zone paid over the system reference.
+- **West-to-load-center spread** = load-zone SPP − `LZ_WEST` SPP — what a metro paid over the
+  generation-heavy west, which is the direction congestion pushes.
+
+**Every dollar figure in this section is hindsight-timed**: the discharge hours are ranked on
+prices that had already settled, so they are ceilings on perfect timing in a zone, not what a
+live policy earned. The causal policy is the held-out scorecard above.
+
+**What most people miss:** across these 15 bundled days, **LZ_LCRA at hour 18 priced $39.82/MWh
+above the hub average on average**, and **3,427 of 11,520 zone-intervals (29.8%) settled more than
+$5/MWh away from the hub** — yet a battery *in LZ_LCRA* timed to its own zone's price earned only
+**+$0.15 per battery per day** (hindsight-timed) over the same battery timed to the hub. The gap
+and the uplift quoted next to it are the same zone; the best zone on these days is a different
+one, `LZ_SOUTH` at +$0.57. The congestion is large and real; the share of it a single 13.5 kWh
+battery can collect by re-timing alone is small. Both halves are in the Grid Signals panel.
+
+| Zone | Metro | Zone-timed $/bat/day | Zone-blind $/bat/day | Uplift $ | Ordinary days $ | Scarcity days $ | Mean basis $/MWh | Days won |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| LZ_SOUTH | South Texas | 7.01 | 6.44 | **+0.57** | +0.70 | +0.03 | −1.62 | 11/15 |
+| LZ_LCRA | Austin (LCRA) | 7.47 | 7.32 | **+0.15** | +0.18 | +0.03 | 6.25 | 10/15 |
+| LZ_HOUSTON | Houston | 7.29 | 7.21 | **+0.08** | +0.09 | +0.04 | 2.57 | 11/15 |
+| LZ_AEN | Austin (city) | 7.35 | 7.27 | **+0.08** | +0.09 | +0.03 | 3.72 | 11/15 |
+| LZ_NORTH | Dallas-Fort Worth | 7.35 | 7.28 | **+0.07** | +0.09 | +0.01 | 2.61 | 9/15 |
+| LZ_RAYBN | Rayburn | 7.32 | 7.25 | **+0.07** | +0.09 | +0.01 | 1.48 | 8/15 |
+| LZ_CPS | San Antonio | 7.32 | 7.26 | **+0.06** | +0.06 | +0.04 | 3.11 | 11/15 |
+| LZ_WEST | West Texas | 7.37 | 7.38 | **−0.01** | +0.01 | −0.06 | 9.49 | 8/15 |
+
+All figures hindsight-timed. **Ordinary and scarcity days are split** because their averages are
+nothing alike: 12 of the 15 bundled days are ordinary, 3 touched four figures, and re-timing
+collects almost nothing on the scarcity days — on those days every zone is expensive at once, so
+the local signal and the hub signal pick nearly the same hours.
+
+**Method.** Both policies settle at the *same* local zone prints on the same 13.5 kWh / 5 kW
+battery; the only difference is which price series ranks the intervals — the zone's own price
+(zone-timed) or `HB_HUBAVG` (zone-blind). So the number isolates the value of the local signal,
+not of a better location. Code: [`src/gridsignal/congestion.py`](src/gridsignal/congestion.py),
+tests: `tests/test_congestion.py`, reproduce with `python -m gridsignal.congestion`.
+
+**Where to install next (data-driven sketch, not a forecast).** The panel ranks zones by grid
+value per battery on these days and places the next N batteries (default 1,000) greedily, 100 at
+a time, with each zone's marginal value falling linearly toward a saturation count derived from
+its positive mean basis (`RELIEF_MW_PER_DOLLAR = 8 MW per $/MWh of basis`, an explicit modelling
+assumption, not a measured relationship). It is a sketch on 15 days of prices — not a siting
+study, not a forecast, and it models no interconnection, land, permitting or network constraint.
+
+**Zone-aware dispatch.** The Control Room has a congestion dispatch preference: pick a zone and
+its batteries are filled to their headroom before the rest of the fleet shares what is left. The
+target, the homeowner reserve and the human approval gate do not move — only the order. The zone
+ordering comes from the bundled basis (`congestion.dispatch_order`); the simulated `LZ_AUSTIN`
+fleet zone settles against `LZ_AEN` via `fleet.settlement_zone`.
+
+## Benchmarks
+
+Measured on this machine (Python 3.11, single process, no GPU); reproduce with
+`pytest -q -s tests/test_scale.py tests/test_simulate.py`. The full speed-and-scale report at
+10,000 **and 100,000** agents — p50, p95, throughput, memory, before and after the hot-path
+fixes, from one command (`python -m gridsignal.perf --before`) — is in
+[`docs/PERFORMANCE.md`](docs/PERFORMANCE.md).
+
+The one benchmark that is not in-process lives there too: `python -m gridsignal.transport` runs
+the coordinator and the agents as **separate OS processes** talking over loopback TCP sockets
+with HMAC-signed cards verified across the boundary, and times detect-to-award at 1,000 agents
+by default (`--full` adds 10,000), with and without 5% packet loss. Agents are multiplexed over
+32 sockets rather than one each, and the file-descriptor limit is raised at startup and planned
+against, so the default command finishes in **0.81 s** — and `--full` in **1.48 s** — on a
+2 vCPU box with `ulimit -n 256`. **Local loopback, not a WAN** — no gateway, no cellular link,
+no inverter.
+
+Every row below is **in-process compute on in-memory simulated state**: no network, no message bus, no
+device round trips. They measure how long the orchestration maths takes, not how fast a real
+fleet would detect or respond in the field.
+
+| Benchmark (what is actually timed) | Scale | Result |
+|---|---|---|
+| Control Room: construct the fleet objects | 10,000 devices | ~100 ms |
+| Control Room: raise the incident from an in-memory snapshot (no telemetry wait) | 10,000 devices | ~1 ms |
+| Control Room: recompute the full allocation after an approval | 10,000 devices | ~36 ms |
+| Mesh: build and verify signed cards in the registry | 10,000 agents | ~169 ms |
+| Mesh: apply one heartbeat to every agent and re-evaluate staleness | 10,000 agents | ~70 ms |
+| Whole pass (build, detect, recover, publish, heartbeat, negotiate), p50 | 100,000 agents | ~4.0 s, peak heap ~153 MiB (was ~7.3 s) |
+| Mesh: score and award one contract-net call in process (no messaging) | 10,000 agents, 8,000 bids | ~27 ms |
+| Rollout: staged rings + gates | 10,000 devices | ~2 ms (bad build caught after 420 s simulated) |
+| Install wave: commission + probation + re-auction | 400 units joining 10,000 | ~600 ms |
+| Grid Signals: full pipeline for one day | 96 intervals | < 1 s |
+| Jev decision round trip | recorded live median | 360 ms (rules (Jev offline): microseconds) |
+| Full-fleet scarcity replay: 3 faults at the peak + recovery (`python -m gridsignal.replay`) | 10,000 devices | ~0.7 s |
+
+## Deploying to Streamlit Community Cloud
+
+Full instructions, including what was verified against a clean non-editable install, are in
+[`docs/DEPLOY.md`](docs/DEPLOY.md). The short version, no secrets required:
+
+1. [share.streamlit.io](https://share.streamlit.io), sign in with GitHub (a private repo is fine;
+   grant the Streamlit GitHub App access to it).
+2. **Create app → Deploy from GitHub**: repository `Regantih/gridsignal`, branch
+   `devin/1790382033-control-room` (or `main` after merge), main file `app/dashboard.py`,
+   **Advanced settings → Python 3.11**. Dependencies come from `requirements.txt`, which installs
+   the repository itself.
+3. Deploy. To exercise a live Jev path instead of the recorded answers, add `AI_GATEWAY_API_KEY`
+   or `TYPESAFE_API_KEY` under **Settings → Secrets**.
+
+If the deployed URL is unavailable, the scripted capture below produces the same walkthrough as a
+video.
+
+## Interface conventions
+
+One design system drives all four views (`CSS`, `metric()`, `caption()` in
+[`app/dashboard.py`](app/dashboard.py)), and `tests/test_dashboard.py` fails the build when a
+screen breaks it:
+
+- **One number format.** Money as `$1,234.56` with the minus sign outside the symbol, power in
+  kW and energy in kWh at every fleet scale, durations as `16.7 h` / `420 s`, counts out of
+  counts as "6 of 7". Every rendered metric is matched against that grammar in a test.
+- **No fake trends.** The line under a number is context ("per battery", "9,617 kW spare
+  headroom made it possible"), so it renders as a caption — never a green or red delta arrow.
+- **No jargon without its meaning.** Headroom, reserve floor, day-ahead, held-out, ancillary,
+  probation, equivalent full cycle and the rest come from one `GLOSSARY`; any metric whose
+  label uses one carries the plain-language sentence as a tooltip.
+- **Contrast.** Muted text is `#a3b1c6` on the `#11161f` card surface, 7.7:1, past WCAG AA.
+
+## Screen capture (deploy fallback)
+
+```bash
+pip install -e ".[capture]"
+python -m playwright install chromium
+python scripts/capture_demo.py          # writes docs/media/*.png, demo.webm and demo.mp4
+```
+
+It starts the dashboard on a free port and walks the scenes of [`docs/DEMO.md`](docs/DEMO.md) in
+order — Control Room → trigger → approve → Member App → Agent Mesh → Grid Signals → Why →
+reset — screenshotting each step and recording the session. No credentials, no network. The committed output is in [`docs/media/`](docs/media): the eight stills and
+[`demo.mp4`](docs/media/demo.mp4).
+
+| Control Room, BAT-042 down | Agent Mesh | Grid Signals insight |
+|---|---|---|
+| ![Control Room incident](docs/media/02-control-room-incident.png) | ![Agent Mesh](docs/media/05-agent-mesh.png) | ![Grid Signals](docs/media/06-grid-signals-insight.png) |
+
+## No-crash sweep
+
+```bash
+pip install -e ".[capture]"
+python -m playwright install chromium
+python scripts/no_crash_sweep.py        # 58 checks, ~60s, exits non-zero on any traceback
+```
+
+Every CLI entry point with real arguments (not `--help`) and every control on all four screens —
+both price days, all three fleet scales, the failure/approve/offer loop, both map modes, every
+congestion zone, six member homes, every expander and slider, all five chaos replays, both
+firmware builds — run with the API keys stripped and an unroutable proxy set, so any code path
+that quietly wants the network fails here. CI runs it on every push and uploads `sweep.json`.
 
 ## Tech Stack and Architecture
 
-- Python 3.11, pandas, gridstatus (ERCOT access), scikit-learn
-- Streamlit dashboard
-- Local Parquet storage in `data/`
+- Python 3.11, Streamlit, Plotly, pandas
+- `gridstatus` + scikit-learn only for refreshing ERCOT data and the optional pipeline
+  (`.[ercot]` extra)
+- Control Room state lives in memory; ERCOT prices are cached as Parquet in `data/processed/`
 
 ```mermaid
 flowchart LR
-    A[ERCOT public data<br/>prices, load, gen] --> B[Ingest]
-    B --> C[(Parquet store)]
-    C --> D[Spike and scarcity detection]
-    C --> E[Forecast]
-    D --> F[Dispatch signals<br/>charge / hold / export]
-    E --> F
-    F --> G[Backtest: value captured]
-    F --> H[Member dashboard]
-    G --> H
+    subgraph CR["Control Room (simulated fleet, real prices)"]
+        F[fleet.py<br/>deterministic 48/1k/10k fleet] --> E[ControlRoomEngine]
+        PR[prices.py<br/>cached ERCOT SPP Parquet] --> E
+        E -->|detect| I[Incident<br/>severity, cause, impact, plan]
+        I --> T[Role tasks<br/>Operator / Reliability / Field]
+        I --> H{{Human approval}}
+        H -->|approved| R[Quarantine + reassign dispatch]
+        R --> A[(Append-only audit timeline)]
+        H --> A
+        I --> A
+        E --> D[Streamlit dashboard<br/>app/dashboard.py]
+    end
+    subgraph GP["ERCOT pipeline"]
+        G[gridstatus<br/>public ERCOT MIS] --> P[ingest.py] --> Q[(Parquet store)]
+        Q --> PR
+        Q --> DT[detect.py<br/>rolling-baseline spikes] --> FC[forecast.py<br/>spike probability]
+        Q --> DM[dam.py<br/>day-ahead charge/export plan]
+        FC --> SG[signals.py<br/>real-time detections]
+        SG --> DM
+        DM --> BT[backtest.py<br/>$ vs naive schedule]
+        BT --> HO[holdout.py<br/>7 days, frozen params]
+        Q --> IN[insight.py<br/>day-ahead vs real-time value]
+        BT --> D
+        HO --> D
+        IN --> D
+    end
+    subgraph AM["Agent mesh (NANDA-inspired)"]
+        E --> BU[mesh/build.py<br/>batteries, gateways, zones as agents]
+        BU --> RG[mesh/registry.py<br/>HMAC-signed cards<br/>verified / stale / rejected]
+        RG --> NG[mesh/negotiation.py<br/>call -> bids -> cheapest cover]
+        JV[jev/client.py<br/>live key -> fixture -> rules] --> NG
+        NG --> HG{{Human approval<br/>always authoritative}}
+        HG --> CM[Idempotent commitment]
+        CM --> TR[(JSONL trace)]
+        SC[scenarios/*.yaml<br/>chaos injections] --> BU
+        NG --> D
+    end
 ```
 
-See `docs/architecture.md` for details.
+Jev is one input to the mesh, never the authority: an HMAC signature decides whether a card is
+admissible, deterministic rules price and select the bids, Jev adds a judgement on cause, trust and
+homeowner risk with a confidence, and a human approves. With no key and no fixture the mesh runs
+unchanged on the rules.
+
+| Module | Responsibility |
+|---|---|
+| `src/gridsignal/fleet.py` | Deterministic synthetic fleet (seeded, 48/1,000/10,000 devices, BAT-042 is the demo device) and its gateway rings |
+| `src/gridsignal/control_room/models.py` | Device, GridEvent, Incident, Task, AuditEvent, FleetSnapshot |
+| `src/gridsignal/control_room/engine.py` | State machine: baseline → failure → incident → **human approval** → recovery |
+| `src/gridsignal/ingest.py` | Pulls real-time settlement point prices from ERCOT via gridstatus and caches them as Parquet |
+| `src/gridsignal/prices.py` | Named price scenarios, cached-trace loading, peak-window selection, kW to dollars |
+| `src/gridsignal/detect.py` | Rolling trailing-median baseline with a MAD spread; flags spike intervals and groups them into windows |
+| `src/gridsignal/forecast.py` | Causal spike-probability score from the z-score, its ramp and the price-over-baseline level |
+| `src/gridsignal/signals.py` | Real-time-only fallback policy: declining reservation price turning prices plus spike probability into charge/hold/export |
+| `src/gridsignal/dam.py` | Plans the day from the ERCOT day-ahead curve and applies the real-time deviation rules on top; the frozen parameters live here |
+| `src/gridsignal/backtest.py` | Battery settlement ledger (SoC, cashflow) for the signals and for a naive fixed schedule |
+| `src/gridsignal/pipeline.py` | `run(scenario)` wiring detect → forecast → signals → backtest, plus a CLI |
+| `src/gridsignal/mesh/cards.py` | AgentFacts-style capability cards and their HMAC signatures |
+| `src/gridsignal/mesh/registry.py` | In-memory registry: register, publish, discover by capability, reject bad signatures, expire silent agents |
+| `src/gridsignal/mesh/messages.py` | Append-only message bus and the JSONL trace format |
+| `src/gridsignal/mesh/build.py` | Turns the simulated fleet into battery, gateway and zone agents publishing spare capacity |
+| `src/gridsignal/mesh/negotiation.py` | Contract net: call for capacity, bidding, cheapest-cover awards, the human gate, idempotent commitments |
+| `src/gridsignal/mesh/scenarios.py` | YAML chaos scenarios: seed, agent counts, failure injections, duration |
+| `src/gridsignal/mesh/llm.py` | Optional LLM bid ranker behind a flag, disabled by default |
+| `src/gridsignal/simulate.py` | `python -m gridsignal.simulate <scenario>`: deterministic chaos run, metrics and JSONL trace |
+| `src/gridsignal/member.py` | Member-facing summary for one home: backup hours, earned/protected dollars, plain-English notice |
+| `src/gridsignal/insight.py` | Open Grid Data insight: day-ahead plan vs. perfect real-time foresight on every bundled day |
+| `src/gridsignal/holdout.py` | Replays the frozen policy over the bundled held-out days and scores it against the naive schedule |
+| `scripts/fetch_holdout.py` | Caches the held-out days from ERCOT (needs `.[ercot]` and network); the selection rule is in its docstring |
+| `scripts/fetch_tuning.py` | Caches the tuning split, chosen so it can never overlap the held-out dates |
+| `scripts/fetch_dam.py` | Caches the day-ahead curve and provenance for every bundled trade date |
+| `scripts/fetch_as_plan.py` | Caches ERCOT's published ancillary procurement volumes, used to size the simulated fleet's offer against the market |
+| `scripts/tune_policy.py` | Grid search for the frozen policy parameters, run on the tuning split only |
+| `app/dashboard.py` | Single-page operator UI: overview, map/grid, price trace, incident, tasks, audit, demo controls |
+| `tests/test_control_room.py` | End-to-end coverage of the failure-to-recovery flow, including the dollar math |
+| `tests/test_prices.py`, `tests/test_ingest.py` | Scenario loading, peak-window selection, dollar conversion, cache provenance |
+| `tests/test_scale.py` | Gateway-ring scaling, scarcity pricing, and a 10,000-device detect-plus-reallocate benchmark |
+| `tests/test_detect.py`, `tests/test_forecast.py`, `tests/test_signals.py`, `tests/test_backtest.py`, `tests/test_pipeline.py` | The analytics pipeline: spike detection, look-ahead safety, dispatch policy, settlement math, end-to-end run |
+| `tests/test_holdout.py` | Split integrity: ≥5 real held-out days with provenance, tuning and held-out dates disjoint, frozen parameters, losing days kept in the totals |
+| `tests/test_mesh.py` | Signature rejection, staleness, capability discovery, bid pricing and selection, the approval gate, idempotency, partial cover plus escalation |
+| `tests/test_simulate.py` | Scenario coverage of every failure mode, deterministic replay, JSONL traces, the CLI, and a 10,000-agent negotiation benchmark |
+| `tests/test_dashboard.py` | Every view renders; the Grid Signals headline never shows the scenario day alone; the Agent Mesh registry and log |
+| `tests/test_insight.py` | The insight claim: the foresight ceiling really is a ceiling, scarcity days hide more value than ordinary ones, divergence is a scarcity phenomenon |
+| `tests/test_docs.py` | The write-up is 150–300 words in the required order and the demo script fits under 5:00 |
+| `scripts/capture_demo.py` | Playwright walkthrough that screenshots and records the four views into `docs/media/` |
+| `tests/test_dam.py` | Day-ahead plan shape, hour-to-interval alignment, each deviation rule, no-lookahead, DAM provenance |
+
+See [`docs/architecture.md`](docs/architecture.md) for the data-pipeline side.
 
 ## Reproducing the Demo
 
-1. Copy `.env.example` to `.env` and fill in any keys.
-2. Run `python -m gridsignal.pipeline --start 2026-08-01 --end 2026-09-24`.
-3. Run `streamlit run app/dashboard.py` and select a load zone.
+1. `streamlit run app/dashboard.py`, open http://localhost:8501.
+2. Click **Trigger BAT-042 Failure**, read the incident panel, click **Approve Recovery Plan**.
+3. Click **Reset Demo** to replay. Results are identical every run (seeded simulation).
+
+Optional live-data path: `pip install -e ".[ercot]"`, then `python -m gridsignal.ingest --date
+<recent date>` to refresh the cached trace before running the pipeline against it.
 
 ## Data and Provenance
 
 | Dataset | Source | Notes |
 |---|---|---|
-| Real-time settlement point prices | ERCOT, via gridstatus | TODO |
-| System load | ERCOT, via gridstatus | TODO |
-| Fuel mix / generation | ERCOT, via gridstatus | TODO |
-| Synthetic battery fleet | Generated in `src/gridsignal/fleet.py` | TODO |
+| Simulated battery fleet | `src/gridsignal/fleet.py` | Seeded synthetic data, no real customer or device data |
+| Simulated grid event | `src/gridsignal/control_room/engine.py` | 5 kW per device over 2 h (240 kW at 48 devices, 50 MW at 10,000); the window is chosen from the real price trace |
+| Real-time settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2026-09-22 (96 intervals, peak $199.74/MWh). Cached at `data/processed/lz_houston_rtm_spp_sample.parquet` with provenance in the sidecar `.json`; refresh with `python -m gridsignal.ingest --date <YYYY-MM-DD>` |
+| Scarcity-day settlement prices | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** LZ_HOUSTON, REAL_TIME_15_MIN, 2023-09-06 — the highest-priced LZ_HOUSTON day of 2023 (96 intervals, peak $5,147.65/MWh, day average $788.49/MWh). The archive restates some intervals, so repeated intervals are averaged into one row. Cached at `data/processed/lz_houston_rtm_spp_scarcity_sample.parquet` with a sidecar `.json`; refresh with `python -m gridsignal.ingest --scarcity-year <YYYY>` |
+| Held-out evaluation days | ERCOT MIS [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive and [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report via `gridstatus` | **Real data.** Seven LZ_HOUSTON REAL_TIME_15_MIN days, 96 intervals each, cached under `data/holdout/` with a sidecar `.json` per day; refresh with `python scripts/fetch_holdout.py` |
+| Tuning days | same ERCOT sources via `gridstatus` | **Real data.** Six LZ_HOUSTON REAL_TIME_15_MIN days under `data/tuning/`, chosen by the quantile rule in `scripts/fetch_tuning.py` so they never collide with the held-out dates. These plus the two scenario days are the only days any parameter may be fitted on; refresh with `python scripts/fetch_tuning.py` |
+| Day-ahead settlement point prices | ERCOT MIS [NP4-190-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD) and the DAM historical archive via `gridstatus` | **Real data.** LZ_HOUSTON, DAY_AHEAD_HOURLY, 24 hours for every bundled trade date, cached beside each real-time trace as `*_dam.parquet` with a sidecar `*_dam.json`; refresh with `python scripts/fetch_dam.py`. DAM results clear the afternoon **before** the trade day, which is why the plan may use them |
+| All-zone settlement point prices | ERCOT MIS [NP6-905-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD) daily report and [NP6-785-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP6-785-ER) historical archive via `gridstatus`, public and credential-free | **Real data.** All eight load zones (`LZ_WEST`, `LZ_NORTH`, `LZ_HOUSTON`, `LZ_SOUTH`, `LZ_AEN`, `LZ_CPS`, `LZ_LCRA`, `LZ_RAYBN`) plus the hub average `HB_HUBAVG`, REAL_TIME_15_MIN, 96 intervals for each of the same 15 bundled trade dates. One file per date under `data/zones/zones_rtm_spp_<YYYYMMDD>.parquet` with a sidecar `.json` carrying market, locations, date, source and `fetched_at`; refresh with `python scripts/fetch_zones.py` |
+| Ancillary clearing prices | ERCOT MIS [NP4-188-CD](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-188-CD) daily DAM clearing prices for capacity and the [NP4-181-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP4-181-ER) historical annual archive (report type 13091) via `gridstatus`, public and credential-free | **Real data.** ERCOT system-wide Reg Up, Reg Down, RRS, ECRS and Non-Spin, DAM hourly, 24 hours for every bundled trade date, in $/MW per hour of capacity held. Cached beside each real-time trace as `*_as.parquet` with a sidecar `*_as.json` carrying market, location, date, source URL, `fetched_at`, products and units; refresh with `python scripts/fetch_as_prices.py`. ECRS did not exist before 2023-06-10, so it is zero on earlier dates rather than imputed |
+| Ancillary procurement volume | ERCOT MIS [NP3-905-ER](https://www.ercot.com/mp/data-products/data-product-details?id=NP3-905-ER) AS plan via `gridstatus`, public and credential-free | **Real data, partial.** MW of each product ERCOT procured per hour, cached at `data/as_plan/as_plan_<date>.parquet` with the same sidecar fields; refresh with `python scripts/fetch_as_plan.py`. The MIS only keeps the plan for roughly the last month, so the older bundled dates have none and the price-taker check says so instead of assuming the offer is small |
+| Telemetry samples | `data/telemetry/*.jsonl`, written by `python scripts/make_telemetry_sample.py` | **Synthetic, clearly labelled.** The simulated fleet written out in the documented JSON-lines format; no battery, gateway or vendor export was read. Format and validation rules in `data/telemetry/README.md` |
+| System load / fuel mix | ERCOT, via gridstatus | Not implemented yet (`ingest.fetch_load`, `ingest.fetch_fuel_mix`) |
+
+Dollars are computed as `kW x hours x $/MWh / 1000` over the part of the event window that is still
+ahead. Both price days are real; the fleet, the outage and the recovery are simulated, and the
+historical scarcity trace is pricing context only — it is not replayed as a real-time market feed.
+
+## Held-out results (out of sample)
+
+**Disclosure, because it changes how you should read this table.** These seven days were used
+**once before**, to score the original real-time-only policy — it won 2 of 7 (mean −$0.15, worst
+−$4.89) and that result is what caused the policy to be rejected. The replacement day-ahead-anchored
+policy was then tuned on a *separate* split (the two scenario days plus the six days in
+`data/tuning/`) and scored on these seven days **once**, with no retuning afterwards. So the held-out
+set is not virgin: it rejected one policy before it scored this one, which is one degree of
+selection more than a truly untouched test set. It is disclosed rather than hidden because a
+reviewer cannot price the number without it.
+
+Parameters are fitted on the **tuning split only** — the two scenario days plus the six days in
+`data/tuning/` — by the grid search in `scripts/tune_policy.py`, which maximises *median* uplift
+per battery per day so that one scarcity day cannot buy a parameter set that bleeds on ordinary
+days. The winning values are frozen in `gridsignal.dam` and asserted by a test. These seven
+held-out days were then scored **once**, and the losing day is printed as it came out.
+
+Day selection is a rule, not a hand-pick (`scripts/fetch_holdout.py`): for each year the ERCOT
+archive parses, take that year's highest-priced LZ_HOUSTON day and its median-peak day; 2023's
+peak day is excluded because it is a scenario day. The archive does not parse 2026 yet, so the
+two most recent complete trade days from the daily report are used instead. The tuning split
+(`scripts/fetch_tuning.py`) takes the 75th and 25th percentile of daily peak in each year, so the
+two splits can never share a date.
+
+All figures are **dollars per battery per day** on the default simulated unit — a Base Core-style
+**40 kWh / 20 kW** battery (sized from a public interview with Base's COO,
+[Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b), not an
+official specification; see Assumptions). The legacy 13.5 kWh / 5 kW unit is kept as a comparison and prints from the same
+command.
+
+**Home-first** is what the product does: the household is carried by the grid while storage is
+held for the day-ahead peak, and the battery only feeds the house when no later hour on the
+day-ahead curve pays more for that energy. **Grid-only** (the pure trading battery, the policy's
+original scorecard) is kept as a comparison. Neither set of parameters was touched.
+
+| Date | Peak $/MWh | Regime | Home-first $ | Member savings $ | Home-first uplift | vs do-nothing $ | Grid-only uplift | Legacy uplift |
+|---|---:|---|---:|---:|---:|---:|---:|---:|
+| 2023-04-06 | 86.13 | ordinary | 0.58 | 0.00 | **+0.00** | 0.58 | +0.00 | +0.02 |
+| 2024-05-08 | 4,981.40 | scarcity | 24.05 | 0.00 | **−14.98** | 24.05 | −14.98 | −3.94 |
+| 2024-12-20 | 73.13 | ordinary | 0.76 | 0.12 | **+0.13** | 0.88 | +0.05 | +0.10 |
+| 2025-04-07 | 3,860.63 | scarcity | 3.25 | 0.18 | **+6.74** | 3.43 | +6.92 | +1.88 |
+| 2025-05-03 | 76.33 | ordinary | 1.41 | 0.23 | **+1.74** | 1.64 | +1.98 | +0.35 |
+| 2026-09-23 | 97.76 | ordinary | 1.58 | 0.00 | **+0.07** | 1.58 | +0.07 | −0.10 |
+| 2026-09-24 | 108.74 | ordinary | 2.44 | 0.00 | **+0.77** | 2.44 | +0.62 | +0.17 |
+
+**Home-first: 5 of 7 days beat naive**, mean −$0.79, median +$0.13, worst −$14.98, best +$6.74.
+The mean is negative because of one day: on 2024-05-08 the clock schedule, holding its charge
+for the same evening peak, sells the whole pack into the $4,981/MWh hour the causal policy only
+reacts to one interval late. Against a battery that **does nothing** — never charges, never
+exports, never serves the house — median $1.64 and mean $4.94 a day, which is the absolute
+number this repo leads with. The legacy unit also wins 5 of 7, at mean −$0.22 and median
++$0.10; grid-only wins 5 of 7 at mean −$0.76.
+
+The naive schedule gets the **same evening-peak hold as the policy** (`hold_for_peak` applies to
+both in [`src/gridsignal/backtest.py`](src/gridsignal/backtest.py)). It did not before, and that
+exemption was most of the uplift this repo used to publish: the hold is worth about $2.11 per
+battery per day to the signals and about $3.76 to the clock schedule, so a baseline barred from
+holding was being beaten by the rule and not by the signal.
+
+#### The peak hold is the fix, and here is what it was worth
+
+Before this change the simulated house drew on storage all afternoon, so on 2024-05-08 the
+battery sat at 0 kWh by 16:00 and missed the $1,333–$4,981/MWh evening. Running the same policy
+with the hold switched off for both schedules (`holdout.evaluate(hold_for_peak=False)`, kept so
+the bug stays measurable) scores **6 of 7 days, mean +$0.70, median +$0.58, worst −$5.37** — a
+*better* uplift than the corrected run, because the clock schedule gains more from the hold than
+the policy does. What the hold is worth is visible in the absolute number instead: on 2024-05-08
+the battery earns **$24.05 instead of $11.90**. Test:
+`tests/test_holdout.py::test_the_peak_hold_is_what_the_worst_held_out_day_earns_on`.
+
+#### Corrected for same-interval lookahead
+
+An ERCOT real-time price is published only once its interval is over, so the original deviation
+rule — which compared an interval's *own* settled print against the day-ahead curve — was reading
+a number the operator could not have had when the order was due. Every figure above is the
+corrected run: each interval is decided from the day-ahead curve plus the **last settled print**
+only (`same_interval_price=False`, the default in
+[`src/gridsignal/dam.py`](src/gridsignal/dam.py)). Both runs print side by side from one command,
+`python -m gridsignal.holdout`:
+
+| Scoring | Days won | Mean $ | Median $ | Worst $ |
+|---|---|---:|---:|---:|
+| Corrected (day-ahead + last settled print), home-first | 5/7 | −0.79 | +0.13 | −14.98 |
+| As first scored (same-interval price), home-first | 4/7 | +0.07 | +0.13 | −8.65 |
+| Corrected, grid-only | 5/7 | −0.76 | +0.07 | −14.98 |
+| As first scored (same-interval price), grid-only | 4/7 | +0.09 | +0.05 | −8.65 |
+
+The correction costs the scarcity day, not the ordinary ones: the median is unchanged and the
+mean falls $0.07 → −$0.79, because a causal policy reacts to the $4,981/MWh spike one interval
+late while the naive schedule is already selling into it. That is the honest size of the effect,
+and it is why the corrected number is the one quoted everywhere. Regression test:
+`tests/test_dam.py::test_an_intervals_own_print_cannot_change_its_own_decision`.
+
+**What home-first costs the member, honestly:** very little in avoided purchases. Member savings
+average **$0.08 a day**, because on nearly every interval grid energy is cheaper than the peak
+hour that kWh is being held for, so the battery feeds the house only when no later hour on the
+day-ahead curve pays more. The member's protection comes from the backup reserve, which is never
+sold, not from self-supply — and before the hold existed the house did drink the stored energy,
+at a cost of $12.15 of signal value on 2024-05-08 alone.
+
+The frozen-policy reproducibility test still scores grid-only
+(`holdout.score_day(trace, serve_home=False)`), so the original numbers remain checkable.
+
+This is the result of anchoring the plan to the day-ahead curve. The previous real-time-only
+policy won 2 of 7 days (mean −$0.15, worst −$4.89) because it held charge waiting for spikes that
+never came; planning the windows from a price curve the operator genuinely has in advance removes
+most of that guesswork, and the real-time detector now only has to catch the divergence. Read it
+conservatively all the same: two scarcity days carry most of the mean, so a fleet-level claim
+built on the scarcity day alone would be dishonest — the median day is worth $0.13 against the
+clock schedule; against a battery that does nothing, median $1.64.
+
+Reproduce with `python -m gridsignal.holdout`.
+
+### Assumptions (not measured fleet data)
+
+Member view: essential household load **1.2 kW** (backup hours = reserved kWh ÷ 1.2 kW), member
+revenue share **60%** of the grid-event value their battery creates.
+
+Every dollar figure in this repository rests on these stated assumptions about a single home
+battery. They are round numbers chosen to be representative; they are **not** measurements of any
+real Base Power device or fleet.
+
+| Assumption | Value | Where |
+|---|---|---|
+| Usable energy capacity | 40 kWh (Base Core-style, per a public interview with Base's COO, [Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b), **not an official spec**); the legacy 13.5 kWh unit is kept as a comparison | `backtest.DEFAULT_KWH`, `backtest.LEGACY_KWH` |
+| Inverter power, charge and discharge | 20 kW (so 5 kWh per 15-minute interval); legacy 5 kW | `backtest.DEFAULT_POWER_KW`, `backtest.LEGACY_POWER_KW` |
+| Household load during the day | carried by the grid while storage is held for the day-ahead peak; served from the battery only when no later hour pays more | `backtest.value_captured(hold_for_peak=True)` |
+| Round-trip efficiency | 90% | `backtest.ROUND_TRIP_EFFICIENCY` |
+| Naive baseline schedule | charge 01:00–05:00, export 17:00–21:00 | `backtest.NAIVE_CHARGE_HOURS`, `NAIVE_EXPORT_HOURS` |
+| Starting state of charge | empty at 00:00 | `backtest.value_captured` |
+| Market participation | price taker settling at the RTM SPP; no bidding, no degradation cost, no losses beyond round-trip efficiency. The energy backtest carries no ancillary revenue; ancillary capacity is scored separately in `ancillary.py` | `backtest.py` |
+| Control Room event | 5 kW of capacity per affected device over a 2-hour window | `control_room/engine.py` |
+| Household load shape | synthetic summer-weekday profile, 0.8–2.3 kW, scaled 0.7x–1.4x per home | `load.py` |
+| Base Core-style unit | 40 kWh, 20 kW inverter, every 4th simulated device — per a public interview with Base's COO ([Sourcery, 3 Aug 2026](https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b)), **not official specs** | `fleet.py` |
+| Member reserve floor | 20% of usable capacity, 50% under the storm policy | `home.py` |
+| Portable generator | 1.8 kW for 8 hours of fuel, on roughly 1 member in 11 | `fleet.py` |
+| Mutual-aid share | 0.25–2.0 kWh per giver, same zone, both opted in, recipient flagged medical | `home.py` |
 
 ## Known Limitations and Next Steps
 
-- TODO
+- The Control Room is a simulation: no device protocol, no telemetry ingest, no persistence
+  (state lives in the Streamlit session and resets on server restart).
+- Detection is a single rule (telemetry staleness) on one scripted device rather than a monitor
+  over a real event stream.
+- The spike forecast is a fixed-coefficient logistic score, not a trained model, and the energy
+  backtest is a price-taker single-day replay: no bidding, no degradation cost, and ancillary
+  capacity scored in a separate ledger (`ancillary.py`) rather than inside the energy numbers.
+- **The ancillary uplift is small, concentrated in rare days, and capped by the pilot rules.**
+  Inside ERCOT's ADER pilot rules (ECRS and Non-Spin only, 90 MW per QSE per product) the
+  held-out median for a Base Core-style unit is +$0.15/battery/day and the mean +$0.32, with
+  2024-05-08 alone carrying 66% of it. The unrestricted +$3.70 mean is kept only as a labelled
+  comparison; it is 91% Reg Down, which an ADER may not offer, and at fleet scale it fails its own
+  price-taker check (200 MW against 392 MW procured, 51%). Every check prints in
+  `python -m gridsignal.ancillary`.
+- **Home load is synthetic.** The per-home profile is a shaped weekday curve hashed per device,
+  not metered data, so the export split and member savings move with that assumption.
+- The mixed fleet, tenancy split, generator top-off and mutual aid are all modelling choices in
+  the simulator: no partner utility, installer or member is represented, and nothing is dispatched.
+- **The out-of-sample edge is thin and it can be negative**: 5 of 7 held-out days beat the naive
+  schedule home-first at a median of +$0.13, but the mean is **−$0.79** because 2024-05-08 goes to
+  the clock schedule by $14.98 once that schedule is allowed the same evening-peak hold. Against a
+  battery that does nothing, median $1.64 a day. Day-ahead anchoring and the peak hold
+  fixed the previous generalisation failure; they did not turn this into a revenue product.
+- **The held-out set is not pristine.** It was scored, published, and then scored again after
+  several policy revisions — same-interval lookahead removed, day-ahead anchoring, the peak hold,
+  and the naive baseline corrected. Parameters were never fitted on it, and every rescore is
+  published including the ones that made the number worse, but it has informed the work and is
+  weaker evidence than a set scored once.
+- The congestion read is 15 days of settlement prices: the zone-timed uplift is a re-timing
+  study on one battery, and the placement sketch's saturation curve is an assumed linear
+  relationship, not an estimated one. Neither is a forecast or a siting recommendation.
+- The day-ahead plan is a top-k hour selection, not an optimiser: no state-of-charge-aware
+  dynamic program, no forecast error model on the DAM-to-RTM basis.
+- Load and fuel-mix ingest are implemented but not yet used by either view.
+- ERCOT's public SPP report only keeps roughly the last week online, so `--date` must be recent;
+  scarcity days come from the yearly historical archive instead. Both bundled samples are the
+  cached copies that keep the demo reproducible and offline.
+- Scaling is a device multiplier on one seeded template, not a model of real per-home diversity,
+  and the fleet map thins healthy markers above 400 devices.
+- The agent mesh runs in simulated seconds inside one process: there is no transport, no real
+  cryptographic identity beyond a shared HMAC key, and agents do not defect strategically — a
+  "lying" agent lies about its capabilities, not about delivery it actually made.
+- Jev's root-cause accuracy on the bundled scenarios (3/5) is below the deterministic rules (5/5),
+  and it never reached the 0.9 confidence gate, so the gate reads *below the bar* throughout the
+  demo — which changes nothing about who commits, since only a human ever does.
+  Five scenarios is far too small a sample to conclude anything about the model; it is reported as
+  measured rather than tuned away.
+- The Jev fixtures are keyed on the exact incident state, so changing the snapshot schema or the
+  scenarios invalidates them and the mesh silently drops to the rules layer (Jev offline) until they are
+  re-recorded with a key.
+- Next: drive the whole event window as a replay (price tick by price tick) so the operator sees
+  exposure change minute to minute rather than as a single window average.
+
+## Submission documents
+
+| Document | What it is |
+|---|---|
+| [`docs/WRITEUP.md`](docs/WRITEUP.md) | The 150–300 word write-up: problem, who it helps, solution, impact |
+| [`docs/SUBMISSION.md`](docs/SUBMISSION.md) | Submission checklist, the same write-up, deploy and capture instructions |
+| [`docs/JUDGING_MAP.md`](docs/JUDGING_MAP.md) | Every judging sub-criterion mapped to the file, test or screen that proves it |
+| [`docs/DEMO.md`](docs/DEMO.md) | The timed 4:50 demo script: one story, each scene mapped to a rubric line and a file |
+| [`docs/JUDGE_DRY_RUN.md`](docs/JUDGE_DRY_RUN.md) | An honest self-score against each rubric line, with the three weakest lines and what would fix them |
+| [`docs/ROSTER.md`](docs/ROSTER.md) | Team roster template |
+| [`docs/architecture.md`](docs/architecture.md) | Data-pipeline architecture notes |
 
 ## Team
 
+See [`docs/ROSTER.md`](docs/ROSTER.md).
+
 | Name | Role | Contact |
 |---|---|---|
-| Hemanth Reganti | TODO | TODO |
+| Hemanth Reganti | Lead | regantih@gmail.com |
 
 ## Hackathon Compliance
 
-All code in this repo was written during the hackathon (Sep 25 to 27, 2026). Third-party open-source libraries are listed in `pyproject.toml`.
+All code in this repo was written during the hackathon (Sep 25 to 27, 2026). Third-party
+open-source libraries are listed in `pyproject.toml`.

@@ -1,0 +1,21 @@
+name: Good firmware build
+description: >
+  The same rollout job with a build that holds every gate: lab, 1% canary, 10%, then
+  two human-approved promotions to 50% and 100%. Simulated fleet, simulated build.
+seed: 42
+devices: 10000
+build:
+  version: 2026.09.4
+  previous: 2026.09.3-rc1
+fault:
+  silent_failure_share: 0.0
+gates:
+  heartbeat: 0.99
+  response: 0.99
+  reserve_kwh: 4.0
+conditions:
+  grid_event_s: [0, 300]
+  islanded: []
+approval:
+  approver: M. Alvarez (Fleet Operator)
+  delay_s: 60

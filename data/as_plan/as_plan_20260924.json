@@ -1,0 +1,16 @@
+{
+  "location": "ERCOT system-wide",
+  "market": "DAM_ANCILLARY_PLAN",
+  "date": "2026-09-24",
+  "source": "https://www.ercot.com/mp/data-products/data-product-details?id=NP3-905-ER",
+  "fetched_at": "2026-09-26T06:30:52+00:00",
+  "intervals": 24,
+  "products": [
+    "regup",
+    "regdn",
+    "rrs",
+    "ecrs",
+    "nonspin"
+  ],
+  "units": "MW of capacity procured per hour"
+}

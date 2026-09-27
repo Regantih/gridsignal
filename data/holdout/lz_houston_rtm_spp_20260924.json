@@ -1,0 +1,9 @@
+{
+  "location": "LZ_HOUSTON",
+  "market": "REAL_TIME_15_MIN",
+  "date": "2026-09-24",
+  "source": "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD",
+  "fetched_at": "2026-09-26T01:24:40+00:00",
+  "intervals": 96,
+  "units": "$/MWh"
+}

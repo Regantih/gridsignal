@@ -1,0 +1,20 @@
+name: Install wave during a live event
+description: >
+  Several hundred newly installed batteries join the mesh while a grid event is
+  already covered. Each unit is commissioned by a simulated installer phone check
+  that registers its signed card; a unit that arrives without one is rejected, and an
+  accepted unit sits on probation until it passes heartbeat, charge/discharge and
+  reserve checks. Simulated fleet, simulated installers, simulated throughput.
+seed: 42
+fleet:
+  existing: 1000
+  joining: 400
+install:
+  units_per_hour: 100
+  health_check_s: 120
+  # One in forty arrivals is not properly commissioned, so its card fails the check.
+  bad_signature_every: 40
+  # One in fifty fails its probation health check and never becomes eligible.
+  failing_health_every: 50
+approval:
+  approver: M. Alvarez (Fleet Operator)
