@@ -35,7 +35,7 @@ from gridsignal.signals import Signal
 COO_INTERVIEW_URL = "https://www.sourcery.vc/p/breaking-base-power-hits-13b-on-1b"
 #: Why a utility wants to call a battery in the summer evening: transmission cost is
 #: allocated to load at the four summer monthly system peaks.
-ERCOT_4CP_URL = "https://www.ercot.com/mktinfo/4cp"
+ERCOT_4CP_URL = "https://www.ercot.com/mktinfo/data_agg/4cp"
 #: Average Texas residential retail price, the public series the modelled flat rate is
 #: sized against. It is not a Base tariff and Base publishes none.
 EIA_RESIDENTIAL_URL = "https://www.eia.gov/electricity/monthly/epm_table_grapher.php?t=epmt_5_6_a"

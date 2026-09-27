@@ -423,7 +423,7 @@ member.
 
 Simulated, and the assumptions are printed with the numbers: a modelled 14¢/kWh flat retail rate
 (no Base tariff is public), a modelled 16:00–20:00 call window standing in for a
-[4CP](https://www.ercot.com/mktinfo/4cp)-driven call, and the utility's avoided transmission
+[4CP](https://www.ercot.com/mktinfo/data_agg/4cp)-driven call, and the utility's avoided transmission
 charge, hardware, acquisition and financing all left out, which is why this is a comparison of
 revenue paths and not a P&L. Tests: `tests/test_business.py`.
 
