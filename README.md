@@ -17,6 +17,27 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 > real devices, utilities, ERCOT operational systems or any control plane, and it never dispatches
 > anything. A human operator must approve every recovery action.
 
+## What the data shows (five findings, each reproducible)
+
+Every number below is recomputed from bundled real ERCOT prices and the simulated fleet by the
+command beside it. No key and no network needed.
+
+| # | Finding | Why it matters to Base | Reproduce |
+|---|---|---|---|
+| 1 | **Only 47% of scarcity-day value was visible in the day-ahead curve.** The other **$18.83 per battery** showed up only in real-time prints, worth about 28 ordinary trading days. 19 of 1,440 intervals settled at 5x+ their day-ahead hour, and **all 19 fell on scarcity days**. | A day-ahead plan is enough on an ordinary day. On the days that pay for the year, the money lives in the real-time layer, which is exactly when a device failure costs the most. That is why the two tracks here are one product. Caveat, printed by the CLI: on the 40 kWh / 20 kW unit the gap narrows (49% vs 45%). | `python -m gridsignal.insight` |
+| 2 | **Fleet failures are correlated, not random.** One gateway firmware ring takes out **166 batteries** at 10,000 devices, raising **332 raw alarms** that group into **1 incident**. Priced on a real scarcity day: **$4,812 at risk, $4,751 recovered** after one approval, versus $1.67 on a normal day at 48 devices. | The same fault is worth about 2,900x more at fleet scale on the right day. Operators need one incident with a dollar figure, not 332 pages. | `python -m gridsignal.demo_numbers` |
+| 3 | **The pilot rules, not the battery, cap ancillary revenue.** Inside ERCOT's ADER pilot a home battery may sell only ECRS and Non-Spin: median **$0.15**/battery/day, with one day (2024-05-08) carrying 66% of the total. Across all five products the mean would be $3.70, 85% of it Reg Down. **The rules remove 91% of that mean.** | Ancillary capacity is rare-day money, not an annuity. The biggest lever is regulatory (Reg Down eligibility), not a better model. | `python -m gridsignal.ancillary` |
+| 4 | **The backup promise is load-bearing and it costs something.** 648 simulated members, 957 runs, 4,454 intervals: **0** took a member's promised backup. Remove the floor and change nothing else: **335 intervals breach, spending 1,564.9 kWh** of promised backup. | Base sells resilience first. The guard is what keeps market dispatch from quietly spending the member's outage reserve. | `python -m gridsignal.backup_ledger` |
+| 5 | **Honest out-of-sample edge: thin, and we say so.** Home-first dispatch beats a naive clock schedule on 5 of 7 held-out days, median **+$0.13**, mean **-$0.79** (one bad day). Against a battery that does nothing: median **$1.64**/day. Simple rules also beat the LLM decision layer on a blind 24-answer key, **21/24 vs 17/24**. | Scheduling is not where the edge is; reliability and real-time coordination are. Rules stay in charge, the model advises, a human approves. | `python -m gridsignal.holdout` and `python -m gridsignal.judgment_report` |
+
+## What we would build next with Base
+
+1. **Live ERCOT feed.** Swap the cached traces for the real-time SPP and day-ahead feeds through the existing ERCOT pull in `gridsignal.ingest`, so finding 1 runs every 15 minutes.
+2. **Real telemetry adapter.** Point the Control Room at a read-only export of fleet heartbeats. The incident, pricing and approval flow stay unchanged; nothing dispatches without a human.
+3. **Correlated-risk map.** Group devices by firmware ring, gateway and feeder, and price the worst single fault before the next scarcity day instead of during it.
+4. **Member-facing backup ledger.** Show each member, per event, that their promised reserve was untouched. Trust is the product.
+5. **ADER eligibility case.** Use finding 3 as evidence for which product rules matter most to a home fleet.
+
 ## Problem
 
 A home-battery fleet is only worth what it can reliably deliver during a grid event. When a single
