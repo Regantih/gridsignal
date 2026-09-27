@@ -8,14 +8,23 @@ from __future__ import annotations
 import html
 import math
 import re
+import sys
 import threading
 from collections import defaultdict
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 from streamlit.delta_generator import DeltaGenerator
+
+# Streamlit Cloud keeps the package it installed on first boot until requirements.txt changes,
+# so a new module (gridsignal.twin) raised ModuleNotFoundError on the live app. Import from
+# this checkout first: the code on screen is always the code in the repository.
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.is_dir() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
 
 from gridsignal import (
     ancillary,
