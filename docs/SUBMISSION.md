@@ -9,11 +9,11 @@
 Submit via https://airtable.com/appWQWPtBqDUhCPPj/shrU4GuBeUnMzyrd5. One per team.
 
 - [x] Project title — GridSignal Control Room
-- [ ] 2 to 5 min Loom demo showing the core loop live — record from [`DEMO.md`](DEMO.md) (timed to 4:50, shot list included)
-- [ ] Repo set to PUBLIC — repository setting, do this before submitting
+- [x] 2 to 5 min Loom demo showing the core loop live — https://www.loom.com/share/0632c671ea124d37b76a0b243a36103e (4:52, follows [`DEMO.md`](DEMO.md))
+- [x] Repo set to PUBLIC — https://github.com/Regantih/gridsignal
 - [x] README: quick start, stack + architecture diagram, reproduce steps, data provenance, limitations — [`../README.md`](../README.md)
 - [x] Deployed URL or short screen capture — deploy steps below, or `python scripts/capture_demo.py`
-- [ ] Team roster (names, roles, contacts) — fill in [`ROSTER.md`](ROSTER.md)
+- [x] Team roster (names, roles, contacts) — [`ROSTER.md`](ROSTER.md): Hemanth Reganti, Lead, regantih@gmail.com
 - [x] 150 to 300 word write-up — below, and in [`WRITEUP.md`](WRITEUP.md)
 
 ## Write-up (150–300 words)
@@ -64,6 +64,8 @@ Writes stills and a WebM screen recording to `docs/media/`: Control Room stable 
 Jev's answer → human approval → recovery, then Agent Mesh, Grid Signals and Member App.
 
 ## Demo video
+
+Recorded: https://www.loom.com/share/0632c671ea124d37b76a0b243a36103e
 
 Record the screen while reading [`DEMO.md`](DEMO.md); it is timed to 4:50, it carries a shot
 list (what is on screen, what to click, what to keep off camera) and the core loop is live, not

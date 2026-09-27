@@ -8,6 +8,8 @@ Built at the Base Power x AITX Talent Hackathon, Austin, Sep 25 to 27, 2026.
 
 **Tracks:** Orchestration (Control Room) + Open Grid Data
 
+**Demo video (Loom, 4:52):** [https://www.loom.com/share/0632c671ea124d37b76a0b243a36103e](https://www.loom.com/share/0632c671ea124d37b76a0b243a36103e)
+
 **Live demo:** [https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/](https://dashboardpy-shrqjtlddw5ewwevwderjagridsignal-control-room.streamlit.app/)
 
 > **Simulation only.** The fleet, the failure and the recovery are deterministic local mock data;
