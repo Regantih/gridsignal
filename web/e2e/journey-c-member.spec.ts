@@ -30,6 +30,7 @@ test.describe('Journey C: member, mobile-first', () => {
     const text = await history.innerText()
     expect(text).not.toMatch(/INC-\d+/)
     expect(text).not.toMatch(/BAT-\d+/)
+    expect(await page.locator('body').innerText()).not.toMatch(/BAT-\d+|INC-\d+/)
     expect(text).not.toMatch(/M\. Alvarez/)
     await expect(page.getByText(/Approve/)).toHaveCount(0)
 

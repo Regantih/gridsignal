@@ -27,10 +27,10 @@ export function MemberPage() {
         </div>
         {homes.data && (
           <div className="flex flex-col gap-1">
-            <Label htmlFor="home" className="sr-only">Home</Label>
-            <Select id="home" value={id ?? ''} onChange={(e) => navigate(`/member/${e.target.value}`)} className="w-32" data-testid="home-select">
+            <Label htmlFor="home" className="text-xs text-fg-muted">Demo: view as</Label>
+            <Select id="home" value={id ?? ''} onChange={(e) => navigate(`/member/${e.target.value}`)} className="w-44" data-testid="home-select">
               {homes.data.homes.map((h) => (
-                <option key={h.device_id} value={h.device_id}>{h.device_id}</option>
+                <option key={h.device_id} value={h.device_id}>{h.site}</option>
               ))}
             </Select>
           </div>
