@@ -126,6 +126,9 @@ def test_learning_is_labelled_synthetic_and_upload_switches_source(client: TestC
     }
     risk = client.get("/api/risk").json()
     assert risk["calibration_source"].startswith("SYNTHETIC")
+    plan = client.get("/api/plan").json()
+    assert plan["calibrated"] is True
+    assert plan["calibration_source"].startswith("SYNTHETIC")
 
     from gridsignal.twin import learn as twin_learn
 

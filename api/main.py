@@ -287,6 +287,7 @@ def get_plan(
         plan = compute.plan_for(s.engine, scenario, target, calibration)
     return {
         **plan_payload(plan, current),
+        "calibrated": calibration is not None,
         "learn_source": s.learn_source,
         "calibration_source": calibration.source if calibration else None,
     }
