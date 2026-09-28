@@ -63,8 +63,6 @@ export function HoldButton({
       type="button"
       data-testid={testId}
       disabled={disabled}
-      aria-label={typeof children === 'string' ? `${children}. ${hint}` : undefined}
-      aria-describedby={undefined}
       onPointerDown={begin}
       onPointerUp={cancel}
       onPointerLeave={cancel}
@@ -104,7 +102,7 @@ export function HoldButton({
       </svg>
       <span className="relative flex flex-col items-start leading-tight">
         <span>{children}</span>
-        <span className="text-2xs font-medium opacity-75">{p > 0 ? `${Math.round(p * 100)}%` : hint}</span>
+        <span className="text-2xs font-medium opacity-90">{p > 0 ? `${Math.round(p * 100)}%` : hint}</span>
       </span>
     </button>
   )
