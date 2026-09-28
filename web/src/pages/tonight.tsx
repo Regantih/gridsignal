@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, ShieldCheck, ShieldOff, Zap, RotateCcw, WifiOff, Clapperboard, Square } from 'lucide-react'
+import { cn } from '@/lib/utils'
 import { api, type Fleet, type Incident } from '@/lib/api'
 import { keys, useFleet, useFleetMutation, useResetSession } from '@/lib/queries'
 import { clock, count, dateLabel, hours, money, pctPoints, power, priceMwh } from '@/lib/format'
@@ -59,11 +60,13 @@ function OtherMarket() {
       </header>
       <section className="grid gap-6 lg:grid-cols-[1fr_minmax(20rem,26rem)]">
         <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40" style={{ viewTransitionName: 'fleet-map' }}>
-          <MarketViewToggle />
+          <div className="z-10 flex justify-end px-4 pt-4 sm:absolute sm:right-0 sm:top-0 sm:px-5">
+            <MarketViewToggle />
+          </div>
           <p className="sr-only" data-testid="scene-summary">
             Map of the United States with {market.name} framed. {STATUS_LABEL[market.status]}. Only Texas, ERCOT, is modelled.
           </p>
-          <div className="pt-14">
+          <div className="pt-2 sm:pt-14">
             <FleetScene
               devices={fleet.data?.devices ?? []}
               priceMwh={50}
@@ -96,7 +99,7 @@ function MarketViewToggle() {
     </button>
   )
   return (
-    <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-full border border-border bg-surface/80 p-1 backdrop-blur" role="group" aria-label="Map view">
+    <div className="pointer-events-auto flex shrink-0 items-center gap-1 self-start rounded-full border border-border bg-surface/80 p-1 backdrop-blur" role="group" aria-label="Map view">
       {opt('us', 'United States')}
       {opt('market', market.short)}
     </div>
@@ -293,27 +296,29 @@ function Tonight({ fleet }: { fleet: Fleet }) {
         </div>
 
         <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40" style={{ viewTransitionName: 'fleet-map' }}>
-          <div className="absolute left-5 top-4 z-10">
-            <div className="eyebrow">{view.live ? 'The fleet, live' : 'The fleet, replayed'}</div>
-            <p className="mt-1 max-w-xs text-xs text-fg-muted">
-              {mk.view === 'us'
-                ? 'Every market Base Power is in. Only Texas, ERCOT, is modelled; click a market to fly to it.'
-                : "Light travels from each home to its zone as it exports; each zone's column is the kW it sends. Hover a home to see the neighbours that would fail with it. Drag to look around."}
-            </p>
+          <div className="z-10 flex items-start justify-between gap-3 px-4 pt-4 sm:pointer-events-none sm:absolute sm:inset-x-0 sm:top-0 sm:px-5">
+            <div>
+              <div className="eyebrow">{view.live ? 'The fleet, live' : 'The fleet, replayed'}</div>
+              <p className="mt-1 max-w-xs text-xs text-fg-muted">
+                {mk.view === 'us'
+                  ? 'Every market Base Power is in. Only Texas, ERCOT, is modelled; click a market to fly to it.'
+                  : "Light travels from each home to its zone as it exports; each zone's column is the kW it sends. Hover a home to see the neighbours that would fail with it. Drag to look around."}
+              </p>
+            </div>
+            <MarketViewToggle />
           </div>
-          <MarketViewToggle />
           <p className="sr-only" data-testid="scene-summary">
             {count(s.online)} of {count(s.total_devices)} homes online, {power(s.committed_kw)} committed against {power(s.target_kw)}, price {priceMwh(priceAt)}.
             {fleet.pending_incident ? ` ${fleet.pending_incident.cohort.length} home${fleet.pending_incident.cohort.length === 1 ? '' : 's'} dropped and waiting for approval.` : ' No incident waiting.'}
           </p>
-          <div className="absolute bottom-4 left-5 z-10 flex flex-wrap gap-3 text-2xs text-fg-muted">
+          <div className={cn('absolute bottom-4 left-5 z-10 flex flex-wrap gap-3 text-2xs text-fg-muted', mk.view === 'us' && 'hidden')}>
             <Legend color="var(--fg)" label="exporting" />
             <Legend color="var(--warn)" label="degraded" />
             <Legend color="var(--risk)" label="dropped" />
             <Legend color="var(--price)" label="fails together" />
             <Legend color="var(--flow)" label="power to zone" />
           </div>
-          <div className="pt-14">
+          <div className="pt-2 sm:pt-14">
             <FleetScene
               devices={fleet.devices}
               groups={groups}

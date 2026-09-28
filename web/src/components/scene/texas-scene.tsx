@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { Html, Line, OrbitControls } from '@react-three/drei'
+import { Line, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Device } from '@/lib/api'
@@ -203,7 +203,7 @@ const toEdge = (ring: [number, number][], y: number) => {
  * because that is the region in question, not the whole state. Nothing glows where nothing
  * is modelled. In the Texas view the other markets fade almost out so they never intrude.
  */
-function Country({ pal, theme, selected, view, showLabels, onMarket }: { pal: Palette; theme: 'dark' | 'light'; selected: MarketId; view: MarketView; showLabels: boolean; onMarket?: (id: MarketId) => void }) {
+function Country({ pal, theme, selected, view, showLabels, labels, onMarket }: { pal: Palette; theme: 'dark' | 'light'; selected: MarketId; view: MarketView; showLabels: boolean; labels: React.RefObject<Map<MarketId, HTMLDivElement>>; onMarket?: (id: MarketId) => void }) {
   const dark = theme === 'dark'
   const focusTexas = view === 'market' && selected === 'ercot'
   const geos = useMemo(
@@ -245,20 +245,59 @@ function Country({ pal, theme, selected, view, showLabels, onMarket }: { pal: Pa
         <meshStandardMaterial color={quiet.clone().lerp(pal.subtle, 0.35)} roughness={0.95} transparent opacity={0.9 * dim} />
       </mesh>
       <Line points={comed.edge} color={`#${pal.subtle.getHexString()}`} lineWidth={1.2} dashed dashSize={0.6} gapSize={0.4} transparent opacity={0.9 * dim} />
-      {showLabels &&
-        MARKETS.map((m) => {
-          const [x, z] = toScene(m.center[0], m.center[1])
-          return (
-            <Html key={m.id} position={[x, m.status === 'live' ? 9 : 2.5, z]} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
-              <div className="whitespace-nowrap rounded-full border border-border bg-surface/90 px-2.5 py-1 text-center text-[11px] leading-tight text-fg shadow backdrop-blur">
-                <span className="font-display font-semibold">{m.short}</span>
-                <span className="num ml-1.5 text-fg-muted">{m.iso} · {STATUS_LABEL[m.status]}</span>
-                {m.id === 'comed' && <span className="num ml-1.5 text-fg-subtle">· approximate ComEd area</span>}
-              </div>
-            </Html>
-          )
-        })}
+      {showLabels && <LabelProjector labels={labels} />}
     </group>
+  )
+}
+
+/** Where each market label sits in the world; the DOM labels live outside the canvas. */
+const LABEL_ANCHORS = MARKETS.map((m) => {
+  const [x, z] = toScene(m.center[0], m.center[1])
+  return { id: m.id, pos: new THREE.Vector3(x, m.status === 'live' ? 9 : 2.5, z) }
+})
+
+/** Projects the anchors to the card each frame and moves the DOM labels directly (no React state). */
+function LabelProjector({ labels }: { labels: React.RefObject<Map<MarketId, HTMLDivElement>> }) {
+  const { camera, size } = useThree()
+  const v = useMemo(() => new THREE.Vector3(), [])
+  useFrame(() => {
+    for (const a of LABEL_ANCHORS) {
+      const el = labels.current?.get(a.id)
+      if (!el) continue
+      v.copy(a.pos).project(camera)
+      const behind = v.z > 1
+      el.style.transform = `translate(-50%, -100%) translate(0, -6px) translate(${((v.x + 1) / 2) * size.width}px, ${((1 - v.y) / 2) * size.height}px)`
+      el.style.opacity = behind ? '0' : '1'
+    }
+  })
+  useEffect(
+    () => () => {
+      labels.current?.forEach((el) => { el.style.opacity = '0' })
+    },
+    [labels],
+  )
+  return null
+}
+
+function MarketLabels({ labels }: { labels: React.RefObject<Map<MarketId, HTMLDivElement>> }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-[5] overflow-hidden" aria-hidden>
+      {MARKETS.map((m) => (
+        <div
+          key={m.id}
+          ref={(el) => {
+            if (el) labels.current?.set(m.id, el)
+            else labels.current?.delete(m.id)
+          }}
+          className="absolute left-0 top-0 whitespace-nowrap rounded-full border border-border bg-surface/90 px-2.5 py-1 text-center text-[11px] leading-tight text-fg shadow backdrop-blur transition-opacity duration-300"
+          style={{ opacity: 0 }}
+        >
+          <span className="font-display font-semibold">{m.short}</span>
+          <span className="num ml-1.5 hidden text-fg-muted sm:inline">{m.iso} · {STATUS_LABEL[m.status]}</span>
+          {m.id === 'comed' && <span className="num ml-1.5 hidden text-fg-subtle md:inline">· approximate ComEd area</span>}
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -664,13 +703,18 @@ function frameFor(market: MarketId, view: MarketView, aspect: number): { target:
   if (view === 'us') {
     const [x0, z0] = toScene(-124.8, 49.4)
     const [x1, z1] = toScene(-66.9, 24.5)
-    const target = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2 - Math.abs(z1 - z0) * 0.04)
+    // Portrait cards leave the copy at the top, so lift the country a little higher in frame.
+    const target = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2 + Math.abs(z1 - z0) * (aspect < 1 ? 0.14 : -0.04))
     return { target, dist: fitDistance(Math.abs(x1 - x0), Math.abs(z1 - z0), aspect, US_POLAR) }
   }
-  if (market === 'ercot') return { target: new THREE.Vector3(0, 0, 1), dist: 64 }
+  // Texas spans about 13 degrees of longitude; narrow cards need more distance to keep it whole.
+  const [tx0, tz0] = toScene(-106.7, 36.6)
+  const [tx1, tz1] = toScene(-93.4, 25.8)
+  const fit = fitDistance(Math.abs(tx1 - tx0), Math.abs(tz1 - tz0), aspect, 0.95, 1.1)
+  if (market === 'ercot') return { target: new THREE.Vector3(0, 0, 1), dist: Math.max(64, fit) }
   const m = marketById(market)
   const [x, z] = toScene(m.center[0], m.center[1])
-  return { target: new THREE.Vector3(x, 0, z), dist: market === 'comed' ? 62 : 64 }
+  return { target: new THREE.Vector3(x, 0, z), dist: Math.max(market === 'comed' ? 62 : 64, fit) }
 }
 
 function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React.RefObject<Stage>; nodes: Node[]; price: number; pal: Palette; drawing: boolean; market: MarketId; view: MarketView }) {
@@ -776,6 +820,7 @@ export default function TexasScene(props: SceneProps) {
   const [draft, setDraft] = useState<Storm | null>(null)
   const [drawing, setDrawing] = useState(false)
   const wrap = useRef<HTMLDivElement>(null)
+  const labels = useRef<Map<MarketId, HTMLDivElement>>(new Map())
   const [running, setRunning] = useState(true)
 
   const stage = useRef<Stage>({ moment: moment ?? null, focus, hit, hover: hover?.d.device_id ?? null, tempo })
@@ -824,7 +869,7 @@ export default function TexasScene(props: SceneProps) {
         <hemisphereLight args={[theme === 'dark' ? '#3a4b7a' : '#ffffff', theme === 'dark' ? '#05070f' : '#c9d3e6', theme === 'dark' ? 0.5 : 0.7]} />
         <Ground pal={pal} />
         <Land pal={pal} />
-        <Country pal={pal} theme={theme} selected={market} view={view} showLabels={view === 'us' || market !== 'ercot'} onMarket={onMarket} />
+        <Country pal={pal} theme={theme} selected={market} view={view} showLabels={view === 'us' || market !== 'ercot'} labels={labels} onMarket={onMarket} />
         <Hubs hubs={hubs} maxKw={maxKw} pal={pal} />
         <Homes
           nodes={nodes}
@@ -844,6 +889,7 @@ export default function TexasScene(props: SceneProps) {
           <Bloom luminanceThreshold={theme === 'dark' ? 0.55 : 0.85} luminanceSmoothing={0.2} intensity={theme === 'dark' ? 1.1 : 0.5} mipmapBlur radius={0.6} />
         </EffectComposer>
       </Canvas>
+      <MarketLabels labels={labels} />
       {hover && !drawing && (
         <div
           className="pointer-events-none absolute z-10 w-56 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-surface/95 px-3 py-2 text-xs shadow backdrop-blur"

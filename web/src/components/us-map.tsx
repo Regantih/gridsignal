@@ -30,7 +30,11 @@ const COMED = toPath(comedOutline)
 
 const [X0, Y0] = project(-125.5, 49.8)
 const [X1, Y1] = project(-66.5, 24.3)
-export const US_VIEWBOX = `${X0.toFixed(0)} ${Y0.toFixed(0)} ${(X1 - X0).toFixed(0)} ${(Y1 - Y0).toFixed(0)}`
+const W = X1 - X0
+const H = Y1 - Y0
+export const US_VIEWBOX = `${X0.toFixed(0)} ${Y0.toFixed(0)} ${W.toFixed(0)} ${H.toFixed(0)}`
+/** Map coordinates to a percentage of the (aspect-locked) container, for HTML labels. */
+const pct = (x: number, y: number) => ({ left: `${((x - X0) / W) * 100}%`, top: `${((y - Y0) / H) * 100}%` })
 
 const FILL: Record<Market['status'], string> = {
   live: 'fill-flow/30 stroke-flow',
@@ -52,7 +56,8 @@ export function UsMap({
 }) {
   const uid = useId()
   return (
-    <div className={cn('relative w-full', className)} style={{ height }} data-testid="us-map">
+    <div className={cn('relative flex w-full items-center justify-center px-2 pb-11 pt-1 sm:px-4', className)} style={{ height }} data-testid="us-map">
+      <div className="relative w-full" style={{ aspectRatio: `${W} / ${H}`, maxHeight: height - 52, maxWidth: ((height - 52) * W) / H }}>
       <svg viewBox={US_VIEWBOX} className="h-full w-full" role="group" aria-label="Markets where Base Power operates">
         <defs>
           <pattern id={`${uid}-grid`} width="20" height="20" patternUnits="userSpaceOnUse">
@@ -61,12 +66,11 @@ export function UsMap({
         </defs>
         <rect x={X0} y={Y0} width={X1 - X0} height={Y1 - Y0} fill={`url(#${uid}-grid)`} opacity="0.5" />
         {PATHS.filter((p) => !p.market).map((p) => (
-          <path key={p.id} d={p.d} className="fill-surface stroke-border" strokeWidth="0.8" strokeLinejoin="round" />
+          <path key={p.id} d={p.d} className="fill-surface stroke-border-strong" strokeWidth="1" strokeLinejoin="round" />
         ))}
         {PATHS.filter((p) => p.market).map((p) => {
           const m = p.market!
           const on = m.id === selected
-          const [cx, cy] = project(m.center[0], m.center[1])
           return (
             <g key={p.id}>
               {m.id === 'comed' && <path d={COMED} className="fill-fg-subtle/30" stroke="none" pointerEvents="none" />}
@@ -89,25 +93,43 @@ export function UsMap({
                 strokeDasharray={m.status === 'equipment' ? '4 3' : undefined}
                 strokeLinejoin="round"
               />
-              {m.id === 'comed' && (
-                <>
-                  <path d={COMED} fill="none" className="stroke-fg-subtle" strokeWidth="1.2" strokeDasharray="3 3" pointerEvents="none" />
-                  <text x={COMED_CX} y={COMED_CY + 3} textAnchor="middle" className="fill-fg-subtle font-mono text-[7px] uppercase tracking-wider" pointerEvents="none">
-                    approximate ComEd area
-                  </text>
-                </>
-              )}
-              <text x={cx} y={cy + (m.id === 'ercot' ? 0 : -22)} textAnchor="middle" className="fill-fg font-display text-[13px] font-semibold" pointerEvents="none">
-                {m.short}
-              </text>
-              <text x={cx} y={cy + (m.id === 'ercot' ? 16 : -8)} textAnchor="middle" className="fill-fg-muted font-mono text-[9px] uppercase tracking-wider" pointerEvents="none">
-                {m.iso} · {STATUS_LABEL[m.status]}
-              </text>
+              {m.id === 'comed' && <path d={COMED} fill="none" className="stroke-fg-subtle" strokeWidth="1.2" strokeDasharray="3 3" pointerEvents="none" />}
             </g>
           )
         })}
-      </svg>
-      <ul className="absolute bottom-3 left-4 flex flex-wrap gap-2 text-[11px] text-fg-muted" aria-hidden>
+        </svg>
+        {MARKETS.map((m) => {
+          const [cx, cy] = project(m.center[0], m.center[1])
+          const on = m.id === selected
+          return (
+            <div
+              key={m.id}
+              aria-hidden
+              className={cn(
+                'pointer-events-none absolute flex -translate-x-1/2 flex-col items-center leading-tight',
+                m.id === 'ercot' ? '-translate-y-1/2' : '-translate-y-full pb-1',
+                on ? 'opacity-100' : 'opacity-85',
+              )}
+              style={pct(cx, cy)}
+            >
+              <span className="rounded-full border border-border bg-surface/90 px-2 py-0.5 text-xs font-semibold text-fg shadow-sm backdrop-blur font-display sm:text-[13px]">
+                {m.short}
+              </span>
+              <span className="num mt-0.5 hidden whitespace-nowrap text-[10px] uppercase tracking-wider text-fg-muted sm:block">
+                {m.iso} · {STATUS_LABEL[m.status]}
+              </span>
+            </div>
+          )
+        })}
+        <span
+          aria-hidden
+          className="num pointer-events-none absolute hidden -translate-x-1/2 whitespace-nowrap text-[9px] uppercase tracking-wider text-fg-subtle sm:block"
+          style={pct(COMED_CX, COMED_CY + 6)}
+        >
+          approximate ComEd area
+        </span>
+      </div>
+      <ul className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 text-[11px] text-fg-muted sm:bottom-3 sm:left-4 sm:gap-2" aria-hidden>
         {MARKETS.map((m) => (
           <li key={m.id} className="flex items-center gap-1.5 rounded-full border border-border bg-surface/80 px-2 py-0.5 backdrop-blur">
             <span className={cn('size-2 rounded-full', m.status === 'live' ? 'bg-flow' : m.status === 'planned' ? 'bg-fg-subtle' : 'bg-price')} />

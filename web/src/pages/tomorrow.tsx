@@ -88,7 +88,14 @@ export function TomorrowPage() {
 
       {plan.isPending || !fleet.data ? (
         <div className="flex flex-col gap-6" aria-busy>
-          <Skeleton className="h-24 w-full" />
+          <div className="flex items-center gap-5 rounded-3xl border border-border p-6">
+            <Skeleton className="h-24 min-w-0 flex-1" />
+            {fleet.data && (
+              <div className="w-[150px] shrink-0" style={{ viewTransitionName: 'promise-dial' }}>
+                <PromiseDial committed={fleet.data.summary.committed_kw} target={fleet.data.summary.target_kw} headroom={fleet.data.summary.headroom_kw} size={150} />
+              </div>
+            )}
+          </div>
           <div className="grid gap-3 md:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-24" />

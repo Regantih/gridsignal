@@ -66,7 +66,11 @@ export function useReplay(sessionArgs: () => { fleet_size: number; price_scenari
           ? `The operator approves, one incident at a time. Healthy homes pick up ${i.restored_kw.toFixed(1)} kW and $${i.dollars_recovered.toFixed(2)} of $${i.dollars_at_risk.toFixed(2)} comes back.`
           : 'The operator approves, one incident at a time. Healthy homes pick up the gap.'
       },
-      run: async () => put((await api.approve()).fleet),
+      run: async () => {
+        const f = qc.getQueryData<Fleet>(keys.fleet)
+        if (f && !f.pending_incident) return
+        put((await api.approve()).fleet)
+      },
     },
     {
       at: 29000,

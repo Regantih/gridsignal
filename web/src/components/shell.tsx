@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { MotionConfig } from 'motion/react'
 import { Moon, Sun, ShieldCheck, CalendarClock, Home, Activity, BookOpen, Command, Waves } from 'lucide-react'
@@ -28,11 +28,23 @@ export function Shell() {
   )
 }
 
+function useWide(query: string) {
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [query])
+  return wide
+}
+
 /** Which market the deck is pointed at. Only ERCOT is live; the rest say so. */
 function MarketSwitcher() {
   const { market, select } = useMarket()
+  const wide = useWide('(min-width: 1280px)')
   return (
-    <label className="relative flex h-9 items-center rounded-full border border-border bg-surface/60 pl-3 pr-2 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg">
+    <label className="relative flex h-9 shrink-0 items-center rounded-full border border-border bg-surface/60 pl-3 pr-2 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg">
       <span className={cn('mr-2 size-2 shrink-0 rounded-full', market.status === 'live' ? 'bg-flow' : market.status === 'planned' ? 'bg-fg-subtle' : 'bg-price')} aria-hidden />
       <span className="sr-only">Market</span>
       <select
@@ -44,7 +56,7 @@ function MarketSwitcher() {
       >
         {MARKETS.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.iso} · {m.short} · {STATUS_SHORT[m.status]}
+            {wide ? `${m.iso} · ${m.short} · ${STATUS_SHORT[m.status]}` : `${m.iso} · ${STATUS_SHORT[m.status]}`}
           </option>
         ))}
       </select>
@@ -65,7 +77,7 @@ function Ticker() {
       </div>
     )
   }
-  if (!fleet.data) return <div className="h-5 w-64 animate-pulse rounded bg-surface-2" />
+  if (!fleet.data) return <div className="hidden h-5 w-64 animate-pulse rounded bg-surface-2 2xl:block" />
   const s = fleet.data.summary
   const pending = fleet.data.pending_incident
   const ok = !pending && s.coverage_pct >= 100
@@ -110,12 +122,12 @@ function Frame() {
         Skip to content
       </a>
       <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/75 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-4 px-4 md:px-8">
-          <NavLink to="/" className="flex items-center gap-2.5" aria-label="GridSignal, Tonight">
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-4 md:gap-4 md:px-8">
+          <NavLink to="/" className="flex shrink-0 items-center gap-2.5" aria-label="GridSignal, Tonight">
             <Logo className="size-7 text-brand" />
-            <span className="font-display text-[1.05rem] font-semibold tracking-tight">GridSignal</span>
+            <span className="hidden font-display text-[1.05rem] font-semibold tracking-tight sm:inline">GridSignal</span>
           </NavLink>
-          <nav aria-label="Primary" className="ml-4 hidden items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex">
+          <nav aria-label="Primary" className="ml-2 hidden items-center gap-0.5 rounded-full border border-border bg-surface/60 p-1 md:flex xl:ml-4">
             {NAV.map(({ to, label, end }) => (
               <NavLink
                 key={to}
@@ -133,7 +145,7 @@ function Frame() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 xl:gap-3">
             <Ticker />
             <MarketSwitcher />
             <button
@@ -143,8 +155,8 @@ function Frame() {
               className="num flex h-9 items-center gap-2 rounded-full border border-border bg-surface/60 px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
             >
               <Command aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">Command</span>
-              <kbd className="rounded bg-surface-2 px-1 text-2xs">⌘K</kbd>
+              <span className="hidden xl:inline">Command</span>
+              <kbd className="hidden rounded bg-surface-2 px-1 text-2xs sm:inline">⌘K</kbd>
             </button>
             <button
               type="button"
@@ -160,7 +172,7 @@ function Frame() {
               )}
             >
               <Waves aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">Calm</span>
+              <span className="hidden xl:inline">Calm</span>
             </button>
             <button
               type="button"
