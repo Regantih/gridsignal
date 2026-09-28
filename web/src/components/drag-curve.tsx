@@ -25,6 +25,7 @@ export function DragCurve({
   current: number
   recommended: number
 }) {
+  const linePath = (pts: [number, number][]) => pts.map(([px, py], i) => `${i ? 'L' : 'M'}${px} ${py}`).join(' ')
   const W = 640
   const H = 300
   const L = 48
@@ -89,7 +90,7 @@ export function DragCurve({
       ))}
       <clipPath id="plot"><rect x={L} y={T - 4} width={W - L - R} height={H - T - B + 4} /></clipPath>
       {policies.map((p) => (
-        <path clipPath="url(#plot)" key={p} d={data.map((d, i) => `${i ? 'L' : 'M'}${x(d.ratio)} ${y(d[p])}`).join(' ')} fill="none" stroke={COLOR[p]} strokeWidth={p === 'gridsignal_auto' ? 3 : 1.6} strokeLinejoin="round" />
+        <path clipPath="url(#plot)" key={p} d={linePath(data.filter((d) => Number.isFinite(d[p])).map((d) => [x(d.ratio), y(d[p])]))} fill="none" stroke={COLOR[p]} strokeWidth={p === 'gridsignal_auto' ? 3 : 1.6} strokeLinejoin="round" />
       ))}
       <line x1={x(current)} x2={x(current)} y1={T} y2={H - B} stroke="var(--fg-subtle)" strokeDasharray="2 4" />
       <text x={x(current) + 4} y={T + 12} fontSize="10" fill="var(--fg-subtle)" style={{ fontFamily: 'var(--font-mono)' }}>today</text>

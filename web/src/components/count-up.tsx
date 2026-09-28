@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { isCalm } from '@/lib/visual-mode'
 
 /** Animates a number to its new value, so a recovery is felt as money coming back. */
 export function useCountUp(value: number, ms = 900) {
   const [shown, setShown] = useState(value)
   const from = useRef(value)
   useEffect(() => {
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { setShown(value); return }
+    if (isCalm()) { setShown(value); from.current = value; return }
     const a = from.current
     const t0 = performance.now()
     let raf = 0

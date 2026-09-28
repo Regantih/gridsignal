@@ -6,6 +6,7 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import { api, type Fleet } from '@/lib/api'
 import { keys } from '@/lib/queries'
 import { useTheme } from '@/lib/theme'
+import { isCalm } from '@/lib/visual-mode'
 import { MARKETS, STATUS_LABEL, setMarket, setMarketView } from '@/lib/markets'
 import { cn } from '@/lib/utils'
 
@@ -33,7 +34,8 @@ export function CommandBarProvider({ children }: { children: ReactNode }) {
   const [i, setI] = useState(0)
   const [busy, setBusy] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const nav = useNavigate()
+  const navigate = useNavigate()
+  const nav = useCallback((to: string) => void navigate(to, { viewTransition: !isCalm() }), [navigate])
   const qc = useQueryClient()
   const [, toggleTheme] = useTheme()
   const list = useRef<HTMLUListElement>(null)

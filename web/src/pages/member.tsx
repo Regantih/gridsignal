@@ -1,4 +1,5 @@
-import { ChargeRing } from '@/components/charge-ring'
+import { LiquidBattery } from '@/components/liquid-battery'
+import { StoryCards } from '@/components/story-cards'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BatteryCharging, ShieldCheck, Sun, Home as HomeIcon, AlertTriangle } from 'lucide-react'
@@ -11,6 +12,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState, ErrorState } from '@/components/states'
+import { cn } from '@/lib/utils'
 
 export function MemberPage() {
   const { deviceId } = useParams()
@@ -47,41 +49,41 @@ export function MemberPage() {
 function MemberView({ m }: { m: Member }) {
   const s = m.summary
   const backupOk = s.backup_hours >= 4
-  return (
-    <>
-      <Card className={s.is_affected ? 'border-warn/50' : 'border-ok/40'} data-testid="member-headline">
-        <CardContent className="flex flex-col gap-2 p-5">
-          <div className="flex items-center gap-2">
-            {s.is_affected ? <AlertTriangle aria-hidden className="size-5 text-warn" /> : <ShieldCheck aria-hidden className="size-5 text-ok" />}
-            <h2 className="text-lg font-semibold leading-tight">{noDash(s.headline)}</h2>
-          </div>
-          <p className="text-sm text-fg-muted">{noDash(s.body)}</p>
-          <p className="text-sm font-medium">{noDash(s.next_step)}</p>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent className="flex flex-col items-center gap-5 p-5 sm:flex-row">
-          <ChargeRing stored={s.stored_kwh} reserve={s.reserve_kwh} shared={s.committed_kwh} capacity={s.stored_kwh} backupHours={hours(s.backup_hours)} />
-          <ul className="flex w-full flex-col gap-3 text-sm">
-            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-ok" /><span><span className="num">{energy(s.reserve_kwh, 1)}</span> locked for your home. Never sold.</span></li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-flow" /><span><span className="num">{energy(s.committed_kwh, 1)}</span> shared with the grid tonight.</span></li>
-            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-fg-subtle" /><span>The rest stays yours to use.</span></li>
-          </ul>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-2 gap-3">
-        <Tile icon={BatteryCharging} label="Backup if the grid fails" value={hours(s.backup_hours)} tone={backupOk ? 'ok' : 'warn'} note={s.generator_kwh > 0 ? `${hours(s.backup_hours_with_generator)} with your generator` : `${energy(s.backup_kwh, 1)} kept for you`} testId="backup-hours" />
-        <Tile icon={ShieldCheck} label="Reserve protected" value={energy(s.reserve_kwh, 1)} tone="ok" note="never sold to the grid" testId="reserve" />
-        <Tile icon={Sun} label="Earned tonight" value={money(s.earned_usd)} tone="brand" note={`${power(s.export_kw, 1)} shared with the grid`} testId="earned" />
-        <Tile icon={HomeIcon} label="Value protected" value={money(s.protected_usd)} note="reserve kept out of the market" />
-      </div>
-
-      <Card>
-        <CardContent className="flex flex-col gap-3 p-5 text-sm">
-          <h3 className="font-semibold">Right now</h3>
-          <dl className="grid grid-cols-2 gap-y-2">
+  const cards = [
+    {
+      id: 'status',
+      node: (
+        <Card className={cn('h-full', s.is_affected ? 'border-warn/50' : 'border-ok/40')} data-testid="member-headline">
+          <CardContent className="flex h-full flex-col gap-2 p-5">
+            <div className="flex items-center gap-2">
+              {s.is_affected ? <AlertTriangle aria-hidden className="size-5 text-warn" /> : <ShieldCheck aria-hidden className="size-5 text-ok" />}
+              <h2 className="text-lg font-semibold leading-tight">{noDash(s.headline)}</h2>
+            </div>
+            <p className="text-sm text-fg-muted">{noDash(s.body)}</p>
+            <p className="text-sm font-medium">{noDash(s.next_step)}</p>
+          </CardContent>
+        </Card>
+      ),
+    },
+    {
+      id: 'backup',
+      node: <Tile icon={BatteryCharging} label="Backup if the grid fails" value={hours(s.backup_hours)} tone={backupOk ? 'ok' : 'warn'} note={s.generator_kwh > 0 ? `${hours(s.backup_hours_with_generator)} with your generator` : `${energy(s.backup_kwh, 1)} kept for you`} body="If the grid goes down tonight, this is how long your battery runs your home at its current load. Your home always comes first." testId="backup-hours" />,
+    },
+    {
+      id: 'reserve',
+      node: <Tile icon={ShieldCheck} label="Reserve protected" value={energy(s.reserve_kwh, 1)} tone="ok" note="never sold to the grid" body={`The locked layer at the bottom of your battery. It is worth ${money(s.protected_usd)} at tonight's price and it is kept out of the market on purpose.`} testId="reserve" />,
+    },
+    {
+      id: 'earned',
+      node: <Tile icon={Sun} label="Earned tonight" value={money(s.earned_usd)} tone="brand" note={`${power(s.export_kw, 1)} shared with the grid`} body={`Your share of what the fleet earned at the real ERCOT price, attributed to ${energy(s.committed_kwh, 1)} you shared. Not a bill or a payout.`} testId="earned" />,
+    },
+    {
+      id: 'now',
+      node: (
+        <Card className="h-full">
+          <CardContent className="flex h-full flex-col gap-3 p-5 text-sm">
+            <div className="flex items-center gap-1.5 text-xs text-fg-muted"><HomeIcon aria-hidden className="size-3.5" /> Right now</div>
+            <dl className="grid grid-cols-2 gap-y-2">
             <dt className="text-fg-muted">Stored</dt>
             <dd className="text-right tabular">{energy(s.stored_kwh, 1)}</dd>
             <dt className="text-fg-muted">Your home is using</dt>
@@ -98,6 +100,26 @@ function MemberView({ m }: { m: Member }) {
           </p>
         </CardContent>
       </Card>
+      ),
+    },
+  ]
+  return (
+    <>
+      <Card>
+        <CardContent className="flex flex-col items-center gap-5 p-5 sm:flex-row">
+          <LiquidBattery stored={s.stored_kwh} reserve={s.reserve_kwh} shared={s.committed_kwh} backupHours={hours(s.backup_hours)} affected={s.is_affected} />
+          <ul className="flex w-full flex-col gap-3 text-sm">
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-ok" /><span><span className="num">{energy(s.reserve_kwh, 1)}</span> locked for your home, beneath everything else. Never sold.</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-flow" /><span><span className="num">{energy(s.committed_kwh, 1)}</span> shared with the grid tonight, flowing out.</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-fg-subtle" /><span>The rest stays yours to use.</span></li>
+          </ul>
+        </CardContent>
+      </Card>
+
+      <div>
+        <h2 className="eyebrow mb-2">Your home tonight</h2>
+        <StoryCards cards={cards} label="Your home tonight" />
+      </div>
 
       <Card>
         <CardContent className="flex flex-col gap-3 p-5">
@@ -162,16 +184,17 @@ export function plain(kind: string, summary: string, deviceId: string): string {
   }
 }
 
-function Tile({ icon: Icon, label, value, note, tone = 'default', testId }: { icon: typeof Sun; label: string; value: string; note?: string; tone?: 'default' | 'ok' | 'warn' | 'brand'; testId?: string }) {
+function Tile({ icon: Icon, label, value, note, body, tone = 'default', testId }: { icon: typeof Sun; label: string; value: string; note?: string; body?: string; tone?: 'default' | 'ok' | 'warn' | 'brand'; testId?: string }) {
   const color = { default: 'text-fg', ok: 'text-ok', warn: 'text-warn', brand: 'text-brand' }[tone]
   return (
-    <Card>
-      <CardContent className="flex flex-col gap-1 p-4">
+    <Card className="h-full">
+      <CardContent className="flex h-full flex-col gap-1 p-5">
         <div className="flex items-center gap-1.5 text-xs text-fg-muted">
           <Icon aria-hidden className="size-3.5" /> {label}
         </div>
-        <div className={`text-xl font-semibold tabular ${color}`} data-testid={testId}>{value}</div>
-        {note && <div className="text-2xs text-fg-subtle">{note}</div>}
+        <div className={`num text-4xl font-medium ${color}`} data-testid={testId}>{value}</div>
+        {note && <div className="text-xs text-fg-subtle">{note}</div>}
+        {body && <p className="mt-2 text-sm text-fg-muted">{body}</p>}
       </CardContent>
     </Card>
   )

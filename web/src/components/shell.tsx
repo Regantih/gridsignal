@@ -1,4 +1,6 @@
+import { useEffect } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
+import { MotionConfig } from 'motion/react'
 import { Moon, Sun, ShieldCheck, CalendarClock, Home, Activity, BookOpen, Command, Waves } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -94,7 +96,12 @@ function Frame() {
   const [calm, toggleCalm] = useCalm()
   const bar = useCommandBar()
   const session = useQuery({ queryKey: ['session'], queryFn: api.session, staleTime: 60_000 })
+  // Calm mode and reduced motion take the instant path: no route morph, no springs.
+  useEffect(() => {
+    document.documentElement.dataset.calm = calm ? 'on' : 'off'
+  }, [calm])
   return (
+    <MotionConfig reducedMotion={calm ? 'always' : 'user'} transition={{ type: 'spring', stiffness: 260, damping: 28, mass: 0.9 }}>
     <div className="grain min-h-dvh bg-bg text-fg">
       <a
         href="#main"
@@ -114,6 +121,7 @@ function Frame() {
                 key={to}
                 to={to}
                 end={end}
+                viewTransition={!calm}
                 className={({ isActive }) =>
                   cn(
                     'whitespace-nowrap rounded-full px-3.5 py-1.5 text-[0.8rem] font-medium transition-colors',
@@ -183,6 +191,7 @@ function Frame() {
             key={to}
             to={to}
             end={end}
+            viewTransition={!calm}
             className={({ isActive }) =>
               cn('flex flex-col items-center gap-0.5 py-2 text-2xs font-medium', isActive ? 'text-brand' : 'text-fg-muted')
             }
@@ -193,5 +202,6 @@ function Frame() {
         ))}
       </nav>
     </div>
+    </MotionConfig>
   )
 }

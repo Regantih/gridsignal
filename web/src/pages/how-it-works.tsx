@@ -7,6 +7,7 @@ import { count, pct } from '@/lib/format'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { PageHeader, Section, Callout } from '@/components/page'
 import { CardSkeleton, ErrorState } from '@/components/states'
+import { HowStory } from '@/components/how-story'
 
 const POLICY: Record<Policy, string> = {
   naive: 'Naive schedule',
@@ -30,6 +31,8 @@ export function HowItWorksPage() {
         {' '}
         <span data-testid="disclosure">{about.data?.disclosure ?? 'Prices are real ERCOT data. The fleet is simulated.'}</span>
       </Callout>
+
+      <HowStory about={about.data} />
 
       <Section title="What you are looking at">
         <div className="grid gap-4 md:grid-cols-2">

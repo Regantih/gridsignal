@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Upload } from 'lucide-react'
-import { api, type Plan, type Policy, type RiskGroup, type Calibration } from '@/lib/api'
+import { api, type Fleet, type Plan, type Policy, type RiskGroup, type Calibration } from '@/lib/api'
 import { keys, useFleet, useFleetMutation } from '@/lib/queries'
 import { count, daysMissed, money, pct, pctPoints, power, dateLabel, clock } from '@/lib/format'
 import { Button } from '@/components/ui/button'
@@ -18,6 +18,7 @@ import { RiskBadge, riskTone } from '@/components/status'
 import { TexasMap, project } from '@/components/texas-map'
 import { StormLab } from '@/components/storm-lab'
 import { DragCurve } from '@/components/drag-curve'
+import { PromiseDial } from '@/components/promise-dial'
 import { HoldButton } from '@/components/hold-button'
 import { YearOfDays } from '@/components/year-of-days'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -96,7 +97,7 @@ export function TomorrowPage() {
           <ChartSkeleton />
         </div>
       ) : plan.data ? (
-        <PlanView plan={plan.data} target={target} currentRatio={fleet.data.summary.commit_ratio} targetKw={fleet.data.summary.target_kw} />
+        <PlanView plan={plan.data} target={target} summary={fleet.data.summary} />
       ) : null}
 
       {fleet.data && <StormLab fleet={fleet.data} />}
@@ -117,39 +118,49 @@ export function TomorrowPage() {
   )
 }
 
-function PlanView({ plan, target, currentRatio, targetKw }: { plan: Plan; target: number; currentRatio: number; targetKw: number }) {
+function PlanView({ plan, target, summary }: { plan: Plan; target: number; summary: Fleet['summary'] }) {
+  const currentRatio = summary.commit_ratio
+  const targetKw = summary.target_kw
   const commit = useFleetMutation((ratio: number) => api.setCommitment(ratio, `Planner recommendation for ${plan.scenario}, ${pct(target, 1)} target`))
   const [ratio, setRatio] = useState(plan.recommended_ratio)
   const rec = plan.recommended_ratio
   const recommendedIsCurrent = Math.abs(currentRatio - rec) < 0.005
   const data = useMemo(() => {
+    // Keys are Python floats ("1.0"); String(1) is "1", so match by numeric value.
+    const pick = (row: Record<string, number>, x: number) => row[Object.keys(row).find((k) => Number(k) === x) ?? ''] ?? NaN
     const xs = Object.keys(plan.curve.gridsignal_auto).map(Number).sort((a, b) => a - b)
     return xs.map((x) => ({
       ratio: x,
-      naive: plan.curve.naive[String(x)],
-      gridsignal: plan.curve.gridsignal[String(x)],
-      gridsignal_auto: plan.curve.gridsignal_auto[String(x)],
+      naive: pick(plan.curve.naive, x),
+      gridsignal: pick(plan.curve.gridsignal, x),
+      gridsignal_auto: pick(plan.curve.gridsignal_auto, x),
     }))
   }, [plan])
   const keptRec = plan.kept_at_recommended.gridsignal_auto
   const keptCur = plan.kept_at_current.gridsignal_auto
-  const valueAt = (r: number) => plan.value_usd_per_year[String(r)] ?? plan.value_usd_per_year[r.toFixed(2)]
+  const valueAt = (r: number) => plan.value_usd_per_year[Object.keys(plan.value_usd_per_year).find((k) => Math.abs(Number(k) - r) < 1e-6) ?? '']
   const ratioKey = (r: number) => data.reduce((best, d) => (Math.abs(d.ratio - r) < Math.abs(best - r) ? d.ratio : best), data[0]?.ratio ?? r)
 
   return (
     <div className="flex flex-col gap-6">
-      <div role="status" data-testid="plan-headline" className="rounded-3xl border border-brand/40 bg-brand-soft/60 p-6 md:p-8">
-        <div className="eyebrow text-brand">Recommendation</div>
-        <h2 className="mt-2 text-2xl font-semibold leading-tight md:text-[2.4rem]">
-          Commit <span className="tabular" data-testid="recommended-ratio">{pct(rec)}</span> of measured headroom with the playbook on
-        </h2>
-        <p className="mt-2 text-sm text-fg-muted">{plan.headline}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
-          {plan.live_prices && <Badge tone="info">Live ERCOT prices this year</Badge>}
-          <Badge tone={plan.calibrated ? (plan.learn_source === 'synthetic' ? 'warn' : 'ok') : 'neutral'}>
-            {plan.calibrated ? `Failure rates: ${plan.learn_source === 'synthetic' ? 'SYNTHETIC history' : 'uploaded telemetry'}` : 'Failure rates: assumed defaults'}
-          </Badge>
-          <span>{count(plan.years)} simulated years, {count(plan.homes)} homes, replaying {plan.scenario}.</span>
+      <div role="status" data-testid="plan-headline" className="flex flex-col gap-5 rounded-3xl border border-brand/40 bg-brand-soft/60 p-6 sm:flex-row sm:items-center md:p-8">
+        <div className="min-w-0 flex-1">
+          <div className="eyebrow text-brand">Recommendation</div>
+          <h2 className="mt-2 text-2xl font-semibold leading-tight md:text-[2.4rem]">
+            Commit <span className="tabular" data-testid="recommended-ratio">{pct(rec)}</span> of measured headroom with the playbook on
+          </h2>
+          <p className="mt-2 text-sm text-fg-muted">{plan.headline}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
+            {plan.live_prices && <Badge tone="info">Live ERCOT prices this year</Badge>}
+            <Badge tone={plan.calibrated ? (plan.learn_source === 'synthetic' ? 'warn' : 'ok') : 'neutral'}>
+              {plan.calibrated ? `Failure rates: ${plan.learn_source === 'synthetic' ? 'SYNTHETIC history' : 'uploaded telemetry'}` : 'Failure rates: assumed defaults'}
+            </Badge>
+            <span>{count(plan.years)} simulated years, {count(plan.homes)} homes, replaying {plan.scenario}.</span>
+          </div>
+        </div>
+        <div className="w-[150px] shrink-0 self-center" style={{ viewTransitionName: 'promise-dial' }}>
+          <PromiseDial committed={summary.committed_kw} target={summary.target_kw} headroom={summary.headroom_kw} size={150} />
+          <div className="num -mt-1 text-center text-2xs text-fg-subtle">tonight's promise</div>
         </div>
       </div>
 

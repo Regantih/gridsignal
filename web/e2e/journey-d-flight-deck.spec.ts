@@ -11,10 +11,12 @@ test.describe('Flight deck: replay and Calm mode', () => {
 
     // The incident is real: it shows up as the pending card, priced by the engine.
     await expect(page.getByTestId('pending-incident')).toBeVisible({ timeout: 15_000 })
-    await expect(caption).toContainText('at risk')
-    const fleet = await (await page.request.get('/api/fleet')).json()
-    expect(fleet.pending_incident.dollars_at_risk).toBeGreaterThan(0)
-    await expect(page.getByTestId('pending-incident').getByTestId('incident-rail')).toContainText('Awaiting approval')
+    // On a slow machine the story may approve before we look, so read engine numbers from
+    // DOM that outlives the pending card (the metric and the incident list), never from an
+    // API call that races the replay clock.
+    await expect(page.getByTestId('dollars-at-risk')).toContainText(/\$[0-9]*[1-9]/)
+    await expect(page.getByTestId('incident-list')).toContainText(/Awaiting approval|Recovered/)
+    await expect(caption).toContainText(/at risk|approves/)
 
     // Then the named demo operator approves it, and the dollars come back.
     await expect(page.getByTestId('pending-incident')).toHaveCount(0, { timeout: 20_000 })

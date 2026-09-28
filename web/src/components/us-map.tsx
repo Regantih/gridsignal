@@ -33,10 +33,11 @@ const [X1, Y1] = project(-66.5, 24.3)
 export const US_VIEWBOX = `${X0.toFixed(0)} ${Y0.toFixed(0)} ${(X1 - X0).toFixed(0)} ${(Y1 - Y0).toFixed(0)}`
 
 const FILL: Record<Market['status'], string> = {
-  live: 'fill-flow/35 stroke-flow',
-  planned: 'fill-fg-subtle/25 stroke-fg-subtle',
-  equipment: 'fill-price/25 stroke-price',
+  live: 'fill-flow/30 stroke-flow',
+  planned: 'fill-fg-subtle/20 stroke-fg-subtle',
+  equipment: 'fill-surface stroke-price',
 }
+const [COMED_CX, COMED_CY] = project(-88.9, 40.45)
 
 export function UsMap({
   selected,
@@ -68,6 +69,7 @@ export function UsMap({
           const [cx, cy] = project(m.center[0], m.center[1])
           return (
             <g key={p.id}>
+              {m.id === 'comed' && <path d={COMED} className="fill-fg-subtle/30" stroke="none" pointerEvents="none" />}
               <path
                 d={p.d}
                 role="button"
@@ -82,15 +84,23 @@ export function UsMap({
                     onSelect?.(m.id)
                   }
                 }}
-                className={cn('cursor-pointer outline-none transition-opacity hover:opacity-90 focus-visible:stroke-[3]', FILL[m.status], on ? 'opacity-100' : 'opacity-70')}
-                strokeWidth={on ? 2 : 1}
+                className={cn('cursor-pointer outline-none transition-opacity hover:opacity-90 focus-visible:stroke-[3]', m.id === 'comed' ? 'fill-transparent stroke-fg-subtle' : FILL[m.status], on ? 'opacity-100' : 'opacity-75')}
+                strokeWidth={on ? 2 : 1.2}
+                strokeDasharray={m.status === 'equipment' ? '4 3' : undefined}
                 strokeLinejoin="round"
               />
-              {m.id === 'comed' && <path d={COMED} fill="none" className="stroke-fg-subtle" strokeWidth="1" strokeDasharray="3 3" pointerEvents="none" />}
-              <text x={cx} y={cy + (m.id === 'ercot' ? 0 : -18)} textAnchor="middle" className="fill-fg font-display text-[13px] font-semibold" pointerEvents="none">
+              {m.id === 'comed' && (
+                <>
+                  <path d={COMED} fill="none" className="stroke-fg-subtle" strokeWidth="1.2" strokeDasharray="3 3" pointerEvents="none" />
+                  <text x={COMED_CX} y={COMED_CY + 3} textAnchor="middle" className="fill-fg-subtle font-mono text-[7px] uppercase tracking-wider" pointerEvents="none">
+                    approximate ComEd area
+                  </text>
+                </>
+              )}
+              <text x={cx} y={cy + (m.id === 'ercot' ? 0 : -22)} textAnchor="middle" className="fill-fg font-display text-[13px] font-semibold" pointerEvents="none">
                 {m.short}
               </text>
-              <text x={cx} y={cy + (m.id === 'ercot' ? 16 : -4)} textAnchor="middle" className="fill-fg-muted font-mono text-[9px] uppercase tracking-wider" pointerEvents="none">
+              <text x={cx} y={cy + (m.id === 'ercot' ? 16 : -8)} textAnchor="middle" className="fill-fg-muted font-mono text-[9px] uppercase tracking-wider" pointerEvents="none">
                 {m.iso} · {STATUS_LABEL[m.status]}
               </text>
             </g>

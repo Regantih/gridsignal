@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Panel, SpringValue } from '@/components/motion'
 
 export function Metric({
   label,
@@ -27,16 +28,16 @@ export function Metric({
     brand: 'text-brand',
   }[tone]
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border bg-surface/70 p-4', className)}>
+    <Panel className={cn('flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border bg-surface/70 p-4', className)}>
       <div className="eyebrow">{label}</div>
       {loading ? (
         <Skeleton className="h-8 w-24" />
       ) : (
         <div className={cn('num text-[1.7rem] font-medium leading-none truncate', color)} data-testid={testId}>
-          {value}
+          {typeof value === 'string' || typeof value === 'number' ? <SpringValue k={value}>{value}</SpringValue> : value}
         </div>
       )}
       {note && <div className="text-xs text-fg-muted">{note}</div>}
-    </div>
+    </Panel>
   )
 }

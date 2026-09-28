@@ -42,7 +42,7 @@ export function StormLab({ fleet }: { fleet: Fleet }) {
   const r = run.data
   return (
     <section id="storm" className="grid gap-6 overflow-hidden rounded-3xl border border-border bg-surface/40 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]" data-testid="storm-lab">
-      <div className="relative">
+      <div className="relative" style={{ viewTransitionName: 'fleet-map' }}>
         <div className="absolute left-5 top-4 z-10 max-w-sm">
           <div className="eyebrow text-risk">Storm rehearsal</div>
           <p className="mt-1 text-xs text-fg-muted">Press and drag on the map to draw a storm cell. Every home under it drops. Nothing is dispatched.</p>

@@ -49,6 +49,7 @@ interface Palette {
   subtle: THREE.Color
   land: THREE.Color
   side: THREE.Color
+  ink: THREE.Color
   skyCalm: THREE.Color
   skyHot: THREE.Color
   grid: string
@@ -65,14 +66,15 @@ function palette(theme: 'dark' | 'light'): Palette {
     subtle: cssColor('--fg-subtle', '#94a3b8'),
     land: new THREE.Color(dark ? '#111d3b' : '#dfe6f3'),
     side: new THREE.Color(dark ? '#070d1f' : '#b9c4d8'),
-    skyCalm: new THREE.Color(dark ? '#070c1c' : '#eef2fb'),
-    skyHot: new THREE.Color(dark ? '#2a1405' : '#f6e2c4'),
+    ink: cssColor('--bg', dark ? '#070b18' : '#f4f6fb'),
+    skyCalm: cssColor('--bg', dark ? '#070b18' : '#f4f6fb'),
+    skyHot: new THREE.Color(dark ? '#1c1408' : '#f3e6cf'),
     grid: dark ? 'rgba(140,170,220,0.16)' : 'rgba(40,60,100,0.14)',
   }
 }
 
 const ease = (t: number) => 1 - Math.pow(1 - Math.min(Math.max(t, 0), 1), 3)
-const priceHeat = (p: number) => Math.min(Math.max((p - 50) / 200, 0), 1)
+const priceHeat = (p: number) => Math.pow(Math.min(Math.max((p - 50) / 200, 0), 1), 2)
 
 // ------------------------------------------------------------------ land
 
@@ -128,6 +130,43 @@ function Land({ pal }: { pal: Palette }) {
   )
 }
 
+// ------------------------------------------------------------------ ground
+
+/** Deep ink under everything: a faint grid that fades out towards the edges (vignette). */
+function Ground({ pal }: { pal: Palette }) {
+  const tex = useMemo(() => {
+    const c = document.createElement('canvas')
+    c.width = 2048
+    c.height = 2048
+    const ctx = c.getContext('2d')!
+    ctx.fillStyle = `#${pal.ink.getHexString()}`
+    ctx.fillRect(0, 0, 2048, 2048)
+    ctx.strokeStyle = pal.grid
+    ctx.lineWidth = 1
+    for (let i = 0; i <= 2048; i += 64) {
+      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 2048); ctx.stroke()
+      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(2048, i); ctx.stroke()
+    }
+    const edge = pal.ink.clone().lerp(pal.side, 0.6).getHexString()
+    const v = ctx.createRadialGradient(1024, 1024, 420, 1024, 1024, 1100)
+    v.addColorStop(0, `#${edge}00`)
+    v.addColorStop(1, `#${edge}ff`)
+    ctx.fillStyle = v
+    ctx.fillRect(0, 0, 2048, 2048)
+    const t = new THREE.CanvasTexture(c)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 4
+    return t
+  }, [pal])
+  const [cx, cz] = toScene(-96.5, 38.5)
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[cx, -1.15, cz]}>
+      <planeGeometry args={[900, 900]} />
+      <meshBasicMaterial map={tex} toneMapped={false} />
+    </mesh>
+  )
+}
+
 // ------------------------------------------------------------------ the rest of the country
 
 interface StateShape {
@@ -151,53 +190,61 @@ function ringGeometry(ring: [number, number][], depth: number) {
   return g
 }
 
-function marketTint(m: Market | undefined, pal: Palette, dark: boolean): THREE.Color {
-  if (!m) return pal.land.clone().multiplyScalar(dark ? 0.75 : 1.02)
-  if (m.status === 'live') return pal.land.clone().lerp(pal.flow, 0.4)
-  if (m.status === 'planned') return pal.land.clone().lerp(pal.subtle, 0.5)
-  return pal.land.clone().lerp(pal.price, 0.4)
-}
 const marketEdge = (m: Market, pal: Palette) => (m.status === 'live' ? pal.flow : m.status === 'planned' ? pal.subtle : pal.price)
+const toEdge = (ring: [number, number][], y: number) => {
+  const pts = ring.map(([lon, lat]) => { const [x, z] = toScene(lon, lat); return new THREE.Vector3(x, y, z) })
+  return [...pts, pts[0]]
+}
 
 /**
- * The lower 48 as low, quiet slabs so Texas reads as one market among others. Illinois and
- * Colorado are tinted by status and labelled honestly; nothing glows there because nothing
- * is modelled there.
+ * The lower 48 as barely-there slabs in the same ink as the ground, so Texas reads as one
+ * market among others. Markets are drawn the same way regardless of status: an outline in
+ * the status colour and a label; only the ComEd service area in Illinois gets a quiet fill,
+ * because that is the region in question, not the whole state. Nothing glows where nothing
+ * is modelled. In the Texas view the other markets fade almost out so they never intrude.
  */
-function Country({ pal, theme, selected, showLabels, onMarket }: { pal: Palette; theme: 'dark' | 'light'; selected: MarketId; showLabels: boolean; onMarket?: (id: MarketId) => void }) {
+function Country({ pal, theme, selected, view, showLabels, onMarket }: { pal: Palette; theme: 'dark' | 'light'; selected: MarketId; view: MarketView; showLabels: boolean; onMarket?: (id: MarketId) => void }) {
   const dark = theme === 'dark'
+  const focusTexas = view === 'market' && selected === 'ercot'
   const geos = useMemo(
     () =>
       STATES.map((s) => {
         const m = marketOfState(s.name)
-        const edge = m ? s.ring.map(([lon, lat]) => { const [x, z] = toScene(lon, lat); return new THREE.Vector3(x, 0.04, z) }) : null
-        return { s, m, geo: ringGeometry(s.ring, m ? 0.7 : 0.35), edge: edge ? [...edge, edge[0]] : null }
+        return { s, m, geo: ringGeometry(s.ring, 0.2), edge: toEdge(s.ring, 0.03) }
       }),
     [],
   )
-  const comed = useMemo(() => comedOutline.map(([lon, lat]) => { const [x, z] = toScene(lon, lat); return new THREE.Vector3(x, 0.06, z) }).concat(), [])
+  const comed = useMemo(() => ({ edge: toEdge(comedOutline, 0.05), geo: ringGeometry(comedOutline, 0.22) }), [])
+  const quiet = pal.ink.clone().lerp(pal.land, dark ? 0.35 : 0.6)
+  const dim = focusTexas ? 0.22 : 1
   return (
     <group>
-      {geos.map(({ s, m, edge }) =>
-        m && edge ? <Line key={`${s.id}-edge`} points={edge} color={`#${marketEdge(m, pal).getHexString()}`} lineWidth={1.5} transparent opacity={m.id === selected ? 1 : 0.7} /> : null,
-      )}
-      {geos.map(({ s, m, geo }) => (
-        <mesh
-          key={s.id}
-          geometry={geo}
-          onClick={m && onMarket ? (e) => { e.stopPropagation(); onMarket(m.id) } : undefined}
-          onPointerOver={m ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' } : undefined}
-          onPointerOut={m ? () => { document.body.style.cursor = '' } : undefined}
-        >
-          <meshStandardMaterial
-            color={marketTint(m, pal, dark)}
-            roughness={0.92}
-            emissive={m && m.id === selected ? marketTint(m, pal, dark) : '#000'}
-            emissiveIntensity={m && m.id === selected ? 0.35 : 0}
+      {geos.map(({ s, m, geo, edge }) => (
+        <group key={s.id}>
+          <mesh
+            geometry={geo}
+            onClick={m && onMarket ? (e) => { e.stopPropagation(); onMarket(m.id) } : undefined}
+            onPointerOver={m ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' } : undefined}
+            onPointerOut={m ? () => { document.body.style.cursor = '' } : undefined}
+          >
+            <meshStandardMaterial color={quiet} roughness={0.95} transparent opacity={focusTexas && m ? 0.5 : 1} />
+          </mesh>
+          <Line
+            points={edge}
+            color={`#${(m ? marketEdge(m, pal) : pal.subtle).getHexString()}`}
+            lineWidth={m ? (m.id === selected ? 1.8 : 1.2) : 0.6}
+            dashed={m?.status === 'equipment'}
+            dashSize={0.9}
+            gapSize={0.5}
+            transparent
+            opacity={(m ? (m.id === selected ? 1 : 0.75) : dark ? 0.28 : 0.45) * dim}
           />
-        </mesh>
+        </group>
       ))}
-      <Line points={[...comed, comed[0]]} color={`#${pal.subtle.getHexString()}`} lineWidth={1} dashed dashSize={0.6} gapSize={0.4} transparent opacity={0.9} />
+      <mesh geometry={comed.geo}>
+        <meshStandardMaterial color={quiet.clone().lerp(pal.subtle, 0.35)} roughness={0.95} transparent opacity={0.9 * dim} />
+      </mesh>
+      <Line points={comed.edge} color={`#${pal.subtle.getHexString()}`} lineWidth={1.2} dashed dashSize={0.6} gapSize={0.4} transparent opacity={0.9 * dim} />
       {showLabels &&
         MARKETS.map((m) => {
           const [x, z] = toScene(m.center[0], m.center[1])
@@ -206,6 +253,7 @@ function Country({ pal, theme, selected, showLabels, onMarket }: { pal: Palette;
               <div className="whitespace-nowrap rounded-full border border-border bg-surface/90 px-2.5 py-1 text-center text-[11px] leading-tight text-fg shadow backdrop-blur">
                 <span className="font-display font-semibold">{m.short}</span>
                 <span className="num ml-1.5 text-fg-muted">{m.iso} · {STATUS_LABEL[m.status]}</span>
+                {m.id === 'comed' && <span className="num ml-1.5 text-fg-subtle">· approximate ComEd area</span>}
               </div>
             </Html>
           )
@@ -601,10 +649,23 @@ function DrawPlane({ onStorm, setDraft, setDrawing }: { onStorm?: (s: Storm) => 
 // ------------------------------------------------------------------ camera and sky
 
 /** Where the camera rests for a market or the whole country: look-at point and distance. */
-function frameFor(market: MarketId, view: MarketView): { target: THREE.Vector3; dist: number } {
+const US_POLAR = 0.55
+const FOV = 36
+/** Camera distance that fits a w x d footprint (scene units) seen from pitch `polar`, with padding. */
+function fitDistance(w: number, d: number, aspect: number, polar: number, pad = 1.18): number {
+  const vFov = (FOV * Math.PI) / 180
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(aspect, 0.2))
+  const byWidth = (w * pad) / 2 / Math.tan(hFov / 2)
+  const byDepth = ((d * Math.cos(polar) + 6) * pad) / 2 / Math.tan(vFov / 2)
+  return Math.max(byWidth, byDepth)
+}
+
+function frameFor(market: MarketId, view: MarketView, aspect: number): { target: THREE.Vector3; dist: number } {
   if (view === 'us') {
-    const [x, z] = toScene(-96.5, 41.5)
-    return { target: new THREE.Vector3(x, 0, z), dist: 225 }
+    const [x0, z0] = toScene(-124.8, 49.4)
+    const [x1, z1] = toScene(-66.9, 24.5)
+    const target = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2 - Math.abs(z1 - z0) * 0.04)
+    return { target, dist: fitDistance(Math.abs(x1 - x0), Math.abs(z1 - z0), aspect, US_POLAR) }
   }
   if (market === 'ercot') return { target: new THREE.Vector3(0, 0, 1), dist: 64 }
   const m = marketById(market)
@@ -614,8 +675,9 @@ function frameFor(market: MarketId, view: MarketView): { target: THREE.Vector3; 
 
 function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React.RefObject<Stage>; nodes: Node[]; price: number; pal: Palette; drawing: boolean; market: MarketId; view: MarketView }) {
   const controls = useRef<OrbitControlsImpl>(null)
-  const { scene, camera } = useThree()
-  const home = useMemo(() => frameFor(market, view), [market, view])
+  const { scene, camera, size } = useThree()
+  const aspect = size.width / Math.max(size.height, 1)
+  const home = useMemo(() => frameFor(market, view, aspect), [market, view, aspect])
   const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number; ms: number; polar?: number } | null>(null)
   const staged = useRef<number>(0)
   const framed = useRef<string>('')
@@ -632,10 +694,15 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
       framed.current = key
       if (first) {
         c.target.copy(home.target)
-        camera.position.copy(home.target.clone().add(new THREE.Vector3(0, view === 'us' ? 0.85 : 0.62, view === 'us' ? 0.55 : 0.78).normalize().multiplyScalar(home.dist)))
+        const dir = new THREE.Vector3().setFromSphericalCoords(1, view === 'us' ? US_POLAR : 0.9, 0)
+        camera.position.copy(home.target.clone().add(dir.multiplyScalar(home.dist)))
       } else {
-        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? 0.6 : 0.95 }
+        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? US_POLAR : 0.95 }
       }
+    } else if (!tween.current && view === 'us' && Math.abs(camera.position.distanceTo(c.target) - home.dist) > 0.5) {
+      // The card was resized: keep the whole country fitted.
+      const dir = camera.position.clone().sub(c.target).normalize()
+      camera.position.copy(c.target.clone().add(dir.multiplyScalar(home.dist)))
     }
     const mo = stage.current.moment
     // Stage a new moment: glide to the cluster (incident) or back home (recovery, later).
@@ -688,7 +755,7 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
         enableZoom={false}
         autoRotate={!drawing}
         autoRotateSpeed={view === 'us' ? 0.15 : 0.35}
-        minPolarAngle={0.55}
+        minPolarAngle={0.45}
         maxPolarAngle={1.25}
         dampingFactor={0.08}
         enableDamping
@@ -755,8 +822,9 @@ export default function TexasScene(props: SceneProps) {
         <ambientLight intensity={theme === 'dark' ? 0.55 : 1.1} />
         <directionalLight position={[-20, 30, 10]} intensity={theme === 'dark' ? 1.1 : 1.6} color={theme === 'dark' ? '#9fb8ff' : '#fff7e8'} />
         <hemisphereLight args={[theme === 'dark' ? '#3a4b7a' : '#ffffff', theme === 'dark' ? '#05070f' : '#c9d3e6', theme === 'dark' ? 0.5 : 0.7]} />
+        <Ground pal={pal} />
         <Land pal={pal} />
-        <Country pal={pal} theme={theme} selected={market} showLabels={view === 'us' || market !== 'ercot'} onMarket={onMarket} />
+        <Country pal={pal} theme={theme} selected={market} view={view} showLabels={view === 'us' || market !== 'ercot'} onMarket={onMarket} />
         <Hubs hubs={hubs} maxKw={maxKw} pal={pal} />
         <Homes
           nodes={nodes}

@@ -254,3 +254,73 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up { animation: none; }
 }
+
+/* ------------------------------------------------------------------ liquid battery */
+@keyframes wave-x {
+  from { transform: translateX(0); }
+  to { transform: translateX(-80px); }
+}
+@keyframes drain {
+  to { stroke-dashoffset: -40; }
+}
+.wave { animation: wave-x 3.2s linear infinite; }
+.wave-slow { animation-duration: 4.6s; }
+.wave-slower { animation-duration: 6.5s; animation-direction: reverse; }
+.drain { animation: drain 1.6s linear infinite; }
+:root[data-calm='on'] .wave,
+:root[data-calm='on'] .drain {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .wave, .drain { animation: none; }
+}
+
+/* ------------------------------------------------------------------ story cards */
+.snap-x {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.snap-x::-webkit-scrollbar { display: none; }
+.snap-x > * { scroll-snap-align: center; scroll-snap-stop: always; }
+
+/* ------------------------------------------------------------------ route morph
+   Between routes the page cross-fades while the dial and the map (shared names set on
+   the Tonight and Tomorrow elements) glide to their new place and size. Calm mode and
+   reduced motion swap in the instant path: the browser still snapshots, but nothing moves. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 260ms;
+  animation-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+::view-transition-group(promise-dial),
+::view-transition-group(fleet-map) {
+  animation-duration: 520ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+::view-transition-old(fleet-map),
+::view-transition-new(fleet-map),
+::view-transition-old(promise-dial),
+::view-transition-new(promise-dial) {
+  height: 100%;
+  object-fit: cover;
+  overflow: clip;
+}
+:root[data-calm='on'] *,
+:root[data-calm='on'] *::before,
+:root[data-calm='on'] *::after {
+  animation-duration: 0.01ms !important;
+  transition-duration: 0.01ms !important;
+}
+:root[data-calm='on']::view-transition-group(*),
+:root[data-calm='on']::view-transition-old(*),
+:root[data-calm='on']::view-transition-new(*) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
