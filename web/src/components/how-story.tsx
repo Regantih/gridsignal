@@ -167,7 +167,10 @@ export function HowStory({ about }: { about: About | undefined }) {
           key={st.id}
           id={`story-${st.id}`}
           aria-labelledby={`story-${st.id}-title`}
-          className={cn('grid gap-6 lg:grid-cols-2 lg:gap-10', calm ? 'py-8' : 'min-h-[100dvh] py-16')}
+          className={cn(
+            'grid gap-6 lg:grid-cols-2 lg:gap-10',
+            calm ? 'py-8' : i === 0 ? 'min-h-[85dvh] pb-16 pt-2' : 'min-h-[100dvh] py-16',
+          )}
           data-testid={`story-step-${st.id}`}
         >
           <div className={cn('order-2 lg:order-1', !calm && 'lg:sticky lg:top-24 lg:self-start')}>
@@ -175,7 +178,7 @@ export function HowStory({ about }: { about: About | undefined }) {
               <div className="overflow-hidden rounded-3xl border border-border bg-surface/40">{st.visual}</div>
             </Reveal>
           </div>
-          <div className={cn('order-1 flex flex-col justify-center lg:order-2', !calm && 'lg:min-h-[70dvh]')}>
+          <div className={cn('order-1 flex flex-col lg:order-2', !calm && (i === 0 ? 'lg:min-h-[60dvh] lg:justify-start lg:pt-10' : 'lg:min-h-[70dvh] lg:justify-center'))}>
             <Reveal calm={calm} delay={0.08}>
               <div className="eyebrow">{st.kicker}</div>
               <h2 id={`story-${st.id}-title`} className="mt-2 text-balance font-display text-2xl font-semibold leading-tight md:text-[2.2rem]">

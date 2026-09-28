@@ -53,23 +53,30 @@ interface Palette {
   skyCalm: THREE.Color
   skyHot: THREE.Color
   grid: string
+  dark: boolean
 }
 
+/**
+ * Two scene palettes. Dark is the night deck: ink ground, deep blue slab, light as the
+ * signal. Light is paper: a warm ground close to --bg, Texas as a darker warm stone with
+ * a crisp ink edge, and the deeper light-theme cyan for anything that carries power.
+ */
 function palette(theme: 'dark' | 'light'): Palette {
   const dark = theme === 'dark'
   return {
-    flow: cssColor('--flow', '#6ee7f9'),
-    risk: cssColor('--risk', '#f87171'),
+    flow: cssColor('--flow', dark ? '#6ee7f9' : '#0e7490'),
+    risk: cssColor('--risk', dark ? '#f87171' : '#b91c1c'),
     warn: cssColor('--warn', '#fbbf24'),
     price: cssColor('--price', '#fbbf24'),
     fg: cssColor('--fg', dark ? '#f1f5f9' : '#1e293b'),
     subtle: cssColor('--fg-subtle', '#94a3b8'),
-    land: new THREE.Color(dark ? '#111d3b' : '#dfe6f3'),
-    side: new THREE.Color(dark ? '#070d1f' : '#b9c4d8'),
-    ink: cssColor('--bg', dark ? '#070b18' : '#f4f6fb'),
-    skyCalm: cssColor('--bg', dark ? '#070b18' : '#f4f6fb'),
-    skyHot: new THREE.Color(dark ? '#1c1408' : '#f3e6cf'),
-    grid: dark ? 'rgba(140,170,220,0.16)' : 'rgba(40,60,100,0.14)',
+    land: new THREE.Color(dark ? '#111d3b' : '#cfc2ac'),
+    side: new THREE.Color(dark ? '#070d1f' : '#a89a80'),
+    ink: cssColor('--bg', dark ? '#070b18' : '#f7f4ee'),
+    skyCalm: cssColor('--bg', dark ? '#070b18' : '#f7f4ee'),
+    skyHot: new THREE.Color(dark ? '#1c1408' : '#f1dfc0'),
+    grid: dark ? 'rgba(140,170,220,0.16)' : 'rgba(70,55,30,0.2)',
+    dark,
   }
 }
 
@@ -105,8 +112,9 @@ function Land({ pal }: { pal: Palette }) {
       const y = Math.random() * 1024
       const r = 60 + Math.random() * 160
       const g = ctx.createRadialGradient(x, y, 0, x, y, r)
-      g.addColorStop(0, `rgba(255,255,255,${0.03 + Math.random() * 0.035})`)
-      g.addColorStop(1, 'rgba(255,255,255,0)')
+      const tint = pal.dark ? '255,255,255' : '60,45,20'
+      g.addColorStop(0, `rgba(${tint},${0.03 + Math.random() * 0.035})`)
+      g.addColorStop(1, `rgba(${tint},0)`)
       ctx.fillStyle = g
       ctx.fillRect(x - r, y - r, r * 2, r * 2)
     }
@@ -122,11 +130,15 @@ function Land({ pal }: { pal: Palette }) {
     t.colorSpace = THREE.SRGBColorSpace
     return t
   }, [pal])
+  const edge = useMemo(() => toEdge(texasOutline, 0.04), [])
   return (
-    <mesh geometry={geo} receiveShadow>
-      <meshStandardMaterial attach="material-0" map={top} roughness={0.9} metalness={0.05} />
-      <meshStandardMaterial attach="material-1" color={pal.side} roughness={0.95} />
-    </mesh>
+    <group>
+      <mesh geometry={geo} receiveShadow>
+        <meshStandardMaterial attach="material-0" map={top} roughness={0.9} metalness={0.05} />
+        <meshStandardMaterial attach="material-1" color={pal.side} roughness={0.95} />
+      </mesh>
+      <Line points={edge} color={`#${pal.fg.getHexString()}`} lineWidth={pal.dark ? 0.8 : 1.4} transparent opacity={pal.dark ? 0.35 : 0.8} />
+    </group>
   )
 }
 
@@ -215,58 +227,72 @@ function Country({ pal, theme, selected, view, showLabels, labels, onMarket }: {
     [],
   )
   const comed = useMemo(() => ({ edge: toEdge(comedOutline, 0.05), geo: ringGeometry(comedOutline, 0.22) }), [])
-  const quiet = pal.ink.clone().lerp(pal.land, dark ? 0.35 : 0.6)
-  const dim = focusTexas ? 0.22 : 1
+  const quiet = pal.ink.clone().lerp(pal.land, dark ? 0.35 : 0.3)
+  const neighbourAlpha = focusTexas ? (dark ? 0.1 : 0.16) : dark ? 0.28 : 0.45
   return (
     <group>
-      {geos.map(({ s, m, geo, edge }) => (
-        <group key={s.id}>
-          <mesh
-            geometry={geo}
-            onClick={m && onMarket ? (e) => { e.stopPropagation(); onMarket(m.id) } : undefined}
-            onPointerOver={m ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' } : undefined}
-            onPointerOut={m ? () => { document.body.style.cursor = '' } : undefined}
-          >
-            <meshStandardMaterial color={quiet} roughness={0.95} transparent opacity={focusTexas && m ? 0.5 : 1} />
+      {geos.map(({ s, m, geo, edge }) => {
+        // In the Texas view every other market is just another neighbour: no status colour.
+        const highlight = m && !(focusTexas && m.id !== selected) ? m : null
+        return (
+          <group key={s.id}>
+            <mesh
+              geometry={geo}
+              onClick={m && onMarket ? (e) => { e.stopPropagation(); onMarket(m.id) } : undefined}
+              onPointerOver={m ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' } : undefined}
+              onPointerOut={m ? () => { document.body.style.cursor = '' } : undefined}
+            >
+              <meshStandardMaterial color={quiet} roughness={0.95} />
+            </mesh>
+            <Line
+              points={edge}
+              color={`#${(highlight ? marketEdge(highlight, pal) : pal.subtle).getHexString()}`}
+              lineWidth={highlight ? (highlight.id === selected ? 1.8 : 1.2) : 0.6}
+              dashed={highlight?.status === 'equipment'}
+              dashSize={0.9}
+              gapSize={0.5}
+              transparent
+              opacity={highlight ? (highlight.id === selected ? 1 : 0.75) : neighbourAlpha}
+            />
+          </group>
+        )
+      })}
+      {!focusTexas && (
+        <>
+          <mesh geometry={comed.geo}>
+            <meshStandardMaterial color={quiet.clone().lerp(pal.subtle, dark ? 0.35 : 0.3)} roughness={0.95} />
           </mesh>
-          <Line
-            points={edge}
-            color={`#${(m ? marketEdge(m, pal) : pal.subtle).getHexString()}`}
-            lineWidth={m ? (m.id === selected ? 1.8 : 1.2) : 0.6}
-            dashed={m?.status === 'equipment'}
-            dashSize={0.9}
-            gapSize={0.5}
-            transparent
-            opacity={(m ? (m.id === selected ? 1 : 0.75) : dark ? 0.28 : 0.45) * dim}
-          />
-        </group>
-      ))}
-      <mesh geometry={comed.geo}>
-        <meshStandardMaterial color={quiet.clone().lerp(pal.subtle, 0.35)} roughness={0.95} transparent opacity={0.9 * dim} />
-      </mesh>
-      <Line points={comed.edge} color={`#${pal.subtle.getHexString()}`} lineWidth={1.2} dashed dashSize={0.6} gapSize={0.4} transparent opacity={0.9 * dim} />
-      {showLabels && <LabelProjector labels={labels} />}
+          <Line points={comed.edge} color={`#${pal.subtle.getHexString()}`} lineWidth={1.2} dashed dashSize={0.6} gapSize={0.4} />
+        </>
+      )}
+      {showLabels && <LabelProjector labels={labels} selected={selected} view={view} />}
     </group>
   )
 }
 
-/** Where each market label sits in the world; the DOM labels live outside the canvas. */
+/**
+ * Where each market label sits in the world; the DOM labels live outside the canvas. In the
+ * US view a label floats over the market centre. When the camera is on one market the label
+ * moves to that market's northern edge so it never covers the area being shown.
+ */
 const LABEL_ANCHORS = MARKETS.map((m) => {
   const [x, z] = toScene(m.center[0], m.center[1])
-  return { id: m.id, pos: new THREE.Vector3(x, m.status === 'live' ? 9 : 2.5, z) }
+  const [ex, ez] = toScene((m.bounds[0][0] + m.bounds[1][0]) / 2, m.bounds[0][1] - 0.2)
+  return { id: m.id, pos: new THREE.Vector3(x, m.status === 'live' ? 9 : 2.5, z), edge: new THREE.Vector3(ex, 0.4, ez) }
 })
 
 /** Projects the anchors to the card each frame and moves the DOM labels directly (no React state). */
-function LabelProjector({ labels }: { labels: React.RefObject<Map<MarketId, HTMLDivElement>> }) {
+function LabelProjector({ labels, selected, view }: { labels: React.RefObject<Map<MarketId, HTMLDivElement>>; selected: MarketId; view: MarketView }) {
   const { camera, size } = useThree()
   const v = useMemo(() => new THREE.Vector3(), [])
   useFrame(() => {
     for (const a of LABEL_ANCHORS) {
       const el = labels.current?.get(a.id)
       if (!el) continue
-      v.copy(a.pos).project(camera)
+      const below = view === 'market' && a.id === selected
+      v.copy(below ? a.edge : a.pos).project(camera)
       const behind = v.z > 1
-      el.style.transform = `translate(-50%, -100%) translate(0, -6px) translate(${((v.x + 1) / 2) * size.width}px, ${((1 - v.y) / 2) * size.height}px)`
+      el.style.transform = `${below ? 'translate(-50%, 0) translate(0, 6px)' : 'translate(-50%, -100%) translate(0, -6px)'} translate(${((v.x + 1) / 2) * size.width}px, ${((1 - v.y) / 2) * size.height}px)`
       el.style.opacity = behind ? '0' : '1'
     }
   })
@@ -347,15 +373,15 @@ function Hubs({ hubs, maxKw, pal }: { hubs: Hub[]; maxKw: number; pal: Palette }
           <group key={h.zone} position={[h.x, 0, h.z]}>
             <mesh position={[0, height / 2, 0]}>
               <cylinderGeometry args={[0.22, 0.4, height, 24, 1, true]} />
-              <meshBasicMaterial color={pal.flow} transparent opacity={0.55} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} />
+              <meshBasicMaterial color={pal.flow} transparent opacity={pal.dark ? 0.55 : 0.75} toneMapped={false} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
             <mesh position={[0, height / 2, 0]}>
               <cylinderGeometry args={[0.07, 0.12, height, 12]} />
-              <meshBasicMaterial color={pal.flow.clone().multiplyScalar(2.2)} toneMapped={false} />
+              <meshBasicMaterial color={pal.dark ? pal.flow.clone().multiplyScalar(2.2) : pal.flow.clone().multiplyScalar(0.7)} toneMapped={false} />
             </mesh>
             <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
               <ringGeometry args={[0.7, 1.05, 48]} />
-              <meshBasicMaterial color={pal.flow} transparent opacity={0.5} toneMapped={false} depthWrite={false} />
+              <meshBasicMaterial color={pal.flow} transparent opacity={pal.dark ? 0.5 : 0.8} toneMapped={false} depthWrite={false} />
             </mesh>
           </group>
         )
@@ -538,7 +564,16 @@ function Homes({
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[positions, 3]} />
         </bufferGeometry>
-        <pointsMaterial color={pal.flow.clone().multiplyScalar(1.6)} size={dense ? 0.22 : 0.34} sizeAttenuation transparent opacity={0.9} depthWrite={false} blending={THREE.AdditiveBlending} toneMapped={false} />
+        <pointsMaterial
+          color={pal.dark ? pal.flow.clone().multiplyScalar(1.6) : pal.flow.clone().multiplyScalar(0.85)}
+          size={dense ? 0.22 : 0.34}
+          sizeAttenuation
+          transparent
+          opacity={0.9}
+          depthWrite={false}
+          blending={pal.dark ? THREE.AdditiveBlending : THREE.NormalBlending}
+          toneMapped={false}
+        />
       </points>
     </group>
   )
@@ -578,72 +613,107 @@ function Shockwave({ nodes, stage, pal }: { nodes: Node[]; stage: React.RefObjec
 
 // ------------------------------------------------------------------ storm
 
-function StormCell({ storm, pal, live }: { storm: Storm; pal: Palette; live: boolean }) {
+const CLOUD_BASE = 3.6
+const CLOUD_DEPTH = 1.6
+const RAIN_N = 260
+const RAIN_LEN = 0.55
+
+/**
+ * A storm you can read from across the room: a dark slate cloud cap on a translucent rain
+ * column, rain as falling streaks, a lightning flicker inside the cloud that lights the
+ * ground under it, and a coral rim on the ground marking the radius the engine will use.
+ * `animate` false freezes rain and lightning (the 2D field replaces this scene entirely under
+ * Calm mode and reduced motion).
+ */
+function StormCell({ storm, pal, animate }: { storm: Storm; pal: Palette; animate: boolean }) {
   const [x, z] = toScene(storm.lon, storm.lat)
   const radius = (storm.radius_km * PX_PER_KM) / UNIT
   const light = useRef<THREE.PointLight>(null)
   const flash = useRef<THREE.MeshBasicMaterial>(null)
   const rain = useMemo(() => {
-    const n = 500
-    const arr = new Float32Array(n * 3)
-    for (let i = 0; i < n; i++) {
+    const arr = new Float32Array(RAIN_N * 6)
+    for (let i = 0; i < RAIN_N; i++) {
       const a = Math.random() * Math.PI * 2
-      const rr = Math.sqrt(Math.random()) * radius
-      arr[i * 3] = Math.cos(a) * rr
-      arr[i * 3 + 1] = Math.random() * 4
-      arr[i * 3 + 2] = Math.sin(a) * rr
+      const rr = Math.sqrt(Math.random()) * radius * 0.96
+      const px = Math.cos(a) * rr
+      const pz = Math.sin(a) * rr
+      const y = Math.random() * CLOUD_BASE
+      arr.set([px, y, pz, px, y + RAIN_LEN, pz], i * 6)
     }
     return arr
   }, [radius])
-  const pts = useRef<THREE.Points>(null)
+  const streaks = useRef<THREE.LineSegments>(null)
   const next = useRef(0)
   useFrame(({ clock }, dt) => {
     const t = clock.elapsedTime
     if (light.current && flash.current) {
-      if (live && t > next.current) {
-        light.current.intensity = 40 + Math.random() * 60
-        flash.current.opacity = 0.35
-        next.current = t + 0.6 + Math.random() * 2.2
+      if (animate && t > next.current) {
+        light.current.intensity = pal.dark ? 60 + Math.random() * 80 : 30 + Math.random() * 40
+        flash.current.opacity = 0.55
+        next.current = t + 0.7 + Math.random() * 2.4
       } else {
-        light.current.intensity *= 0.82
-        flash.current.opacity *= 0.8
+        light.current.intensity *= 0.8
+        flash.current.opacity *= 0.78
       }
     }
-    if (pts.current && live) {
-      const a = pts.current.geometry.attributes.position as THREE.BufferAttribute
+    if (streaks.current && animate) {
+      const a = streaks.current.geometry.attributes.position as THREE.BufferAttribute
       const arr = a.array as Float32Array
-      for (let i = 1; i < arr.length; i += 3) {
-        arr[i] -= dt * 6
-        if (arr[i] < 0) arr[i] = 4
+      const fall = dt * 7
+      for (let i = 0; i < arr.length; i += 6) {
+        let y = arr[i + 1] - fall
+        if (y < -RAIN_LEN) y = CLOUD_BASE
+        arr[i + 1] = y
+        arr[i + 4] = y + RAIN_LEN
       }
       a.needsUpdate = true
     }
   })
+  const slate = pal.dark ? '#141a2b' : '#2b3345'
+  const rainColor = pal.dark ? '#8ea3cc' : '#1f2738'
+  const risk = `#${pal.risk.getHexString()}`
   return (
     <group position={[x, 0, z]}>
-      <mesh position={[0, 4.2, 0]}>
-        <cylinderGeometry args={[radius * 1.05, radius * 0.9, 1.4, 48]} />
-        <meshStandardMaterial color="#1a2033" transparent opacity={0.85} roughness={1} />
+      {/* rain column: an open translucent shell from the ground to the cloud base */}
+      <mesh position={[0, CLOUD_BASE / 2, 0]}>
+        <cylinderGeometry args={[radius * 0.97, radius * 0.9, CLOUD_BASE, 56, 1, true]} />
+        <meshStandardMaterial color={slate} transparent opacity={pal.dark ? 0.3 : 0.16} roughness={1} side={THREE.DoubleSide} depthWrite={false} />
       </mesh>
-      <mesh position={[0, 4.2, 0]}>
-        <cylinderGeometry args={[radius * 1.05, radius * 0.9, 1.4, 48]} />
-        <meshBasicMaterial ref={flash} color="#dbe7ff" transparent opacity={0} toneMapped={false} depthWrite={false} />
+      {/* cloud cap */}
+      <mesh position={[0, CLOUD_BASE + CLOUD_DEPTH / 2, 0]}>
+        <cylinderGeometry args={[radius * 1.08, radius * 0.98, CLOUD_DEPTH, 56]} />
+        <meshStandardMaterial color={slate} roughness={1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]}>
-        <circleGeometry args={[radius, 64]} />
-        <meshBasicMaterial color="#000" transparent opacity={0.45} depthWrite={false} />
+      <mesh position={[0, CLOUD_BASE + CLOUD_DEPTH + 0.35, 0]} scale={[1, 0.45, 1]}>
+        <sphereGeometry args={[radius * 0.95, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2]} />
+        <meshStandardMaterial color={slate} roughness={1} />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.05, 0]}>
-        <ringGeometry args={[radius * 0.98, radius, 64]} />
-        <meshBasicMaterial color={pal.risk} transparent opacity={0.9} toneMapped={false} depthWrite={false} />
+      {/* lightning: a flash inside the cloud plus a light on the ground */}
+      <mesh position={[0, CLOUD_BASE + CLOUD_DEPTH / 2, 0]}>
+        <cylinderGeometry args={[radius * 1.09, radius * 0.99, CLOUD_DEPTH + 0.02, 56]} />
+        <meshBasicMaterial ref={flash} color={pal.dark ? '#dbe7ff' : '#f6f0ff'} transparent opacity={0} toneMapped={false} depthWrite={false} />
       </mesh>
-      <points ref={pts}>
+      <pointLight ref={light} position={[0, CLOUD_BASE - 0.2, 0]} color="#e6efff" intensity={0} distance={radius * 4} decay={2} />
+      {/* rain */}
+      <lineSegments ref={streaks}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" args={[rain, 3]} />
         </bufferGeometry>
-        <pointsMaterial color="#9fb4d9" size={0.08} transparent opacity={0.55} depthWrite={false} />
-      </points>
-      <pointLight ref={light} position={[0, 3.4, 0]} color="#e6efff" intensity={0} distance={radius * 4} decay={2} />
+        <lineBasicMaterial color={rainColor} transparent opacity={pal.dark ? 0.45 : 0.85} depthWrite={false} />
+      </lineSegments>
+      {/* ground: shade under the cell and the coral radius rim */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.1, 0]}>
+        <circleGeometry args={[radius, 64]} />
+        <meshBasicMaterial color={pal.dark ? '#000' : '#2b3345'} transparent opacity={pal.dark ? 0.5 : 0.35} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.12, 0]}>
+        <ringGeometry args={[radius * 0.96, radius, 96]} />
+        <meshBasicMaterial color={risk} toneMapped={false} depthWrite={false} />
+      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.11, 0]}>
+        <ringGeometry args={[radius * 1.0, radius * 1.16, 96]} />
+        <meshBasicMaterial color={risk} transparent opacity={0.35} toneMapped={false} depthWrite={false} />
+      </mesh>
     </group>
   )
 }
@@ -689,32 +759,61 @@ function DrawPlane({ onStorm, setDraft, setDrawing }: { onStorm?: (s: Storm) => 
 
 /** Where the camera rests for a market or the whole country: look-at point and distance. */
 const US_POLAR = 0.55
+const MARKET_POLAR = 0.95
 const FOV = 36
-/** Camera distance that fits a w x d footprint (scene units) seen from pitch `polar`, with padding. */
-function fitDistance(w: number, d: number, aspect: number, polar: number, pad = 1.18): number {
-  const vFov = (FOV * Math.PI) / 180
-  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(aspect, 0.2))
-  const byWidth = (w * pad) / 2 / Math.tan(hFov / 2)
-  const byDepth = ((d * Math.cos(polar) + 6) * pad) / 2 / Math.tan(vFov / 2)
-  return Math.max(byWidth, byDepth)
-}
+const US_BOUNDS: [[number, number], [number, number]] = [[-124.8, 24.5], [-66.9, 49.4]]
+// Rough hull of the lower 48, so the fit hugs the land and not the empty corners of its bounding box.
+const US_HULL: [number, number][] = [
+  [-124.8, 48.4], [-124.4, 40.4], [-117.1, 32.5], [-106.5, 31.8], [-97.4, 25.9], [-81.0, 25.1],
+  [-80.0, 32.0], [-75.5, 35.3], [-70.0, 41.5], [-66.9, 44.8], [-68.2, 47.4], [-95.2, 49.4], [-123.3, 49.0],
+]
 
-function frameFor(market: MarketId, view: MarketView, aspect: number): { target: THREE.Vector3; dist: number } {
-  if (view === 'us') {
-    const [x0, z0] = toScene(-124.8, 49.4)
-    const [x1, z1] = toScene(-66.9, 24.5)
-    // Portrait cards leave the copy at the top, so lift the country a little higher in frame.
-    const target = new THREE.Vector3((x0 + x1) / 2, 0, (z0 + z1) / 2 + Math.abs(z1 - z0) * (aspect < 1 ? 0.14 : -0.04))
-    return { target, dist: fitDistance(Math.abs(x1 - x0), Math.abs(z1 - z0), aspect, US_POLAR) }
+/**
+ * Frame a lon/lat box so it fills the card and sits in its centre at any aspect ratio.
+ * A scratch camera is placed at the wanted pitch, the box corners (ground and a little
+ * above it, for columns and labels) are projected, and the target and distance are refined
+ * until the projected box is centred and padded. This is the same for the whole country,
+ * Texas, Illinois or Colorado, so a phone card gets the map in its middle and a wide card
+ * gets it edge to edge.
+ */
+function frameFor(market: MarketId, view: MarketView, aspect: number, theta = 0, phi?: number): { target: THREE.Vector3; dist: number } {
+  const us = view === 'us'
+  const [[lon0, lat0], [lon1, lat1]] = us ? US_BOUNDS : marketById(market).bounds
+  const polar = phi ?? (us ? US_POLAR : MARKET_POLAR)
+  const lift = us ? 1.5 : market === 'ercot' ? 4 : 1.5
+  const samples: [number, number][] = us ? US_HULL : []
+  if (!us) {
+    for (const lon of [lon0, (lon0 + lon1) / 2, lon1]) for (const lat of [lat0, (lat0 + lat1) / 2, lat1]) samples.push([lon, lat])
   }
-  // Texas spans about 13 degrees of longitude; narrow cards need more distance to keep it whole.
-  const [tx0, tz0] = toScene(-106.7, 36.6)
-  const [tx1, tz1] = toScene(-93.4, 25.8)
-  const fit = fitDistance(Math.abs(tx1 - tx0), Math.abs(tz1 - tz0), aspect, 0.95, 1.1)
-  if (market === 'ercot') return { target: new THREE.Vector3(0, 0, 1), dist: Math.max(64, fit) }
-  const m = marketById(market)
-  const [x, z] = toScene(m.center[0], m.center[1])
-  return { target: new THREE.Vector3(x, 0, z), dist: Math.max(market === 'comed' ? 62 : 64, fit) }
+  const corners: THREE.Vector3[] = []
+  for (const [lon, lat] of samples) {
+    const [x, z] = toScene(lon, lat)
+    corners.push(new THREE.Vector3(x, 0, z), new THREE.Vector3(x, lift, z))
+  }
+  const [cx0, cz0] = toScene((lon0 + lon1) / 2, (lat0 + lat1) / 2)
+  let target = new THREE.Vector3(cx0, 0, cz0)
+  let dist = 60
+  const cam = new THREE.PerspectiveCamera(FOV, Math.max(aspect, 0.2), 0.1, 2000)
+  const dir = new THREE.Vector3().setFromSphericalCoords(1, polar, theta)
+  const usable = us ? 0.9 : market === 'ercot' ? 0.8 : 0.66
+  const v = new THREE.Vector3()
+  for (let i = 0; i < 6; i++) {
+    cam.position.copy(target).addScaledVector(dir, dist)
+    cam.lookAt(target)
+    cam.updateMatrixWorld()
+    cam.updateProjectionMatrix()
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
+    for (const p of corners) {
+      v.copy(p).project(cam)
+      x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x)
+      y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y)
+    }
+    // Re-aim so the box centre lands on the card centre: cast that screen point onto the ground.
+    v.set((x0 + x1) / 2, (y0 + y1) / 2, 0.5).unproject(cam).sub(cam.position).normalize()
+    if (v.y < -1e-4) target = cam.position.clone().addScaledVector(v, -cam.position.y / v.y)
+    dist *= Math.max((x1 - x0) / 2 / usable, (y1 - y0) / 2 / usable)
+  }
+  return { target, dist: Math.max(dist, 18) }
 }
 
 function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React.RefObject<Stage>; nodes: Node[]; price: number; pal: Palette; drawing: boolean; market: MarketId; view: MarketView }) {
@@ -728,11 +827,12 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
     lastAspect.current = aspect
     refit.current = true
   }
-  const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number; ms: number; polar?: number } | null>(null)
+  const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number; ms: number; polar?: number; heading?: number } | null>(null)
   const staged = useRef<number>(0)
   const framed = useRef<string>('')
   const index = useMemo(() => new Map(nodes.map((n, i) => [n.d.device_id, i])), [nodes])
   const sky = useMemo(() => new THREE.Color(), [])
+  const sph = useMemo(() => new THREE.Spherical(), [])
 
   useFrame(() => {
     const c = controls.current
@@ -744,16 +844,26 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
       framed.current = key
       if (first) {
         c.target.copy(home.target)
-        const dir = new THREE.Vector3().setFromSphericalCoords(1, view === 'us' ? US_POLAR : 0.9, 0)
+        const dir = new THREE.Vector3().setFromSphericalCoords(1, view === 'us' ? US_POLAR : MARKET_POLAR, 0)
         camera.position.copy(home.target.clone().add(dir.multiplyScalar(home.dist)))
       } else {
-        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? US_POLAR : 0.95 }
+        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? US_POLAR : MARKET_POLAR, heading: 0 }
       }
-    } else if (!tween.current && (view === 'us' || refit.current) && Math.abs(camera.position.distanceTo(c.target) - home.dist) > 0.5) {
-      // The card was resized: keep the whole country (or the framed market) fitted.
+    } else if (!tween.current && view === 'us') {
+      // The country keeps its fit as the camera idles around it and as the card resizes.
+      sph.setFromVector3(camera.position.clone().sub(c.target))
+      const fit = frameFor(market, view, aspect, sph.theta, sph.phi)
+      c.target.lerp(fit.target, 0.15)
+      sph.radius += (fit.dist - sph.radius) * 0.15
+      camera.position.copy(c.target).add(new THREE.Vector3().setFromSpherical(sph))
+    } else if (!tween.current && refit.current) {
+      // The card was resized: keep the framed market fitted and centred.
       refit.current = false
-      const dir = camera.position.clone().sub(c.target).normalize()
-      camera.position.copy(c.target.clone().add(dir.multiplyScalar(home.dist)))
+      sph.setFromVector3(camera.position.clone().sub(c.target))
+      const fit = frameFor(market, view, aspect, sph.theta, sph.phi)
+      sph.radius = fit.dist
+      c.target.copy(fit.target)
+      camera.position.copy(c.target).add(new THREE.Vector3().setFromSpherical(sph))
     }
     const mo = stage.current.moment
     // Stage a new moment: glide to the cluster (incident) or back home (recovery, later).
@@ -774,10 +884,16 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
         const dir = camera.position.clone().sub(c.target).normalize()
         const dist = tw.d0 + (tw.d1 - tw.d0) * k
         if (tw.polar !== undefined) {
-          // Tip the camera towards the wanted pitch as it flies, keeping its heading.
-          const sph = new THREE.Spherical().setFromVector3(dir)
-          sph.phi += (tw.polar - sph.phi) * Math.min(1, k * 1.5)
-          dir.setFromSpherical(sph)
+          // Tip the camera towards the wanted pitch (and heading) as it flies.
+          const s = new THREE.Spherical().setFromVector3(dir)
+          const kk = Math.min(1, k * 1.5)
+          s.phi += (tw.polar - s.phi) * kk
+          if (tw.heading !== undefined) {
+            let dTheta = tw.heading - s.theta
+            dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta))
+            s.theta += dTheta * kk
+          }
+          dir.setFromSpherical(s)
         }
         c.target.copy(target)
         camera.position.copy(target.clone().add(dir.multiplyScalar(dist)))
@@ -889,11 +1005,11 @@ export default function TexasScene(props: SceneProps) {
           onSelect={onSelect}
         />
         <Shockwave nodes={nodes} stage={stage} pal={pal} />
-        {cell && <StormCell storm={cell} pal={pal} live={!draft} />}
+        {cell && <StormCell storm={cell} pal={pal} animate />}
         {stormMode && <DrawPlane onStorm={onStorm} setDraft={setDraft} setDrawing={setDrawing} />}
         <Rig stage={stage} nodes={nodes} price={priceMwh} pal={pal} drawing={drawing} market={market} view={view} />
         <EffectComposer multisampling={0}>
-          <Bloom luminanceThreshold={theme === 'dark' ? 0.55 : 0.85} luminanceSmoothing={0.2} intensity={theme === 'dark' ? 1.1 : 0.5} mipmapBlur radius={0.6} />
+          <Bloom luminanceThreshold={theme === 'dark' ? 0.55 : 0.92} luminanceSmoothing={0.2} intensity={theme === 'dark' ? 1.1 : 0.3} mipmapBlur radius={0.6} />
         </EffectComposer>
       </Canvas>
       <MarketLabels labels={labels} />

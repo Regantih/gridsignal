@@ -27,6 +27,7 @@ import { useReplay } from '@/lib/replay'
 import type { Moment } from '@/components/scene/scene-types'
 import { MarketPlaceholder } from '@/components/market-placeholder'
 import { STATUS_LABEL, useMarket } from '@/lib/markets'
+import { useWide } from '@/components/shell'
 
 export function TonightPage() {
   const fleet = useFleet()
@@ -200,6 +201,7 @@ function Tonight({ fleet }: { fleet: Fleet }) {
   const tl = useTimeline()
   const replay = useReplayShared()
   const mk = useMarket()
+  const phone = !useWide('(min-width: 640px)')
   const focus = useMemo(() => (view.live ? new Set(fleet.pending_incident?.cohort ?? []) : new Set<string>()), [fleet.pending_incident, view.live])
   const recoveredShown = useCountUp(recovered, 1400)
   const priceAt = useMemo(() => {
@@ -331,7 +333,7 @@ function Tonight({ fleet }: { fleet: Fleet }) {
               view={mk.view}
               onMarket={(id) => { mk.select(id); mk.setView('market') }}
               label={`Map of ${fleet.devices.length} simulated homes across ERCOT load zones, coloured by status, with power flowing to each zone`}
-              height={520}
+              height={phone && mk.view === 'us' ? 360 : 520}
             />
           </div>
         </div>

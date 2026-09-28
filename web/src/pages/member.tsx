@@ -23,24 +23,24 @@ export function MemberPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5">
-      <div className="flex min-h-[122px] items-end justify-between gap-3 sm:min-h-[88px]">
-        <div className="min-w-0 flex-1">
+      <div className="flex min-h-[132px] flex-col gap-3">
+        <div className="min-w-0">
           <div className="text-xs font-semibold uppercase tracking-widest text-brand">Your home battery</div>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">{member.data ? member.data.summary.site : <Skeleton className="h-16 w-full max-w-56 sm:h-8" />}</h1>
+          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight">{member.data ? member.data.summary.site : <Skeleton className="h-8 w-full max-w-64" />}</h1>
         </div>
         {homes.data ? (
-          <div className="flex shrink-0 flex-col gap-1">
+          <div className="flex flex-col gap-1">
             <Label htmlFor="home" className="text-xs text-fg-muted">Demo: view as</Label>
-            <Select id="home" value={id ?? ''} onChange={(e) => navigate(`/member/${e.target.value}`)} className="w-44" data-testid="home-select">
+            <Select id="home" value={id ?? ''} onChange={(e) => navigate(`/member/${e.target.value}`)} className="w-full" data-testid="home-select">
               {homes.data.homes.map((h) => (
                 <option key={h.device_id} value={h.device_id}>{h.site}</option>
               ))}
             </Select>
           </div>
         ) : (
-          <div className="flex shrink-0 flex-col gap-1" aria-busy>
+          <div className="flex flex-col gap-1" aria-busy>
             <Skeleton className="h-4 w-24" />
-            <Skeleton className="h-10 w-44" />
+            <Skeleton className="h-10 w-full" />
           </div>
         )}
       </div>

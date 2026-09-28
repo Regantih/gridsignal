@@ -28,7 +28,7 @@ export function Shell() {
   )
 }
 
-function useWide(query: string) {
+export function useWide(query: string) {
   const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
   useEffect(() => {
     const mq = window.matchMedia(query)
