@@ -722,6 +722,12 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
   const { scene, camera, size } = useThree()
   const aspect = size.width / Math.max(size.height, 1)
   const home = useMemo(() => frameFor(market, view, aspect), [market, view, aspect])
+  const refit = useRef(false)
+  const lastAspect = useRef(aspect)
+  if (lastAspect.current !== aspect) {
+    lastAspect.current = aspect
+    refit.current = true
+  }
   const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number; ms: number; polar?: number } | null>(null)
   const staged = useRef<number>(0)
   const framed = useRef<string>('')
@@ -743,8 +749,9 @@ function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React
       } else {
         tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? US_POLAR : 0.95 }
       }
-    } else if (!tween.current && view === 'us' && Math.abs(camera.position.distanceTo(c.target) - home.dist) > 0.5) {
-      // The card was resized: keep the whole country fitted.
+    } else if (!tween.current && (view === 'us' || refit.current) && Math.abs(camera.position.distanceTo(c.target) - home.dist) > 0.5) {
+      // The card was resized: keep the whole country (or the framed market) fitted.
+      refit.current = false
       const dir = camera.position.clone().sub(c.target).normalize()
       camera.position.copy(c.target.clone().add(dir.multiplyScalar(home.dist)))
     }

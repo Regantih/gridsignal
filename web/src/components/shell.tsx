@@ -43,8 +43,9 @@ function useWide(query: string) {
 function MarketSwitcher() {
   const { market, select } = useMarket()
   const wide = useWide('(min-width: 1280px)')
+  const phone = !useWide('(min-width: 480px)')
   return (
-    <label className="relative flex h-9 shrink-0 items-center rounded-full border border-border bg-surface/60 pl-3 pr-2 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg">
+    <label className="relative flex h-9 shrink-0 items-center rounded-full border border-border bg-surface/60 pl-2.5 pr-1.5 text-xs text-fg-muted sm:pl-3 sm:pr-2 transition-colors hover:border-border-strong hover:text-fg">
       <span className={cn('mr-2 size-2 shrink-0 rounded-full', market.status === 'live' ? 'bg-flow' : market.status === 'planned' ? 'bg-fg-subtle' : 'bg-price')} aria-hidden />
       <span className="sr-only">Market</span>
       <select
@@ -56,7 +57,7 @@ function MarketSwitcher() {
       >
         {MARKETS.map((m) => (
           <option key={m.id} value={m.id}>
-            {wide ? `${m.iso} · ${m.short} · ${STATUS_SHORT[m.status]}` : `${m.iso} · ${STATUS_SHORT[m.status]}`}
+            {wide ? `${m.iso} · ${m.short} · ${STATUS_SHORT[m.status]}` : phone ? m.iso : `${m.iso} · ${STATUS_SHORT[m.status]}`}
           </option>
         ))}
       </select>
@@ -122,7 +123,7 @@ function Frame() {
         Skip to content
       </a>
       <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/75 backdrop-blur-xl">
-        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-3 px-4 md:gap-4 md:px-8">
+        <div className="mx-auto flex h-14 max-w-[1440px] items-center gap-1.5 px-2.5 sm:gap-3 sm:px-4 md:gap-4 md:px-8">
           <NavLink to="/" className="flex shrink-0 items-center gap-2.5" aria-label="GridSignal, Tonight">
             <Logo className="size-7 text-brand" />
             <span className="hidden font-display text-[1.05rem] font-semibold tracking-tight sm:inline">GridSignal</span>
@@ -145,14 +146,14 @@ function Frame() {
               </NavLink>
             ))}
           </nav>
-          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2 xl:gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2 xl:gap-3">
             <Ticker />
             <MarketSwitcher />
             <button
               type="button"
               onClick={bar.open}
               data-testid="open-command-bar"
-              className="num flex h-9 items-center gap-2 rounded-full border border-border bg-surface/60 px-3 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
+              className="num flex h-9 items-center gap-2 rounded-full border border-border bg-surface/60 px-2.5 text-xs sm:px-3 text-fg-muted transition-colors hover:border-border-strong hover:text-fg"
             >
               <Command aria-hidden className="size-3.5" />
               <span className="hidden xl:inline">Command</span>
@@ -167,7 +168,7 @@ function Frame() {
               title={calm ? 'Calm mode on: flat map, no motion' : 'Calm mode off: 3D flight deck'}
               data-testid="calm-toggle"
               className={cn(
-                'flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs',
+                'flex h-9 items-center gap-1.5 rounded-full border px-2.5 text-xs sm:px-3',
                 calm ? 'border-brand/50 bg-brand-soft text-brand' : 'border-border bg-surface/60 text-fg-muted hover:text-fg',
               )}
             >
