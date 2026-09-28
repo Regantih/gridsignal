@@ -78,7 +78,16 @@ export function TomorrowPage() {
               </div>
             </div>
           ) : (
-            <Skeleton className="h-[129px] w-full md:h-[119px] xl:h-10 xl:w-72" />
+            <div className="flex flex-wrap items-end gap-2" aria-busy>
+              <div className="flex flex-col gap-1">
+                <Skeleton className="h-4 w-32" />
+                <Skeleton className="h-10 w-64" />
+              </div>
+              <div className="flex flex-col gap-1">
+                <Skeleton className="h-4 w-40" />
+                <Skeleton className="h-10 w-40" />
+              </div>
+            </div>
           )
         }
       />
