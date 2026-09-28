@@ -21,7 +21,17 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.4", "pytest-xdist>=3.6", "matplotlib>=3.8"]
+dev = [
+    "pytest>=8",
+    "ruff>=0.4",
+    "pytest-xdist>=3.6",
+    "matplotlib>=3.8",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "python-multipart>=0.0.9,<1",
+]
+# The GridSignal web app's API (api/), served with the built front end from one process.
+api = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "python-multipart>=0.0.9,<1"]
 # Only needed for the live-ERCOT pipeline, not for the Control Room demo.
 ercot = ["gridstatus>=0.27", "scikit-learn>=1.4"]
 # Only needed for scripts/capture_demo.py, the scripted screen recording.
@@ -46,6 +56,8 @@ markers = ["slow: fleet-scale sweeps, app renders and full reports"]
 # Whole modules go to one worker, so the module-scoped fixtures that share a single
 # AppTest render and a single report across their tests are still built once.
 addopts = "--dist loadscope"
+# api/ is a top-level package next to src/, so its tests import it from the repo root.
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
@@ -53,6 +65,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["gridsignal", "api"]
 
 [tool.ruff.lint.per-file-ignores]
 # Generates a prose report: long human sentences read better unbroken.
