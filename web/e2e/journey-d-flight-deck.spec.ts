@@ -26,13 +26,18 @@ test.describe('Flight deck: replay and Calm mode', () => {
     expect(done.dollars_recovered).toBeGreaterThan(0)
     await expect(page.getByTestId('audit-list')).toContainText('human_approval')
 
-    // A playbook with limits, then the evening sweeps on the shared clock.
+    // A playbook with limits, then the evening sweeps on the shared clock. The "Replayed"
+    // label is transient (a few seconds at 600x), so the proof is the persistent summary
+    // that the sweep step ran (data-swept) rather than a label a slow machine can miss.
     await expect(page.getByTestId('playbook-card')).toContainText('Active', { timeout: 20_000 })
-    await expect(page.getByTestId('night-timeline')).toContainText('Replayed', { timeout: 15_000 })
     await expect(page.getByTestId('timeline-clock')).toBeVisible()
 
-    // About forty seconds in, it hands the deck back, live.
-    await expect(page.getByTestId('night-timeline')).toContainText('Live', { timeout: 20_000 })
+    // About forty seconds in, it hands the deck back, live, and leaves a summary behind.
+    const summary = page.getByTestId('replay-summary')
+    await expect(summary).toBeVisible({ timeout: 40_000 })
+    await expect(summary).toHaveAttribute('data-swept', 'true')
+    await expect(summary).toContainText('replayed at 600x')
+    await expect(page.getByTestId('night-timeline')).toContainText('Live')
     await expect(page.getByTestId('replay-tonight')).toBeVisible()
     await expect(page.getByTestId('verdict')).toContainText('keep its promise')
   })

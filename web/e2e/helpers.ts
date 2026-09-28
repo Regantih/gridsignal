@@ -2,8 +2,20 @@ import { expect, type Page } from '@playwright/test'
 
 export const dollars = (text: string) => Number(text.replace(/[^0-9.-]/g, ''))
 
+/**
+ * E2E_SLOW=<rate> throttles the page's CPU through CDP (Chromium only), e.g. E2E_SLOW=4 for a
+ * quarter-speed machine, to prove timing-sensitive journeys hold on slow hardware.
+ */
+export async function slowMachine(page: Page) {
+  const rate = Number(process.env.E2E_SLOW ?? 0)
+  if (!rate || page.context().browser()?.browserType().name() !== 'chromium') return
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Emulation.setCPUThrottlingRate', { rate })
+}
+
 /** Fresh simulated evening for this browser context. The session id lives in a cookie. */
 export async function freshSession(page: Page, fleetSize = 48) {
+  await slowMachine(page)
   await page.goto('/')
   const res = await page.request.post('/api/session/reset', {
     data: { fleet_size: fleetSize, price_scenario: 'normal' },

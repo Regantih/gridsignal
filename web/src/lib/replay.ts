@@ -24,6 +24,7 @@ export function useReplay(sessionArgs: () => { fleet_size: number; price_scenari
   const tl = useTimeline()
   const [phase, setPhase] = useState<ReplayPhase>('idle')
   const [step, setStep] = useState(-1)
+  const [swept, setSwept] = useState(false)
   const timers = useRef<number[]>([])
   const tlRef = useRef(tl)
   tlRef.current = tl
@@ -92,6 +93,7 @@ export function useReplay(sessionArgs: () => { fleet_size: number; price_scenari
         t.setSpeed(600)
         t.seek(t.range[0])
         t.play()
+        setSwept(true)
       },
     },
     {
@@ -109,6 +111,7 @@ export function useReplay(sessionArgs: () => { fleet_size: number; price_scenari
     timers.current = []
     setPhase('idle')
     setStep(-1)
+    setSwept(false)
     tlRef.current.setSpeed(60)
     tlRef.current.goLive()
   }, [])
@@ -136,6 +139,7 @@ export function useReplay(sessionArgs: () => { fleet_size: number; price_scenari
   return {
     phase,
     step,
+    swept,
     total: steps.length,
     caption: step >= 0 ? steps[step].caption(fleet) : null,
     start,

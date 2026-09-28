@@ -49,6 +49,7 @@ interface Palette {
   subtle: THREE.Color
   land: THREE.Color
   side: THREE.Color
+  landEdge: THREE.Color
   ink: THREE.Color
   skyCalm: THREE.Color
   skyHot: THREE.Color
@@ -70,12 +71,13 @@ function palette(theme: 'dark' | 'light'): Palette {
     price: cssColor('--price', '#fbbf24'),
     fg: cssColor('--fg', dark ? '#f1f5f9' : '#1e293b'),
     subtle: cssColor('--fg-subtle', '#94a3b8'),
-    land: new THREE.Color(dark ? '#111d3b' : '#cfc2ac'),
-    side: new THREE.Color(dark ? '#070d1f' : '#a89a80'),
+    land: new THREE.Color(dark ? '#1a2a52' : '#cfc2ac'),
+    side: new THREE.Color(dark ? '#0c1530' : '#a89a80'),
+    landEdge: new THREE.Color(dark ? '#b3dcf2' : '#1e293b'),
     ink: cssColor('--bg', dark ? '#070b18' : '#f7f4ee'),
     skyCalm: cssColor('--bg', dark ? '#070b18' : '#f7f4ee'),
     skyHot: new THREE.Color(dark ? '#1c1408' : '#f1dfc0'),
-    grid: dark ? 'rgba(140,170,220,0.16)' : 'rgba(70,55,30,0.2)',
+    grid: dark ? 'rgba(140,170,220,0.12)' : 'rgba(70,55,30,0.16)',
     dark,
   }
 }
@@ -130,14 +132,14 @@ function Land({ pal }: { pal: Palette }) {
     t.colorSpace = THREE.SRGBColorSpace
     return t
   }, [pal])
-  const edge = useMemo(() => toEdge(texasOutline, 0.04), [])
+  const edge = useMemo(() => toEdge(texasOutline, 0.14), [])
   return (
     <group>
       <mesh geometry={geo} receiveShadow>
         <meshStandardMaterial attach="material-0" map={top} roughness={0.9} metalness={0.05} />
         <meshStandardMaterial attach="material-1" color={pal.side} roughness={0.95} />
       </mesh>
-      <Line points={edge} color={`#${pal.fg.getHexString()}`} lineWidth={pal.dark ? 0.8 : 1.4} transparent opacity={pal.dark ? 0.35 : 0.8} />
+      <Line points={edge} color={`#${pal.landEdge.getHexString()}`} lineWidth={pal.dark ? 1.8 : 1.4} transparent opacity={pal.dark ? 0.95 : 0.8} toneMapped={false} />
     </group>
   )
 }
@@ -145,37 +147,57 @@ function Land({ pal }: { pal: Palette }) {
 // ------------------------------------------------------------------ ground
 
 /** Deep ink under everything: a faint grid that fades out towards the edges (vignette). */
+const GROUND = 900
+const GRID_CELL = 4
 function Ground({ pal }: { pal: Palette }) {
-  const tex = useMemo(() => {
+  const grid = useMemo(() => {
     const c = document.createElement('canvas')
-    c.width = 2048
-    c.height = 2048
+    c.width = 256
+    c.height = 256
     const ctx = c.getContext('2d')!
-    ctx.fillStyle = `#${pal.ink.getHexString()}`
-    ctx.fillRect(0, 0, 2048, 2048)
+    ctx.clearRect(0, 0, 256, 256)
     ctx.strokeStyle = pal.grid
-    ctx.lineWidth = 1
-    for (let i = 0; i <= 2048; i += 64) {
-      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 2048); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(2048, i); ctx.stroke()
-    }
+    ctx.lineWidth = 2
+    ctx.beginPath(); ctx.moveTo(1, 0); ctx.lineTo(1, 256); ctx.stroke()
+    ctx.beginPath(); ctx.moveTo(0, 1); ctx.lineTo(256, 1); ctx.stroke()
+    const t = new THREE.CanvasTexture(c)
+    t.wrapS = t.wrapT = THREE.RepeatWrapping
+    t.repeat.set(GROUND / GRID_CELL, GROUND / GRID_CELL)
+    t.colorSpace = THREE.SRGBColorSpace
+    t.anisotropy = 8
+    return t
+  }, [pal])
+  const vignette = useMemo(() => {
+    const c = document.createElement('canvas')
+    c.width = 1024
+    c.height = 1024
+    const ctx = c.getContext('2d')!
     const edge = pal.ink.clone().lerp(pal.side, 0.6).getHexString()
-    const v = ctx.createRadialGradient(1024, 1024, 420, 1024, 1024, 1100)
+    const v = ctx.createRadialGradient(512, 512, 200, 512, 512, 560)
     v.addColorStop(0, `#${edge}00`)
     v.addColorStop(1, `#${edge}ff`)
     ctx.fillStyle = v
-    ctx.fillRect(0, 0, 2048, 2048)
+    ctx.fillRect(0, 0, 1024, 1024)
     const t = new THREE.CanvasTexture(c)
     t.colorSpace = THREE.SRGBColorSpace
-    t.anisotropy = 4
     return t
   }, [pal])
   const [cx, cz] = toScene(-96.5, 38.5)
   return (
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[cx, -1.15, cz]}>
-      <planeGeometry args={[900, 900]} />
-      <meshBasicMaterial map={tex} toneMapped={false} />
-    </mesh>
+    <group position={[cx, -1.15, cz]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh>
+        <planeGeometry args={[GROUND, GROUND]} />
+        <meshBasicMaterial color={pal.ink} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0, 0.02]}>
+        <planeGeometry args={[GROUND, GROUND]} />
+        <meshBasicMaterial map={grid} transparent depthWrite={false} toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0, 0.04]}>
+        <planeGeometry args={[GROUND, GROUND]} />
+        <meshBasicMaterial map={vignette} transparent depthWrite={false} toneMapped={false} />
+      </mesh>
+    </group>
   )
 }
 
@@ -781,8 +803,8 @@ function frameFor(market: MarketId, view: MarketView, aspect: number, theta = 0,
   const [[lon0, lat0], [lon1, lat1]] = us ? US_BOUNDS : marketById(market).bounds
   const polar = phi ?? (us ? US_POLAR : MARKET_POLAR)
   const lift = us ? 1.5 : market === 'ercot' ? 4 : 1.5
-  const samples: [number, number][] = us ? US_HULL : []
-  if (!us) {
+  const samples: [number, number][] = us ? US_HULL : market === 'ercot' ? texasOutline.filter((_, i) => i % 3 === 0) : []
+  if (samples.length === 0) {
     for (const lon of [lon0, (lon0 + lon1) / 2, lon1]) for (const lat of [lat0, (lat0 + lat1) / 2, lat1]) samples.push([lon, lat])
   }
   const corners: THREE.Vector3[] = []
@@ -795,7 +817,7 @@ function frameFor(market: MarketId, view: MarketView, aspect: number, theta = 0,
   let dist = 60
   const cam = new THREE.PerspectiveCamera(FOV, Math.max(aspect, 0.2), 0.1, 2000)
   const dir = new THREE.Vector3().setFromSphericalCoords(1, polar, theta)
-  const usable = us ? 0.9 : market === 'ercot' ? 0.8 : 0.66
+  const usable = us ? 0.9 : market === 'ercot' ? 0.78 : 0.66
   const v = new THREE.Vector3()
   for (let i = 0; i < 6; i++) {
     cam.position.copy(target).addScaledVector(dir, dist)

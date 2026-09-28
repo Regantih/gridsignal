@@ -687,9 +687,17 @@ function ReplayControls({ r }: { r: Replay }) {
 }
 
 function ReplayCaption({ r }: { r: Replay }) {
+  if (r.phase === 'done') {
+    return (
+      <div role="status" data-testid="replay-summary" data-swept={r.swept} className="flex items-center gap-4 rounded-2xl border border-border bg-surface/60 px-5 py-3 text-sm text-fg-muted">
+        <span className="num shrink-0 text-2xs uppercase tracking-wider text-fg-subtle">Replay complete</span>
+        <span>The evening was replayed at 600x on the shared clock and the deck is live again. Every approval was recorded in the audit trail.</span>
+      </div>
+    )
+  }
   if (r.phase === 'idle' || !r.caption) return null
   return (
-    <div role="status" aria-live="polite" data-testid="replay-caption" className="flex items-center gap-4 rounded-2xl border border-brand/40 bg-brand-soft/60 px-5 py-3 text-sm text-fg">
+    <div role="status" aria-live="polite" data-testid="replay-caption" data-step={r.step} data-swept={r.swept} className="flex items-center gap-4 rounded-2xl border border-brand/40 bg-brand-soft/60 px-5 py-3 text-sm text-fg">
       <span className="num shrink-0 text-2xs uppercase tracking-wider text-brand">Replay {Math.min(r.step + 1, r.total)}/{r.total}</span>
       <span key={r.step} className="animate-fade-up">{r.caption}</span>
     </div>
