@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
-import { OrbitControls } from '@react-three/drei'
+import { Html, Line, OrbitControls } from '@react-three/drei'
 import { Bloom, EffectComposer } from '@react-three/postprocessing'
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib'
 import type { Device } from '@/lib/api'
 import { H, W, project, unproject, texasOutline } from '@/components/texas-map'
 import type { Storm } from '@/components/grid-field'
 import type { SceneProps } from './scene-types'
+import usStates from '@/data/us-states.json'
+import { MARKETS, STATUS_LABEL, comedOutline, marketById, marketOfState, type Market, type MarketId, type MarketView } from '@/lib/markets'
 
 /**
  * The fleet as a flight deck. Texas is a slab of night with a faint grid; every home is a
@@ -123,6 +125,92 @@ function Land({ pal }: { pal: Palette }) {
       <meshStandardMaterial attach="material-0" map={top} roughness={0.9} metalness={0.05} />
       <meshStandardMaterial attach="material-1" color={pal.side} roughness={0.95} />
     </mesh>
+  )
+}
+
+// ------------------------------------------------------------------ the rest of the country
+
+interface StateShape {
+  id: string
+  name: string
+  ring: [number, number][]
+}
+const STATES = (usStates as StateShape[]).filter((s) => s.name !== 'Texas')
+
+function ringGeometry(ring: [number, number][], depth: number) {
+  const shape = new THREE.Shape()
+  ring.forEach(([lon, lat], i) => {
+    const [x, z] = toScene(lon, lat)
+    if (i === 0) shape.moveTo(x, -z)
+    else shape.lineTo(x, -z)
+  })
+  shape.closePath()
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false })
+  g.rotateX(-Math.PI / 2)
+  g.translate(0, -depth, 0)
+  return g
+}
+
+function marketTint(m: Market | undefined, pal: Palette, dark: boolean): THREE.Color {
+  if (!m) return pal.land.clone().multiplyScalar(dark ? 0.75 : 1.02)
+  if (m.status === 'live') return pal.land.clone().lerp(pal.flow, 0.4)
+  if (m.status === 'planned') return pal.land.clone().lerp(pal.subtle, 0.5)
+  return pal.land.clone().lerp(pal.price, 0.4)
+}
+const marketEdge = (m: Market, pal: Palette) => (m.status === 'live' ? pal.flow : m.status === 'planned' ? pal.subtle : pal.price)
+
+/**
+ * The lower 48 as low, quiet slabs so Texas reads as one market among others. Illinois and
+ * Colorado are tinted by status and labelled honestly; nothing glows there because nothing
+ * is modelled there.
+ */
+function Country({ pal, theme, selected, showLabels, onMarket }: { pal: Palette; theme: 'dark' | 'light'; selected: MarketId; showLabels: boolean; onMarket?: (id: MarketId) => void }) {
+  const dark = theme === 'dark'
+  const geos = useMemo(
+    () =>
+      STATES.map((s) => {
+        const m = marketOfState(s.name)
+        const edge = m ? s.ring.map(([lon, lat]) => { const [x, z] = toScene(lon, lat); return new THREE.Vector3(x, 0.04, z) }) : null
+        return { s, m, geo: ringGeometry(s.ring, m ? 0.7 : 0.35), edge: edge ? [...edge, edge[0]] : null }
+      }),
+    [],
+  )
+  const comed = useMemo(() => comedOutline.map(([lon, lat]) => { const [x, z] = toScene(lon, lat); return new THREE.Vector3(x, 0.06, z) }).concat(), [])
+  return (
+    <group>
+      {geos.map(({ s, m, edge }) =>
+        m && edge ? <Line key={`${s.id}-edge`} points={edge} color={`#${marketEdge(m, pal).getHexString()}`} lineWidth={1.5} transparent opacity={m.id === selected ? 1 : 0.7} /> : null,
+      )}
+      {geos.map(({ s, m, geo }) => (
+        <mesh
+          key={s.id}
+          geometry={geo}
+          onClick={m && onMarket ? (e) => { e.stopPropagation(); onMarket(m.id) } : undefined}
+          onPointerOver={m ? (e) => { e.stopPropagation(); document.body.style.cursor = 'pointer' } : undefined}
+          onPointerOut={m ? () => { document.body.style.cursor = '' } : undefined}
+        >
+          <meshStandardMaterial
+            color={marketTint(m, pal, dark)}
+            roughness={0.92}
+            emissive={m && m.id === selected ? marketTint(m, pal, dark) : '#000'}
+            emissiveIntensity={m && m.id === selected ? 0.35 : 0}
+          />
+        </mesh>
+      ))}
+      <Line points={[...comed, comed[0]]} color={`#${pal.subtle.getHexString()}`} lineWidth={1} dashed dashSize={0.6} gapSize={0.4} transparent opacity={0.9} />
+      {showLabels &&
+        MARKETS.map((m) => {
+          const [x, z] = toScene(m.center[0], m.center[1])
+          return (
+            <Html key={m.id} position={[x, m.status === 'live' ? 9 : 2.5, z]} center zIndexRange={[5, 0]} style={{ pointerEvents: 'none' }}>
+              <div className="whitespace-nowrap rounded-full border border-border bg-surface/90 px-2.5 py-1 text-center text-[11px] leading-tight text-fg shadow backdrop-blur">
+                <span className="font-display font-semibold">{m.short}</span>
+                <span className="num ml-1.5 text-fg-muted">{m.iso} · {STATUS_LABEL[m.status]}</span>
+              </div>
+            </Html>
+          )
+        })}
+    </group>
   )
 }
 
@@ -512,36 +600,67 @@ function DrawPlane({ onStorm, setDraft, setDrawing }: { onStorm?: (s: Storm) => 
 
 // ------------------------------------------------------------------ camera and sky
 
-function Rig({ stage, nodes, price, pal, drawing }: { stage: React.RefObject<Stage>; nodes: Node[]; price: number; pal: Palette; drawing: boolean }) {
+/** Where the camera rests for a market or the whole country: look-at point and distance. */
+function frameFor(market: MarketId, view: MarketView): { target: THREE.Vector3; dist: number } {
+  if (view === 'us') {
+    const [x, z] = toScene(-96.5, 41.5)
+    return { target: new THREE.Vector3(x, 0, z), dist: 225 }
+  }
+  if (market === 'ercot') return { target: new THREE.Vector3(0, 0, 1), dist: 64 }
+  const m = marketById(market)
+  const [x, z] = toScene(m.center[0], m.center[1])
+  return { target: new THREE.Vector3(x, 0, z), dist: market === 'comed' ? 62 : 64 }
+}
+
+function Rig({ stage, nodes, price, pal, drawing, market, view }: { stage: React.RefObject<Stage>; nodes: Node[]; price: number; pal: Palette; drawing: boolean; market: MarketId; view: MarketView }) {
   const controls = useRef<OrbitControlsImpl>(null)
   const { scene, camera } = useThree()
-  const home = useMemo(() => ({ target: new THREE.Vector3(0, 0, 1), dist: 64 }), [])
-  const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number } | null>(null)
+  const home = useMemo(() => frameFor(market, view), [market, view])
+  const tween = useRef<{ from: THREE.Vector3; to: THREE.Vector3; d0: number; d1: number; t0: number; ms: number; polar?: number } | null>(null)
   const staged = useRef<number>(0)
+  const framed = useRef<string>('')
   const index = useMemo(() => new Map(nodes.map((n, i) => [n.d.device_id, i])), [nodes])
   const sky = useMemo(() => new THREE.Color(), [])
 
   useFrame(() => {
     const c = controls.current
     if (!c) return
+    // Fly to a newly chosen market or back out to the country, under 1.5 s, eased.
+    const key = `${market}/${view}`
+    if (framed.current !== key) {
+      const first = framed.current === ''
+      framed.current = key
+      if (first) {
+        c.target.copy(home.target)
+        camera.position.copy(home.target.clone().add(new THREE.Vector3(0, view === 'us' ? 0.85 : 0.62, view === 'us' ? 0.55 : 0.78).normalize().multiplyScalar(home.dist)))
+      } else {
+        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now(), ms: 1400, polar: view === 'us' ? 0.6 : 0.95 }
+      }
+    }
     const mo = stage.current.moment
     // Stage a new moment: glide to the cluster (incident) or back home (recovery, later).
     if (mo && mo.at !== staged.current) {
       staged.current = mo.at
       const n = nodes[index.get(mo.device) ?? -1]
       if (mo.kind === 'incident' && n) {
-        tween.current = { from: c.target.clone(), to: new THREE.Vector3(n.x, 0, n.z), d0: camera.position.distanceTo(c.target), d1: 28, t0: performance.now() }
+        tween.current = { from: c.target.clone(), to: new THREE.Vector3(n.x, 0, n.z), d0: camera.position.distanceTo(c.target), d1: 28, t0: performance.now(), ms: 1100 }
       } else {
-        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now() + 2500 }
+        tween.current = { from: c.target.clone(), to: home.target.clone(), d0: camera.position.distanceTo(c.target), d1: home.dist, t0: performance.now() + 2500, ms: 1100 }
       }
     }
     const tw = tween.current
     if (tw) {
-      const k = ease((performance.now() - tw.t0) / 1100)
+      const k = ease((performance.now() - tw.t0) / tw.ms)
       if (k >= 0) {
         const target = tw.from.clone().lerp(tw.to, k)
         const dir = camera.position.clone().sub(c.target).normalize()
         const dist = tw.d0 + (tw.d1 - tw.d0) * k
+        if (tw.polar !== undefined) {
+          // Tip the camera towards the wanted pitch as it flies, keeping its heading.
+          const sph = new THREE.Spherical().setFromVector3(dir)
+          sph.phi += (tw.polar - sph.phi) * Math.min(1, k * 1.5)
+          dir.setFromSpherical(sph)
+        }
         c.target.copy(target)
         camera.position.copy(target.clone().add(dir.multiplyScalar(dist)))
       }
@@ -551,7 +670,12 @@ function Rig({ stage, nodes, price, pal, drawing }: { stage: React.RefObject<Sta
     // Sky and haze warm with the price.
     sky.copy(pal.skyCalm).lerp(pal.skyHot, priceHeat(price))
     scene.background = sky
-    if (scene.fog instanceof THREE.Fog) scene.fog.color.copy(sky)
+    if (scene.fog instanceof THREE.Fog) {
+      scene.fog.color.copy(sky)
+      const d = camera.position.distanceTo(c.target)
+      scene.fog.near = d * 1.7
+      scene.fog.far = d * 3
+    }
   })
 
   return (
@@ -563,7 +687,7 @@ function Rig({ stage, nodes, price, pal, drawing }: { stage: React.RefObject<Sta
         enablePan={false}
         enableZoom={false}
         autoRotate={!drawing}
-        autoRotateSpeed={0.35}
+        autoRotateSpeed={view === 'us' ? 0.15 : 0.35}
         minPolarAngle={0.55}
         maxPolarAngle={1.25}
         dampingFactor={0.08}
@@ -578,7 +702,7 @@ function Rig({ stage, nodes, price, pal, drawing }: { stage: React.RefObject<Sta
 // ------------------------------------------------------------------ scene
 
 export default function TexasScene(props: SceneProps) {
-  const { devices, groups, focus, hit, storm, stormMode, onStorm, onSelect, priceMwh, moment, theme, height, tempo = 1 } = props
+  const { devices, groups, focus, hit, storm, stormMode, onStorm, onSelect, priceMwh, moment, theme, height, tempo = 1, market = 'ercot', view = 'market', onMarket } = props
   const pal = useMemo(() => palette(theme), [theme])
   const { nodes, hubs, maxKw } = useLayout(devices)
   const [hover, setHover] = useState<{ d: Device; x: number; y: number } | null>(null)
@@ -623,7 +747,7 @@ export default function TexasScene(props: SceneProps) {
       <Canvas
         dpr={[1, 1.5]}
         frameloop={running ? 'always' : 'never'}
-        camera={{ position: [0, 40, 50], fov: 36, near: 0.5, far: 300 }}
+        camera={{ position: [0, 40, 50], fov: 36, near: 0.5, far: 900 }}
         gl={{ antialias: false, powerPreference: 'high-performance', alpha: false }}
         onPointerMissed={() => setHover(null)}
         style={{ touchAction: stormMode ? 'none' : 'pan-y' }}
@@ -632,6 +756,7 @@ export default function TexasScene(props: SceneProps) {
         <directionalLight position={[-20, 30, 10]} intensity={theme === 'dark' ? 1.1 : 1.6} color={theme === 'dark' ? '#9fb8ff' : '#fff7e8'} />
         <hemisphereLight args={[theme === 'dark' ? '#3a4b7a' : '#ffffff', theme === 'dark' ? '#05070f' : '#c9d3e6', theme === 'dark' ? 0.5 : 0.7]} />
         <Land pal={pal} />
+        <Country pal={pal} theme={theme} selected={market} showLabels={view === 'us' || market !== 'ercot'} onMarket={onMarket} />
         <Hubs hubs={hubs} maxKw={maxKw} pal={pal} />
         <Homes
           nodes={nodes}
@@ -646,7 +771,7 @@ export default function TexasScene(props: SceneProps) {
         <Shockwave nodes={nodes} stage={stage} pal={pal} />
         {cell && <StormCell storm={cell} pal={pal} live={!draft} />}
         {stormMode && <DrawPlane onStorm={onStorm} setDraft={setDraft} setDrawing={setDrawing} />}
-        <Rig stage={stage} nodes={nodes} price={priceMwh} pal={pal} drawing={drawing} />
+        <Rig stage={stage} nodes={nodes} price={priceMwh} pal={pal} drawing={drawing} market={market} view={view} />
         <EffectComposer multisampling={0}>
           <Bloom luminanceThreshold={theme === 'dark' ? 0.55 : 0.85} luminanceSmoothing={0.2} intensity={theme === 'dark' ? 1.1 : 0.5} mipmapBlur radius={0.6} />
         </EffectComposer>

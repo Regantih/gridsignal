@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 import { GridField } from '@/components/grid-field'
+import { UsMap } from '@/components/us-map'
 import { useTheme } from '@/lib/theme'
 import { useCalm } from '@/lib/visual-mode'
 import type { SceneProps } from '@/components/scene/scene-types'
@@ -22,7 +23,12 @@ export function FleetScene(props: Omit<SceneProps, 'theme'> & { label: string })
     const id = window.requestIdleCallback ? window.requestIdleCallback(() => setReady(true), { timeout: 800 }) : window.setTimeout(() => setReady(true), 250)
     return () => (window.cancelIdleCallback ? window.cancelIdleCallback(id) : window.clearTimeout(id))
   }, [])
-  const flat = (
+  const market = props.market ?? 'ercot'
+  const view = props.view ?? 'market'
+  const wide = view === 'us' || market !== 'ercot'
+  const flat = wide ? (
+    <UsMap selected={market} onSelect={props.onMarket} height={height} />
+  ) : (
     <GridField
       devices={props.devices}
       groups={props.groups}

@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api import compute, sessions
+from api.markets import MARKETS
 from api.serialize import to_json
 from gridsignal import live, member
 from gridsignal.control_room.engine import (
@@ -104,6 +105,12 @@ async def _value_error(_: Request, exc: ValueError) -> JSONResponse:
 @app.get("/api/health")
 def health() -> dict:
     return {"ok": True, "sessions": len(store)}
+
+
+@app.get("/api/markets")
+def get_markets() -> dict:
+    """Where Base Power operates and which of it GridSignal models: only ERCOT is live."""
+    return {"markets": MARKETS, "live": [m["id"] for m in MARKETS if m["status"] == "live"]}
 
 
 def _session_payload(s: sessions.Session) -> dict:

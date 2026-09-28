@@ -250,3 +250,18 @@ def test_feed_days_give_one_96_interval_row_per_settled_day(client: TestClient) 
     assert all(len(row) == 96 for row in body["prices"])
     assert body["peaks"] == [max(row) for row in body["prices"]]
     assert client.get("/api/feed/days", params={"zone": "LZ_MARS"}).status_code == 422
+
+
+def test_markets_list_ercot_live_and_the_rest_not_modelled(client: TestClient) -> None:
+    payload = client.get("/api/markets").json()
+    by_id = {m["id"]: m for m in payload["markets"]}
+    assert payload["live"] == ["ercot"]
+    assert by_id["ercot"]["status"] == "live"
+    assert by_id["comed"]["status"] == "planned"
+    assert by_id["colorado"]["status"] == "equipment"
+    for m in payload["markets"]:
+        assert set(m) >= {"id", "name", "iso", "status", "bounds", "center"}
+        lo, hi = m["bounds"]
+        assert lo[0] <= m["center"][0] <= hi[0] and lo[1] <= m["center"][1] <= hi[1]
+        # Nothing here carries a number the engine did not produce.
+        assert not any(k in m for k in ("dollars", "kw", "price_mwh", "homes"))

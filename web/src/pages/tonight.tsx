@@ -24,15 +24,82 @@ import { useCountUp } from '@/components/count-up'
 import { minuteOf, TimelineProvider, useTimeline } from '@/lib/timeline'
 import { useReplay } from '@/lib/replay'
 import type { Moment } from '@/components/scene/scene-types'
+import { MarketPlaceholder } from '@/components/market-placeholder'
+import { STATUS_LABEL, useMarket } from '@/lib/markets'
 
 export function TonightPage() {
   const fleet = useFleet()
+  const { market } = useMarket()
+  if (market.status !== 'live') return <OtherMarket />
   if (fleet.isPending) return <TonightSkeleton />
   if (fleet.isError) return <ErrorState error={fleet.error} retry={() => void fleet.refetch()} />
   return (
     <TimelineProvider now={fleet.data.now} start={fleet.data.grid_event.started_at} end={fleet.data.grid_event.ends_at}>
       <Tonight fleet={fleet.data} />
     </TimelineProvider>
+  )
+}
+
+/**
+ * Tonight for a market the engine does not model. The map still shows the country and the
+ * ERCOT homes where they are, but no verdict, dial, price or dollars: none exist here.
+ */
+function OtherMarket() {
+  const { market, select, setView } = useMarket()
+  const fleet = useFleet()
+  return (
+    <div className="flex flex-col gap-8" data-testid="other-market">
+      <header>
+        <div className="eyebrow">
+          Tonight · {market.name} · {market.iso} · {STATUS_LABEL[market.status]}
+        </div>
+        <h1 className="mt-2 text-[2.2rem] font-semibold leading-[1.02] md:text-[3.6rem]">
+          GridSignal does not <span className="text-brand">run here yet.</span>
+        </h1>
+      </header>
+      <section className="grid gap-6 lg:grid-cols-[1fr_minmax(20rem,26rem)]">
+        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40" style={{ viewTransitionName: 'fleet-map' }}>
+          <MarketViewToggle />
+          <p className="sr-only" data-testid="scene-summary">
+            Map of the United States with {market.name} framed. {STATUS_LABEL[market.status]}. Only Texas, ERCOT, is modelled.
+          </p>
+          <div className="pt-14">
+            <FleetScene
+              devices={fleet.data?.devices ?? []}
+              priceMwh={50}
+              market={market.id}
+              view="market"
+              onMarket={select}
+              label={`Map of the United States framing ${market.name}, ${STATUS_LABEL[market.status].toLowerCase()}; only Texas is modelled`}
+              height={520}
+            />
+          </div>
+        </div>
+        <MarketPlaceholder market={market} onBack={(id) => { select(id); setView('market') }} compact />
+      </section>
+    </div>
+  )
+}
+
+/** United States or the chosen market: two buttons over the map, keyboard first. */
+function MarketViewToggle() {
+  const { market, view, setView } = useMarket()
+  const opt = (v: 'us' | 'market', label: string) => (
+    <button
+      type="button"
+      onClick={() => setView(v)}
+      aria-pressed={view === v}
+      data-testid={`market-view-${v}`}
+      className={`rounded-full px-3 py-1 text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${view === v ? 'bg-fg text-bg' : 'text-fg-muted hover:text-fg'}`}
+    >
+      {label}
+    </button>
+  )
+  return (
+    <div className="absolute right-4 top-4 z-10 flex items-center gap-1 rounded-full border border-border bg-surface/80 p-1 backdrop-blur" role="group" aria-label="Map view">
+      {opt('us', 'United States')}
+      {opt('market', market.short)}
+    </div>
   )
 }
 
@@ -129,6 +196,7 @@ function Tonight({ fleet }: { fleet: Fleet }) {
   const view = useReplayView(fleet)
   const tl = useTimeline()
   const replay = useReplayShared()
+  const mk = useMarket()
   const focus = useMemo(() => (view.live ? new Set(fleet.pending_incident?.cohort ?? []) : new Set<string>()), [fleet.pending_incident, view.live])
   const recoveredShown = useCountUp(recovered, 1400)
   const priceAt = useMemo(() => {
@@ -228,9 +296,12 @@ function Tonight({ fleet }: { fleet: Fleet }) {
           <div className="absolute left-5 top-4 z-10">
             <div className="eyebrow">{view.live ? 'The fleet, live' : 'The fleet, replayed'}</div>
             <p className="mt-1 max-w-xs text-xs text-fg-muted">
-              Light travels from each home to its zone as it exports; each zone's column is the kW it sends. Hover a home to see the neighbours that would fail with it. Drag to look around.
+              {mk.view === 'us'
+                ? 'Every market Base Power is in. Only Texas, ERCOT, is modelled; click a market to fly to it.'
+                : "Light travels from each home to its zone as it exports; each zone's column is the kW it sends. Hover a home to see the neighbours that would fail with it. Drag to look around."}
             </p>
           </div>
+          <MarketViewToggle />
           <p className="sr-only" data-testid="scene-summary">
             {count(s.online)} of {count(s.total_devices)} homes online, {power(s.committed_kw)} committed against {power(s.target_kw)}, price {priceMwh(priceAt)}.
             {fleet.pending_incident ? ` ${fleet.pending_incident.cohort.length} home${fleet.pending_incident.cohort.length === 1 ? '' : 's'} dropped and waiting for approval.` : ' No incident waiting.'}
@@ -251,6 +322,9 @@ function Tonight({ fleet }: { fleet: Fleet }) {
               priceMwh={priceAt}
               moment={moment}
               tempo={tl.playing ? 3 : 1}
+              market={mk.market.id}
+              view={mk.view}
+              onMarket={(id) => { mk.select(id); mk.setView('market') }}
               label={`Map of ${fleet.devices.length} simulated homes across ERCOT load zones, coloured by status, with power flowing to each zone`}
               height={520}
             />

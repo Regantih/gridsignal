@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { keys } from '@/lib/queries'
 import { useTheme } from '@/lib/theme'
 import { useCalm } from '@/lib/visual-mode'
+import { MARKETS, STATUS_SHORT, useMarket, type MarketId } from '@/lib/markets'
 import { CommandBarProvider, useCommandBar } from '@/components/command-bar'
 import { Logo } from '@/components/logo'
 import { cn } from '@/lib/utils'
@@ -25,15 +26,49 @@ export function Shell() {
   )
 }
 
+/** Which market the deck is pointed at. Only ERCOT is live; the rest say so. */
+function MarketSwitcher() {
+  const { market, select } = useMarket()
+  return (
+    <label className="relative flex h-9 items-center rounded-full border border-border bg-surface/60 pl-3 pr-2 text-xs text-fg-muted transition-colors hover:border-border-strong hover:text-fg">
+      <span className={cn('mr-2 size-2 shrink-0 rounded-full', market.status === 'live' ? 'bg-flow' : market.status === 'planned' ? 'bg-fg-subtle' : 'bg-price')} aria-hidden />
+      <span className="sr-only">Market</span>
+      <select
+        value={market.id}
+        onChange={(e) => select(e.target.value as MarketId)}
+        aria-label="Market"
+        data-testid="market-switcher"
+        className="num cursor-pointer appearance-none bg-transparent pr-4 text-xs text-fg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {MARKETS.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.iso} · {m.short} · {STATUS_SHORT[m.status]}
+          </option>
+        ))}
+      </select>
+      <span aria-hidden className="pointer-events-none absolute right-2.5 text-fg-subtle">▾</span>
+    </label>
+  )
+}
+
 /** A thin live strip: the three numbers an operator glances at, on every screen. */
 function Ticker() {
   const fleet = useQuery({ queryKey: keys.fleet, queryFn: api.fleet })
+  const { market } = useMarket()
+  if (market.status !== 'live') {
+    return (
+      <div className="num hidden items-center gap-2 whitespace-nowrap text-xs text-fg-subtle 2xl:flex" aria-label="Fleet status" data-testid="ticker">
+        <span className="size-2 rounded-full bg-fg-subtle" />
+        {market.iso.toUpperCase()} NOT MODELLED YET
+      </div>
+    )
+  }
   if (!fleet.data) return <div className="h-5 w-64 animate-pulse rounded bg-surface-2" />
   const s = fleet.data.summary
   const pending = fleet.data.pending_incident
   const ok = !pending && s.coverage_pct >= 100
   return (
-    <div className="num hidden items-center gap-4 text-xs lg:flex" aria-label="Fleet status" data-testid="ticker">
+    <div className="num hidden items-center gap-4 whitespace-nowrap text-xs 2xl:flex" aria-label="Fleet status" data-testid="ticker">
       <span className="flex items-center gap-2">
         <span className="relative flex size-2">
           <span className={cn('absolute inline-flex size-full animate-ping rounded-full opacity-60', ok ? 'bg-ok' : 'bg-risk')} />
@@ -81,7 +116,7 @@ function Frame() {
                 end={end}
                 className={({ isActive }) =>
                   cn(
-                    'rounded-full px-3.5 py-1.5 text-[0.8rem] font-medium transition-colors',
+                    'whitespace-nowrap rounded-full px-3.5 py-1.5 text-[0.8rem] font-medium transition-colors',
                     isActive ? 'bg-fg text-bg' : 'text-fg-muted hover:text-fg',
                   )
                 }
@@ -92,6 +127,7 @@ function Frame() {
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <Ticker />
+            <MarketSwitcher />
             <button
               type="button"
               onClick={bar.open}

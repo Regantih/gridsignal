@@ -6,6 +6,7 @@ import { CornerDownLeft, Search } from 'lucide-react'
 import { api, type Fleet } from '@/lib/api'
 import { keys } from '@/lib/queries'
 import { useTheme } from '@/lib/theme'
+import { MARKETS, STATUS_LABEL, setMarket, setMarketView } from '@/lib/markets'
 import { cn } from '@/lib/utils'
 
 /**
@@ -111,6 +112,28 @@ export function CommandBarProvider({ children }: { children: ReactNode }) {
         },
       })),
       { id: 'view-theme', group: 'View', label: 'Switch theme', hint: 'Night or day', keywords: 'dark light', run: () => toggleTheme() },
+      ...MARKETS.map<Action>((m) => ({
+        id: `market-${m.id}`,
+        group: 'Go to',
+        label: `Go to market ${m.short}`,
+        hint: `${m.iso}: ${STATUS_LABEL[m.status]}`,
+        keywords: `market ${m.name} ${m.iso} ${m.status}`,
+        run: () => {
+          setMarket(m.id)
+          nav('/')
+        },
+      })),
+      {
+        id: 'market-all',
+        group: 'Go to',
+        label: 'Go to market overview',
+        hint: 'The United States, every market by status',
+        keywords: 'usa us all markets map',
+        run: () => {
+          setMarketView('us')
+          nav('/')
+        },
+      },
     ],
     [nav, refreshAll, toggleTheme],
   )

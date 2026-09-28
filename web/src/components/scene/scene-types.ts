@@ -1,5 +1,6 @@
 import type { Device } from '@/lib/api'
 import type { Storm } from '@/components/grid-field'
+import type { MarketId, MarketView } from '@/lib/markets'
 
 /** A thing that just happened, so the scene can stage it once. `at` is performance.now(). */
 export interface Moment {
@@ -26,4 +27,8 @@ export interface SceneProps {
   height: number
   /** Time scale for particle motion, 1 = live. Replay runs faster. */
   tempo?: number
+  /** Which market the camera frames; 'us' pulls back to the whole country. */
+  market?: MarketId
+  view?: MarketView
+  onMarket?: (id: MarketId) => void
 }
