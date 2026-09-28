@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, ShieldCheck, ShieldOff, Zap, RotateCcw, WifiOff } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ShieldCheck, ShieldOff, Zap, RotateCcw, WifiOff, Clapperboard, Square } from 'lucide-react'
 import { api, type Fleet, type Incident } from '@/lib/api'
 import { keys, useFleet, useFleetMutation, useResetSession } from '@/lib/queries'
 import { clock, count, dateLabel, hours, money, pctPoints, power, priceMwh } from '@/lib/format'
@@ -14,17 +14,76 @@ import { Metric } from '@/components/metric'
 import { Section, Callout } from '@/components/page'
 import { CardSkeleton, ChartSkeleton, EmptyState, ErrorState } from '@/components/states'
 import { IncidentBadge } from '@/components/status'
-import { GridField } from '@/components/grid-field'
+import { FleetScene } from '@/components/fleet-scene'
 import { HoldButton } from '@/components/hold-button'
+import { IncidentRail } from '@/components/incident-rail'
 import { NightTimeline } from '@/components/night-timeline'
 import { PromiseDial } from '@/components/promise-dial'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useCountUp } from '@/components/count-up'
+import { minuteOf, TimelineProvider, useTimeline } from '@/lib/timeline'
+import { useReplay } from '@/lib/replay'
+import type { Moment } from '@/components/scene/scene-types'
 
 export function TonightPage() {
   const fleet = useFleet()
   if (fleet.isPending) return <TonightSkeleton />
   if (fleet.isError) return <ErrorState error={fleet.error} retry={() => void fleet.refetch()} />
-  return <Tonight fleet={fleet.data} />
+  return (
+    <TimelineProvider now={fleet.data.now} start={fleet.data.grid_event.started_at} end={fleet.data.grid_event.ends_at}>
+      <Tonight fleet={fleet.data} />
+    </TimelineProvider>
+  )
+}
+
+/** Fire a staged moment when an incident opens or resolves, so the scene can act it out. */
+function useMoments(fleet: Fleet): Moment | null {
+  const [moment, setMoment] = useState<Moment | null>(null)
+  const seen = useRef<Map<string, string> | null>(null)
+  useEffect(() => {
+    const prev = seen.current
+    const next = new Map(fleet.incidents.map((i) => [i.incident_id, i.status]))
+    seen.current = next
+    if (!prev) return
+    let timer = 0
+    for (const i of fleet.incidents) {
+      const was = prev.get(i.incident_id)
+      if (was === undefined) {
+        setMoment({ kind: 'incident', device: i.device_id, at: performance.now() })
+        if (i.status === 'resolved') {
+          // Handled by a playbook in one step: show the drop, then the recovery.
+          timer = window.setTimeout(() => setMoment({ kind: 'recovery', device: i.device_id, at: performance.now() }), 1600)
+        }
+      } else if (was !== 'resolved' && i.status === 'resolved') {
+        setMoment({ kind: 'recovery', device: i.device_id, at: performance.now() })
+      }
+    }
+    return () => window.clearTimeout(timer)
+  }, [fleet])
+  return moment
+}
+
+/** The dial and the map at the playhead, read off the engine's own incident stamps. */
+function useReplayView(fleet: Fleet) {
+  const tl = useTimeline()
+  return useMemo(() => {
+    const s = fleet.summary
+    if (tl.live) return { committed: s.committed_kw, down: null as Set<string> | null, live: true }
+    let committed = s.committed_kw
+    const down = new Set<string>()
+    for (const i of fleet.incidents) {
+      const opened = minuteOf(i.opened_at)
+      const resolved = i.resolved_at ? minuteOf(i.resolved_at) : Infinity
+      const openAt = tl.m >= opened && tl.m < resolved
+      if (openAt) i.cohort.forEach((d) => down.add(d))
+      if (i.resolved_at) {
+        if (openAt) committed -= i.restored_kw
+      } else if (tl.m < opened) {
+        committed += i.lost_kw
+      }
+    }
+    return { committed, down, live: false }
+  }, [fleet, tl.live, tl.m])
 }
 
 function verdict(f: Fleet) {
@@ -66,7 +125,17 @@ function Tonight({ fleet }: { fleet: Fleet }) {
   const busy = trigger.isPending || approve.isPending || stale.isPending
   const error = trigger.error ?? approve.error ?? stale.error
   const toneText = { ok: 'text-ok', warn: 'text-warn', risk: 'text-risk' }[v.tone]
-  const focus = useMemo(() => new Set(fleet.pending_incident?.cohort ?? []), [fleet.pending_incident])
+  const moment = useMoments(fleet)
+  const view = useReplayView(fleet)
+  const tl = useTimeline()
+  const replay = useReplayShared()
+  const focus = useMemo(() => (view.live ? new Set(fleet.pending_incident?.cohort ?? []) : new Set<string>()), [fleet.pending_incident, view.live])
+  const recoveredShown = useCountUp(recovered, 1400)
+  const priceAt = useMemo(() => {
+    if (view.live) return s.remaining_price_mwh
+    const row = fleet.prices.find((p) => tl.m >= minuteOf(p.interval_start) && tl.m < minuteOf(p.interval_start) + 15)
+    return row ? row.spp : s.remaining_price_mwh
+  }, [view.live, tl.m, fleet.prices, s.remaining_price_mwh])
   const groups = useMemo(() => {
     const out: Record<string, { feeder: string; ring: string }> = {}
     for (const g of risk.data?.groups ?? []) {
@@ -93,8 +162,12 @@ function Tonight({ fleet }: { fleet: Fleet }) {
             {fleet.grid_event.name}. {fleet.disclosure}
           </p>
         </div>
-        <ScenarioControls />
+        <div className="flex flex-col items-start gap-3 md:items-end">
+          <ScenarioControls />
+          <ReplayControls r={replay} />
+        </div>
       </header>
+      <ReplayCaption r={replay} />
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         <div className="flex flex-col gap-5">
@@ -106,7 +179,10 @@ function Tonight({ fleet }: { fleet: Fleet }) {
             <h2 className="mt-3 text-2xl font-semibold leading-tight md:text-[1.9rem]">{v.title}</h2>
             <p className="mt-2 text-sm text-fg-muted">{v.body}</p>
             <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-              <div className="w-[230px] shrink-0"><PromiseDial committed={s.committed_kw} target={s.target_kw} headroom={s.headroom_kw} size={230} /></div>
+              <div className="w-[230px] shrink-0" style={{ viewTransitionName: 'promise-dial' }}>
+                <PromiseDial committed={view.committed} target={s.target_kw} headroom={s.headroom_kw} size={230} />
+                {!view.live && <div className="num -mt-1 text-center text-2xs text-fg-subtle">at the playhead, from the audit trail</div>}
+              </div>
               <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-1">
                 <div>
                   <dt className="eyebrow">Headroom</dt>
@@ -148,13 +224,17 @@ function Tonight({ fleet }: { fleet: Fleet }) {
           {error && <ErrorState error={error} />}
         </div>
 
-        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40">
+        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40" style={{ viewTransitionName: 'fleet-map' }}>
           <div className="absolute left-5 top-4 z-10">
-            <div className="eyebrow">The fleet, live</div>
+            <div className="eyebrow">{view.live ? 'The fleet, live' : 'The fleet, replayed'}</div>
             <p className="mt-1 max-w-xs text-xs text-fg-muted">
-              Light travels from each home to its zone as it exports. Hover a home to see the neighbours that would fail with it.
+              Light travels from each home to its zone as it exports; each zone's column is the kW it sends. Hover a home to see the neighbours that would fail with it. Drag to look around.
             </p>
           </div>
+          <p className="sr-only" data-testid="scene-summary">
+            {count(s.online)} of {count(s.total_devices)} homes online, {power(s.committed_kw)} committed against {power(s.target_kw)}, price {priceMwh(priceAt)}.
+            {fleet.pending_incident ? ` ${fleet.pending_incident.cohort.length} home${fleet.pending_incident.cohort.length === 1 ? '' : 's'} dropped and waiting for approval.` : ' No incident waiting.'}
+          </p>
           <div className="absolute bottom-4 left-5 z-10 flex flex-wrap gap-3 text-2xs text-fg-muted">
             <Legend color="var(--fg)" label="exporting" />
             <Legend color="var(--warn)" label="degraded" />
@@ -163,7 +243,17 @@ function Tonight({ fleet }: { fleet: Fleet }) {
             <Legend color="var(--flow)" label="power to zone" />
           </div>
           <div className="pt-14">
-            <GridField devices={fleet.devices} groups={groups} focus={focus} label={`Map of ${fleet.devices.length} simulated homes across ERCOT load zones, coloured by status`} height={520} />
+            <FleetScene
+              devices={fleet.devices}
+              groups={groups}
+              focus={focus}
+              hit={view.down ?? undefined}
+              priceMwh={priceAt}
+              moment={moment}
+              tempo={tl.playing ? 3 : 1}
+              label={`Map of ${fleet.devices.length} simulated homes across ERCOT load zones, coloured by status, with power flowing to each zone`}
+              height={520}
+            />
           </div>
         </div>
       </section>
@@ -187,7 +277,20 @@ function Tonight({ fleet }: { fleet: Fleet }) {
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="Coverage" value={pctPoints(s.coverage_pct, s.coverage_pct === 100 ? 0 : 1)} tone={s.coverage_pct >= 100 ? 'ok' : 'warn'} note={`${power(s.committed_kw)} of ${power(s.target_kw)}`} testId="coverage" />
         <Metric label="Dollars at risk" value={money(atRisk)} tone={atRisk > 0 && recovered < atRisk ? 'risk' : 'default'} note={`${count(fleet.incidents.length)} incident${fleet.incidents.length === 1 ? '' : 's'} this window`} testId="dollars-at-risk" />
-        <Metric label="Dollars recovered" value={money(recovered)} tone={recovered > 0 ? 'ok' : 'default'} note={`${count(resolved.length)} resolved with approval`} testId="dollars-recovered" />
+        <Metric
+          label="Dollars recovered"
+          value={money(recovered)}
+          tone={recovered > 0 ? 'ok' : 'default'}
+          note={
+            <span className="flex items-center gap-2">
+              {count(resolved.length)} resolved with approval
+              {recovered > 0 && Math.abs(recoveredShown - recovered) > 0.005 && (
+                <span aria-hidden className="num rounded-full bg-ok-soft px-1.5 py-px text-2xs text-ok">+{money(recoveredShown)}</span>
+              )}
+            </span>
+          }
+          testId="dollars-recovered"
+        />
         <Metric label="Quarantined" value={count(s.unavailable)} note={`${count(s.degraded)} degraded, ${count(s.offline)} offline`} />
       </div>
 
@@ -273,6 +376,7 @@ function IncidentCard({ incident, onApprove, busy, pending = false }: { incident
         </div>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
+        <IncidentRail incident={incident} compact={!pending && !open} />
         <p className="text-sm">{incident.impact}</p>
         {waiting && (
           <Callout tone="risk">
@@ -479,6 +583,34 @@ function TonightSkeleton() {
         <CardSkeleton lines={5} />
         <ChartSkeleton />
       </div>
+    </div>
+  )
+}
+
+function useReplayShared() {
+  const session = useQuery({ queryKey: keys.session, queryFn: api.session })
+  return useReplay(() => (session.data ? { fleet_size: session.data.fleet_size, price_scenario: session.data.price_scenario } : null))
+}
+type Replay = ReturnType<typeof useReplay>
+
+function ReplayControls({ r }: { r: Replay }) {
+  return r.phase === 'running' ? (
+    <Button variant="outline" onClick={r.stop} data-testid="replay-stop">
+      <Square /> Stop replay
+    </Button>
+  ) : (
+    <Button variant="secondary" onClick={r.start} data-testid="replay-tonight" aria-label="Replay tonight: the whole evening in about forty seconds">
+      <Clapperboard /> Replay tonight
+    </Button>
+  )
+}
+
+function ReplayCaption({ r }: { r: Replay }) {
+  if (r.phase === 'idle' || !r.caption) return null
+  return (
+    <div role="status" aria-live="polite" data-testid="replay-caption" className="flex items-center gap-4 rounded-2xl border border-brand/40 bg-brand-soft/60 px-5 py-3 text-sm text-fg">
+      <span className="num shrink-0 text-2xs uppercase tracking-wider text-brand">Replay {Math.min(r.step + 1, r.total)}/{r.total}</span>
+      <span key={r.step} className="animate-fade-up">{r.caption}</span>
     </div>
   )
 }

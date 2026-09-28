@@ -1,9 +1,10 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { Moon, Sun, ShieldCheck, CalendarClock, Home, Activity, BookOpen, Command } from 'lucide-react'
+import { Moon, Sun, ShieldCheck, CalendarClock, Home, Activity, BookOpen, Command, Waves } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { keys } from '@/lib/queries'
 import { useTheme } from '@/lib/theme'
+import { useCalm } from '@/lib/visual-mode'
 import { CommandBarProvider, useCommandBar } from '@/components/command-bar'
 import { Logo } from '@/components/logo'
 import { cn } from '@/lib/utils'
@@ -55,6 +56,7 @@ function Ticker() {
 
 function Frame() {
   const [theme, toggle] = useTheme()
+  const [calm, toggleCalm] = useCalm()
   const bar = useCommandBar()
   const session = useQuery({ queryKey: ['session'], queryFn: api.session, staleTime: 60_000 })
   return (
@@ -99,6 +101,22 @@ function Frame() {
               <Command aria-hidden className="size-3.5" />
               <span className="hidden sm:inline">Command</span>
               <kbd className="rounded bg-surface-2 px-1 text-2xs">⌘K</kbd>
+            </button>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={calm}
+              onClick={toggleCalm}
+              aria-label="Calm mode: flat map, no motion"
+              title={calm ? 'Calm mode on: flat map, no motion' : 'Calm mode off: 3D flight deck'}
+              data-testid="calm-toggle"
+              className={cn(
+                'flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs',
+                calm ? 'border-brand/50 bg-brand-soft text-brand' : 'border-border bg-surface/60 text-fg-muted hover:text-fg',
+              )}
+            >
+              <Waves aria-hidden className="size-3.5" />
+              <span className="hidden sm:inline">Calm</span>
             </button>
             <button
               type="button"

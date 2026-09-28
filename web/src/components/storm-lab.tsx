@@ -3,7 +3,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { CloudLightning, RotateCcw } from 'lucide-react'
 import { api, type Fleet } from '@/lib/api'
 import { keys } from '@/lib/queries'
-import { GridField, type Storm } from '@/components/grid-field'
+import type { Storm } from '@/components/grid-field'
+import { FleetScene } from '@/components/fleet-scene'
 import { power, pct, count } from '@/lib/format'
 import { Button } from '@/components/ui/button'
 
@@ -47,7 +48,17 @@ export function StormLab({ fleet }: { fleet: Fleet }) {
           <p className="mt-1 text-xs text-fg-muted">Press and drag on the map to draw a storm cell. Every home under it drops. Nothing is dispatched.</p>
         </div>
         <div className="pt-14">
-          <GridField devices={fleet.devices} groups={groups} hit={hit} storm={storm} stormMode onStorm={place} label="Map for drawing a storm over the fleet" height={500} />
+          <FleetScene
+            devices={fleet.devices}
+            groups={groups}
+            hit={hit}
+            storm={storm}
+            stormMode
+            onStorm={place}
+            priceMwh={fleet.summary.remaining_price_mwh}
+            label={storm ? `Map with a storm cell of ${Math.round(storm.radius_km)} km drawn over the fleet; ${hit.size} homes under it` : 'Map for drawing a storm over the fleet'}
+            height={500}
+          />
         </div>
       </div>
       <div className="flex flex-col gap-4 border-t border-border p-6 lg:border-l lg:border-t-0">

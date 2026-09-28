@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /** A simplified Texas outline (lon, lat). Enough to place a fleet, not a survey. */
-const TEXAS: [number, number][] = [
+export const texasOutline: [number, number][] = [
   [-103.04, 36.5], [-100.0, 36.5], [-100.0, 34.56], [-99.2, 34.4], [-98.0, 34.0], [-96.5, 33.8],
   [-95.5, 33.9], [-94.4, 33.6], [-94.04, 33.0], [-94.04, 31.5], [-93.7, 31.0], [-93.6, 30.3],
   [-93.8, 29.7], [-94.7, 29.4], [-95.3, 28.9], [-96.4, 28.4], [-97.2, 27.6], [-97.4, 26.5],
@@ -26,7 +26,7 @@ export function unproject(x: number, y: number): [number, number] {
   return [LON[0] + (x / W) * (LON[1] - LON[0]), LAT[1] - (y / H) * (LAT[1] - LAT[0])]
 }
 
-export const texasPath = TEXAS.map(([lon, lat], i) => {
+export const texasPath = texasOutline.map(([lon, lat], i) => {
   const [x, y] = project(lon, lat)
   return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
 }).join(' ') + ' Z'
