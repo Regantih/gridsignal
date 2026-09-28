@@ -96,3 +96,57 @@ jobs:
         with:
           name: benchmark
           path: perf.json
+
+  # The GridSignal web app: api/ tests, the web build and unit tests, then the container
+  # with the Playwright journeys (A: Tonight, B: Tomorrow, C: Member) run against it.
+  app:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+      - run: uv pip install --system -e ".[dev]"
+      - name: api tests (responses equal the engine's own numbers)
+        run: pytest -q api/tests -p no:cacheprovider
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+        working-directory: web
+      - run: npm run typecheck
+        working-directory: web
+      - run: npm run build
+        working-directory: web
+      - run: npm test
+        working-directory: web
+      - name: docker build
+        run: docker build -t gridsignal-app .
+      - name: docker run (no API keys)
+        run: |
+          docker run -d --name gridsignal -p 8000:8000 gridsignal-app
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:8000/api/health && break
+            sleep 2
+          done
+          curl -fsS http://localhost:8000/api/health
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - name: e2e journeys A, B, C against the running container
+        run: npm run e2e
+        working-directory: web
+        env:
+          BASE_URL: http://localhost:8000
+      - if: always()
+        run: docker logs gridsignal || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: web/playwright-report

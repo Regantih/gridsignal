@@ -1,0 +1,185 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ tokens
+   Light theme. Every colour pair below was checked for WCAG AA (4.5:1 body,
+   3:1 large text and UI) against the surface it sits on. */
+:root {
+  --font-sans: 'Inter Variable', Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --bg: oklch(0.985 0.004 240);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.965 0.006 240);
+  --border: oklch(0.90 0.008 240);
+  --border-strong: oklch(0.80 0.012 240);
+  --fg: oklch(0.21 0.02 250);
+  --fg-muted: oklch(0.45 0.02 250);
+  --fg-subtle: oklch(0.55 0.018 250);
+
+  --brand: oklch(0.52 0.11 185);
+  --brand-fg: oklch(1 0 0);
+  --brand-soft: oklch(0.94 0.04 185);
+
+  --ok: oklch(0.52 0.15 150);
+  --ok-soft: oklch(0.94 0.05 150);
+  --warn: oklch(0.58 0.15 70);
+  --warn-soft: oklch(0.96 0.06 80);
+  --risk: oklch(0.52 0.20 25);
+  --risk-soft: oklch(0.95 0.04 25);
+  --info: oklch(0.52 0.14 250);
+  --info-soft: oklch(0.94 0.04 250);
+  --neutral: oklch(0.55 0.02 250);
+  --neutral-soft: oklch(0.94 0.006 250);
+
+  --ring: var(--brand);
+  --chart-1: oklch(0.55 0.13 185);
+  --chart-2: oklch(0.68 0.16 70);
+  --chart-3: oklch(0.55 0.02 250);
+  --chart-4: oklch(0.55 0.20 25);
+  --chart-band: oklch(0.55 0.13 185 / 0.18);
+
+  --radius: 0.75rem;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.06);
+  --shadow: 0 4px 16px oklch(0 0 0 / 0.08);
+}
+
+.dark {
+  --bg: oklch(0.15 0.012 250);
+  --surface: oklch(0.20 0.014 250);
+  --surface-2: oklch(0.24 0.016 250);
+  --border: oklch(0.30 0.016 250);
+  --border-strong: oklch(0.40 0.02 250);
+  --fg: oklch(0.96 0.005 240);
+  --fg-muted: oklch(0.76 0.012 240);
+  --fg-subtle: oklch(0.66 0.012 240);
+
+  --brand: oklch(0.78 0.12 185);
+  --brand-fg: oklch(0.16 0.02 250);
+  --brand-soft: oklch(0.30 0.05 185);
+
+  --ok: oklch(0.78 0.15 150);
+  --ok-soft: oklch(0.30 0.06 150);
+  --warn: oklch(0.82 0.15 80);
+  --warn-soft: oklch(0.32 0.07 80);
+  --risk: oklch(0.74 0.17 25);
+  --risk-soft: oklch(0.32 0.08 25);
+  --info: oklch(0.76 0.12 250);
+  --info-soft: oklch(0.30 0.06 250);
+  --neutral: oklch(0.72 0.012 250);
+  --neutral-soft: oklch(0.28 0.012 250);
+
+  --chart-1: oklch(0.78 0.12 185);
+  --chart-2: oklch(0.82 0.15 80);
+  --chart-3: oklch(0.72 0.012 250);
+  --chart-4: oklch(0.74 0.17 25);
+  --chart-band: oklch(0.78 0.12 185 / 0.22);
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow: 0 6px 24px oklch(0 0 0 / 0.45);
+}
+
+@theme inline {
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-brand: var(--brand);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-risk: var(--risk);
+  --color-risk-soft: var(--risk-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-neutral: var(--neutral);
+  --color-neutral-soft: var(--neutral-soft);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 0.25rem);
+  --radius-xl: calc(var(--radius) + 0.5rem);
+
+  /* Type scale: 1.2 ratio from a 14px base for dense operator screens. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.05rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.3rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.2rem;
+  --text-lg--line-height: 1.65rem;
+  --text-xl: 1.44rem;
+  --text-xl--line-height: 1.9rem;
+  --text-2xl: 1.728rem;
+  --text-2xl--line-height: 2.1rem;
+  --text-3xl: 2.074rem;
+  --text-3xl--line-height: 2.4rem;
+  --text-4xl: 2.488rem;
+  --text-4xl--line-height: 2.75rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html {
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--brand-soft);
+  }
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Recharts inherits colours from CSS variables so both themes stay consistent. */
+.recharts-cartesian-axis-tick text {
+  fill: var(--fg-subtle);
+  font-size: 11px;
+}
+.recharts-cartesian-grid line {
+  stroke: var(--border);
+}
+.recharts-legend-item-text {
+  color: var(--fg-muted) !important;
+}
+.recharts-tooltip-wrapper {
+  outline: none;
+}

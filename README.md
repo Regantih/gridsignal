@@ -211,6 +211,61 @@ python -m gridsignal.ingest --date 2026-09-22          # LZ_HOUSTON real-time 15
 python -m gridsignal.ingest --scarcity-year 2023       # highest-priced day of that year
 ```
 
+## GridSignal app
+
+The product experience is a React front end over a thin FastAPI layer (`web/` and `api/`). The
+API wraps the existing engine, Planner, risk map, learning loop and live feed; it returns the
+engine's own numbers and the UI only formats them. The Streamlit dashboard above stays as is.
+
+One container runs everything, with no API keys:
+
+```bash
+docker build -t gridsignal-app .
+docker run -p 8000:8000 gridsignal-app        # -> http://localhost:8000  (honours $PORT)
+```
+
+For development, run the API and the Vite dev server side by side:
+
+```bash
+pip install -e ".[dev]"
+uvicorn api.main:app --reload --port 8000     # API on :8000, serves web/dist if it exists
+cd web && npm ci && npm run dev               # UI on :5173, proxies /api to :8000
+```
+
+Checks:
+
+```bash
+pytest -q api/tests                           # API responses equal the engine's numbers
+cd web
+npm run typecheck && npm run build && npm test   # TypeScript, bundle, Vitest
+BASE_URL=http://localhost:8000 npm run e2e      # Playwright journeys A, B, C against a running app
+```
+
+Screens, organised around the customer's jobs rather than our modules:
+
+| Screen | Who | The question it answers |
+|---|---|---|
+| Tonight (`/`) | fleet operator | Will the fleet keep its grid promise tonight, what failed, what it costs in dollars, approve the recovery in one click or through a pre-approved playbook with limits |
+| Tomorrow (`/tomorrow`) | fleet operator | How much of the fleet to promise ERCOT tomorrow: reliability curve, recommended commitment, correlated-risk map (feeders and gateway rings), learned failure rates (SYNTHETIC label or uploaded JSONL telemetry), scenarios including "This year so far (live feed)" |
+| Member (`/member`) | homeowner | Is my home backed up, is my reserve protected, what did the fleet earn from my battery, what happened in plain words |
+| Market (`/market`) | grid analyst | Live ERCOT prices against the model's 5 to 95% band, days collected, intervals today out of 96, scarcity days |
+| How it works (`/how-it-works`) | everyone | What is real, what is simulated, who approves what, and the honest limits |
+
+The app says the same thing on every screen: a human operator approves every recovery action,
+one incident at a time or in advance through a playbook with limits. Prices are real ERCOT data.
+The fleet is simulated.
+
+| Tonight | Tomorrow | Member (390 px) |
+|---|---|---|
+| ![Tonight, dark](docs/media/app/tonight-dark-desktop.png) | ![Tomorrow, dark](docs/media/app/tomorrow-dark-desktop.png) | ![Member, mobile](docs/media/app/member-dark-mobile.png) |
+| ![Tonight, light](docs/media/app/tonight-light-desktop.png) | ![Tomorrow, light](docs/media/app/tomorrow-light-desktop.png) | ![Tonight, mobile](docs/media/app/tonight-dark-mobile.png) |
+
+| Market | How it works |
+|---|---|
+| ![Market, dark](docs/media/app/market-dark-desktop.png) | ![How it works, light](docs/media/app/how-it-works-light-desktop.png) |
+
+Every screen in dark, light and at 390 px is under [`docs/media/app/`](docs/media/app/).
+
 ## Tests and formatting
 
 ```bash

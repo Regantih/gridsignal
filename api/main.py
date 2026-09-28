@@ -301,7 +301,9 @@ def get_risk(s: SessionDep) -> dict:
         target_kw = s.engine.grid_event.target_kw
         playbook = to_json(s.engine.playbook)
     return {
-        "groups": to_json(groups),
+        "groups": [
+            {**to_json(g), "status": g.status, "covering_ratio": g.covering_ratio} for g in groups
+        ],
         "summary": summary,
         "status_order": list(twin_risk.STATUS_ORDER),
         "target_kw": target_kw,
@@ -390,10 +392,18 @@ def get_member(device_id: str, s: SessionDep) -> dict:
         except KeyError as exc:
             raise HTTPException(404, f"no home {device_id}") from exc
         neighbours = member.neighbours(s.engine, device_id)
+        mine = {
+            i.incident_id
+            for i in s.engine.incidents
+            if device_id == i.device_id or device_id in i.cohort
+        }
         history = [
             to_json(e)
             for e in s.engine.audit
-            if device_id in e.summary or device_id in e.detail or e.kind == "human_approval"
+            if e.kind == "baseline"
+            or device_id in e.summary
+            or device_id in e.detail
+            or any(iid in e.summary for iid in mine)
         ]
         event = to_json(s.engine.grid_event)
     return {
