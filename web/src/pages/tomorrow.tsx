@@ -178,7 +178,7 @@ function PlanView({ plan, target, summary }: { plan: Plan; target: number; summa
         <Metric label="Grid value at recommended" value={money(valueAt(rec) ?? 0, false)} note="per year, before any shortfall" />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Card>
           <CardHeader>
             <CardTitle>Reliability curve</CardTitle>
@@ -285,7 +285,7 @@ function RiskView() {
         <strong>Waits for a person</strong> means they can, once you approve. <strong>Playbook recovers it</strong> means the loss is inside the pre-approved limits.
         {r.playbook ? '' : ' No playbook is active tonight, so nothing recovers on its own.'}
       </Callout>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <Card>
           <CardHeader className="flex-row flex-wrap items-center justify-between gap-2">
             <CardTitle>Correlated-risk map</CardTitle>

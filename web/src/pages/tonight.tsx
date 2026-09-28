@@ -58,7 +58,7 @@ function OtherMarket() {
           GridSignal does not <span className="text-brand">run here yet.</span>
         </h1>
       </header>
-      <section className="grid gap-6 lg:grid-cols-[1fr_minmax(20rem,26rem)]">
+      <section className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)]">
         <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40" style={{ viewTransitionName: 'fleet-map' }}>
           <div className="z-10 flex justify-end px-4 pt-4 sm:absolute sm:right-0 sm:top-0 sm:px-5">
             <MarketViewToggle />
@@ -373,7 +373,7 @@ function Tonight({ fleet }: { fleet: Fleet }) {
         <Metric label="Quarantined" value={count(s.unavailable)} note={`${count(s.degraded)} degraded, ${count(s.offline)} offline`} />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="flex flex-col gap-6">
           <Section title="What needs you now" description={`In GridSignal ${fleet.approval_sentence}.`}>
             {fleet.pending_incident ? (
@@ -658,7 +658,7 @@ function TonightSkeleton() {
           <Skeleton key={i} className="h-24" />
         ))}
       </div>
-      <div className="grid gap-6 lg:grid-cols-[3fr_2fr]">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <CardSkeleton lines={5} />
         <ChartSkeleton />
       </div>

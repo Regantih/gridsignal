@@ -41,8 +41,8 @@ export function StormLab({ fleet }: { fleet: Fleet }) {
   }
   const r = run.data
   return (
-    <section id="storm" className="grid gap-6 overflow-hidden rounded-3xl border border-border bg-surface/40 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]" data-testid="storm-lab">
-      <div className="relative" style={{ viewTransitionName: 'fleet-map' }}>
+    <section id="storm" className="grid grid-cols-[minmax(0,1fr)] gap-6 overflow-hidden rounded-3xl border border-border bg-surface/40 lg:grid-cols-[minmax(0,7fr)_minmax(0,4fr)]" data-testid="storm-lab">
+      <div className="relative min-w-0 overflow-hidden" style={{ viewTransitionName: 'fleet-map' }}>
         <div className="absolute left-5 top-4 z-10 max-w-sm">
           <div className="eyebrow text-risk">Storm rehearsal</div>
           <p className="mt-1 text-xs text-fg-muted">Press and drag on the map to draw a storm cell. Every home under it drops. Nothing is dispatched.</p>
@@ -61,7 +61,7 @@ export function StormLab({ fleet }: { fleet: Fleet }) {
           />
         </div>
       </div>
-      <div className="flex flex-col gap-4 border-t border-border p-6 lg:border-l lg:border-t-0">
+      <div className="flex min-w-0 flex-col gap-4 border-t border-border p-6 lg:border-l lg:border-t-0">
         <div className="flex flex-wrap gap-2">
           {PRESETS.map((p) => (
             <Button key={p.label} size="sm" variant="outline" onClick={() => place(p.storm)} data-testid={`storm-${p.label.split(' ')[0].toLowerCase()}`}>
