@@ -220,3 +220,33 @@ def test_the_feed_watch_refreshes_once_then_stops(monkeypatch) -> None:
     stop = compute.start_feed_watch()
     assert calls.wait(5)
     stop.set()
+
+
+def test_a_storm_over_houston_drops_the_homes_under_it_and_reports_who_covers(
+    client: TestClient,
+) -> None:
+    from gridsignal.twin import risk as twin_risk
+
+    body = client.post(
+        "/api/whatif/storm", json={"lat": 29.76, "lon": -95.37, "radius_km": 60}
+    ).json()
+    assert body["homes"] > 0 and body["zones"] == ["LZ_HOUSTON"]
+    assert 0 <= body["uncovered_kw"] <= body["lost_kw"]
+    assert body["holds"] == (body["uncovered_kw"] <= 1e-6)
+    assert 0 <= body["kept_share"] <= 1
+    # a storm nowhere near a home changes nothing
+    empty = client.post(
+        "/api/whatif/storm", json={"lat": 31.0, "lon": -105.0, "radius_km": 20}
+    ).json()
+    assert empty["homes"] == 0 and empty["holds"] is True and empty["kept_share"] == 1.0
+    assert twin_risk.STATUS_ORDER  # module still exposes the map statuses
+    bad = client.post("/api/whatif/storm", json={"lat": 29.7, "lon": -95.3, "radius_km": 0})
+    assert bad.status_code == 422
+
+
+def test_feed_days_give_one_96_interval_row_per_settled_day(client: TestClient) -> None:
+    body = client.get("/api/feed/days").json()
+    assert len(body["dates"]) == len(body["prices"]) == len(body["peaks"])
+    assert all(len(row) == 96 for row in body["prices"])
+    assert body["peaks"] == [max(row) for row in body["prices"]]
+    assert client.get("/api/feed/days", params={"zone": "LZ_MARS"}).status_code == 422

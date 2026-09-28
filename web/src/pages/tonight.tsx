@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Area, AreaChart, CartesianGrid, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { AlertTriangle, CheckCircle2, ShieldCheck, ShieldOff, Zap, RotateCcw, WifiOff } from 'lucide-react'
 import { api, type Fleet, type Incident } from '@/lib/api'
 import { keys, useFleet, useFleetMutation, useResetSession } from '@/lib/queries'
@@ -12,10 +11,13 @@ import { Label } from '@/components/ui/label'
 import { Select } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { Metric } from '@/components/metric'
-import { PageHeader, Section, Callout } from '@/components/page'
+import { Section, Callout } from '@/components/page'
 import { CardSkeleton, ChartSkeleton, EmptyState, ErrorState } from '@/components/states'
-import { DeviceBadge, IncidentBadge } from '@/components/status'
-import { TexasMap, project } from '@/components/texas-map'
+import { IncidentBadge } from '@/components/status'
+import { GridField } from '@/components/grid-field'
+import { HoldButton } from '@/components/hold-button'
+import { NightTimeline } from '@/components/night-timeline'
+import { PromiseDial } from '@/components/promise-dial'
 import { Skeleton } from '@/components/ui/skeleton'
 
 export function TonightPage() {
@@ -57,45 +59,136 @@ function Tonight({ fleet }: { fleet: Fleet }) {
   const trigger = useFleetMutation((id: string | undefined) => api.trigger(id))
   const approve = useFleetMutation(() => api.approve())
   const stale = useFleetMutation((share: number) => api.staleWave(share))
+  const risk = useQuery({ queryKey: keys.risk, queryFn: api.risk })
   const resolved = fleet.incidents.filter((i) => i.status === 'resolved')
   const atRisk = fleet.incidents.reduce((a, i) => a + i.dollars_at_risk, 0)
   const recovered = fleet.incidents.reduce((a, i) => a + i.dollars_recovered, 0)
   const busy = trigger.isPending || approve.isPending || stale.isPending
   const error = trigger.error ?? approve.error ?? stale.error
-  const toneCls = { ok: 'border-ok/40 bg-ok-soft', warn: 'border-warn/40 bg-warn-soft', risk: 'border-risk/40 bg-risk-soft' }[v.tone]
-  const iconCls = { ok: 'text-ok', warn: 'text-warn', risk: 'text-risk' }[v.tone]
+  const toneText = { ok: 'text-ok', warn: 'text-warn', risk: 'text-risk' }[v.tone]
+  const focus = useMemo(() => new Set(fleet.pending_incident?.cohort ?? []), [fleet.pending_incident])
+  const groups = useMemo(() => {
+    const out: Record<string, { feeder: string; ring: string }> = {}
+    for (const g of risk.data?.groups ?? []) {
+      for (const id of g.devices) {
+        const o = (out[id] ??= { feeder: '', ring: '' })
+        if (g.kind === 'feeder') o.feeder = `feeder ${g.key}`
+        else o.ring = `ring ${g.key}`
+      }
+    }
+    return out
+  }, [risk.data])
 
   return (
-    <div className="flex flex-col gap-8">
-      <PageHeader
-        kicker="Tonight"
-        title="Will the fleet keep its grid promise?"
-        lede={`${fleet.grid_event.name}, ${fleet.grid_event.zone}. ${dateLabel(fleet.grid_event.started_at)} ${clock(fleet.grid_event.started_at)} to ${clock(fleet.grid_event.ends_at)}. ${fleet.disclosure}`}
-        actions={<ScenarioControls />}
+    <div className="flex flex-col gap-10">
+      <header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+        <div className="min-w-0">
+          <div className="eyebrow">
+            Tonight · {dateLabel(fleet.grid_event.started_at)} · {clock(fleet.grid_event.started_at)} to {clock(fleet.grid_event.ends_at)} · {fleet.grid_event.zone}
+          </div>
+          <h1 className="mt-2 text-[2.2rem] font-semibold leading-[1.02] md:text-[3.6rem]">
+            Will the fleet keep its <span className="text-brand">grid promise?</span>
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-fg-muted md:text-base">
+            {fleet.grid_event.name}. {fleet.disclosure}
+          </p>
+        </div>
+        <ScenarioControls />
+      </header>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
+        <div className="flex flex-col gap-5">
+          <div role="status" data-testid="verdict" className="rounded-3xl border border-border bg-surface/70 p-6">
+            <div className="flex items-center gap-2">
+              <v.icon aria-hidden className={`size-5 ${toneText}`} />
+              <span className={`eyebrow ${toneText}`}>{v.tone === 'ok' ? 'Promise holds' : v.tone === 'risk' ? 'Promise at risk' : 'Short of target'}</span>
+            </div>
+            <h2 className="mt-3 text-2xl font-semibold leading-tight md:text-[1.9rem]">{v.title}</h2>
+            <p className="mt-2 text-sm text-fg-muted">{v.body}</p>
+            <div className="mt-5 flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+              <div className="w-[230px] shrink-0"><PromiseDial committed={s.committed_kw} target={s.target_kw} headroom={s.headroom_kw} size={230} /></div>
+              <dl className="grid w-full grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-1">
+                <div>
+                  <dt className="eyebrow">Headroom</dt>
+                  <dd className="num text-2xl">{power(s.headroom_kw)}</dd>
+                </div>
+                <div>
+                  <dt className="eyebrow">Homes online</dt>
+                  <dd className="num text-2xl">{count(s.online)}<span className="text-sm text-fg-subtle">/{count(s.total_devices)}</span></dd>
+                </div>
+                <div>
+                  <dt className="eyebrow">Price now</dt>
+                  <dd className="num text-2xl text-price">${Math.round(s.remaining_price_mwh)}<span className="text-sm text-fg-subtle">/MWh</span></dd>
+                </div>
+                <div>
+                  <dt className="eyebrow">Window left</dt>
+                  <dd className="num text-2xl">{hours(s.remaining_hours)}</dd>
+                </div>
+              </dl>
+            </div>
+            {fleet.pending_incident ? (
+              <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-5">
+                <HoldButton onConfirm={() => approve.mutate(undefined)} disabled={busy} tone="risk" testId="approve-recovery">
+                  Approve recovery
+                </HoldButton>
+                <span className="text-xs text-fg-subtle">Signed as {fleet.operator}. Nothing moves until you do.</span>
+              </div>
+            ) : (
+              <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-border pt-5">
+                <span className="eyebrow w-full">Throw something at the fleet</span>
+                <Button variant="secondary" onClick={() => trigger.mutate(undefined)} disabled={busy} data-testid="trigger-incident">
+                  <WifiOff /> Gateway loses uplink on {fleet.focus_device_id}
+                </Button>
+                <Button variant="outline" onClick={() => stale.mutate(0.03)} disabled={busy} data-testid="trigger-stale">
+                  Stale telemetry wave (3%)
+                </Button>
+              </div>
+            )}
+          </div>
+          {error && <ErrorState error={error} />}
+        </div>
+
+        <div className="relative overflow-hidden rounded-3xl border border-border bg-surface/40">
+          <div className="absolute left-5 top-4 z-10">
+            <div className="eyebrow">The fleet, live</div>
+            <p className="mt-1 max-w-xs text-xs text-fg-muted">
+              Light travels from each home to its zone as it exports. Hover a home to see the neighbours that would fail with it.
+            </p>
+          </div>
+          <div className="absolute bottom-4 left-5 z-10 flex flex-wrap gap-3 text-2xs text-fg-muted">
+            <Legend color="var(--fg)" label="exporting" />
+            <Legend color="var(--warn)" label="degraded" />
+            <Legend color="var(--risk)" label="dropped" />
+            <Legend color="var(--price)" label="fails together" />
+            <Legend color="var(--flow)" label="power to zone" />
+          </div>
+          <div className="pt-14">
+            <GridField devices={fleet.devices} groups={groups} focus={focus} label={`Map of ${fleet.devices.length} simulated homes across ERCOT load zones, coloured by status`} height={520} />
+          </div>
+        </div>
+      </section>
+
+      <NightTimeline
+        prices={fleet.prices}
+        audit={fleet.audit}
+        start={fleet.grid_event.started_at}
+        end={fleet.grid_event.ends_at}
+        now={fleet.now}
+        caption={
+          <>
+            {fleet.price_trace.location} real-time settlement prices, {fleet.price_trace.date}.{' '}
+            <a className="underline underline-offset-2" href={fleet.price_trace.source} target="_blank" rel="noreferrer">
+              Source: ERCOT
+            </a>
+          </>
+        }
       />
 
-      <div role="status" data-testid="verdict" className={`flex flex-col gap-3 rounded-lg border p-5 md:flex-row md:items-start ${toneCls}`}>
-        <v.icon aria-hidden className={`size-7 shrink-0 ${iconCls}`} />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold leading-tight md:text-xl">{v.title}</h2>
-          <p className="mt-1 text-sm text-fg-muted">{v.body}</p>
-        </div>
-        {fleet.pending_incident && (
-          <Button size="lg" onClick={() => approve.mutate(undefined)} disabled={busy} data-testid="approve-recovery" className="md:self-center">
-            <CheckCircle2 /> Approve recovery
-          </Button>
-        )}
-      </div>
-
-      {error && <ErrorState error={error} />}
-
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Metric label="Coverage" value={pctPoints(s.coverage_pct, s.coverage_pct === 100 ? 0 : 1)} tone={s.coverage_pct >= 100 ? 'ok' : 'warn'} note={`${power(s.committed_kw)} of ${power(s.target_kw)}`} testId="coverage" />
-        <Metric label="Headroom" value={power(s.headroom_kw)} note="spare export on healthy units" />
         <Metric label="Dollars at risk" value={money(atRisk)} tone={atRisk > 0 && recovered < atRisk ? 'risk' : 'default'} note={`${count(fleet.incidents.length)} incident${fleet.incidents.length === 1 ? '' : 's'} this window`} testId="dollars-at-risk" />
         <Metric label="Dollars recovered" value={money(recovered)} tone={recovered > 0 ? 'ok' : 'default'} note={`${count(resolved.length)} resolved with approval`} testId="dollars-recovered" />
-        <Metric label="Price now" value={`$${Math.round(s.remaining_price_mwh)}`} note={`per MWh, ${hours(s.remaining_hours)} left in the window`} />
-        <Metric label="Homes" value={count(s.total_devices)} note={`${count(s.online)} online, ${count(s.degraded)} degraded, ${count(s.offline)} offline, ${count(s.unavailable)} quarantined`} />
+        <Metric label="Quarantined" value={count(s.unavailable)} note={`${count(s.degraded)} degraded, ${count(s.offline)} offline`} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
@@ -105,22 +198,11 @@ function Tonight({ fleet }: { fleet: Fleet }) {
               <IncidentCard incident={fleet.pending_incident} onApprove={() => approve.mutate(undefined)} busy={busy} pending />
             ) : (
               <Card>
-                <CardContent className="flex flex-col gap-4 p-5">
-                  <div className="flex items-start gap-3">
-                    <CheckCircle2 aria-hidden className="mt-0.5 size-5 shrink-0 text-ok" />
-                    <div>
-                      <div className="font-medium">Nothing is waiting for you</div>
-                      <p className="text-sm text-fg-muted">{fleet.human_summary}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2 border-t border-border pt-4">
-                    <span className="w-full text-xs text-fg-subtle">Simulate what tonight could throw at the fleet:</span>
-                    <Button variant="secondary" onClick={() => trigger.mutate(undefined)} disabled={busy} data-testid="trigger-incident">
-                      <WifiOff /> Gateway loses uplink on {fleet.focus_device_id}
-                    </Button>
-                    <Button variant="outline" onClick={() => stale.mutate(0.03)} disabled={busy} data-testid="trigger-stale">
-                      Stale telemetry wave (3%)
-                    </Button>
+                <CardContent className="flex items-start gap-3 p-5">
+                  <CheckCircle2 aria-hidden className="mt-0.5 size-5 shrink-0 text-ok" />
+                  <div>
+                    <div className="font-medium">Nothing is waiting for you</div>
+                    <p className="text-sm text-fg-muted">{fleet.human_summary}</p>
                   </div>
                 </CardContent>
               </Card>
@@ -143,43 +225,21 @@ function Tonight({ fleet }: { fleet: Fleet }) {
         </div>
 
         <div className="flex flex-col gap-6">
-          <Section title="Fleet on the map" description={`${count(fleet.devices.length)} simulated homes across ERCOT load zones.`}>
-            <Card>
-              <CardContent className="p-3">
-                <FleetMap fleet={fleet} />
-                <div className="mt-2 flex flex-wrap gap-2 px-1">
-                  {(['online', 'degraded', 'offline', 'unavailable'] as const).map((st) => (
-                    <DeviceBadge key={st} status={st} />
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </Section>
-
-          <Section
-            title="Tonight's price"
-            description={
-              <>
-                {fleet.price_trace.location} real-time settlement prices, {fleet.price_trace.date}.{' '}
-                <a className="underline underline-offset-2" href={fleet.price_trace.source} target="_blank" rel="noreferrer">
-                  Source: ERCOT
-                </a>
-              </>
-            }
-          >
-            <Card>
-              <CardContent className="p-3 pt-4">
-                <PriceChart fleet={fleet} />
-              </CardContent>
-            </Card>
-          </Section>
-
           <Section title="Audit trail" description="Who did what, and when. Approvals are named.">
             <AuditList fleet={fleet} />
           </Section>
         </div>
       </div>
     </div>
+  )
+}
+
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="size-2 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
   )
 }
 
@@ -229,9 +289,9 @@ function IncidentCard({ incident, onApprove, busy, pending = false }: { incident
         {incident.escalation_reason && <Callout tone="warn">{incident.escalation_reason}</Callout>}
         <div className="flex flex-wrap items-center gap-2">
           {waiting && (
-            <Button onClick={onApprove} disabled={busy} data-testid={pending ? undefined : 'approve-in-list'}>
-              <CheckCircle2 /> Approve recovery
-            </Button>
+            <HoldButton onConfirm={onApprove} disabled={busy} tone="risk" testId={pending ? undefined : 'approve-in-list'}>
+              Approve recovery
+            </HoldButton>
           )}
           <Button variant="ghost" size="sm" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
             {open ? 'Hide details' : 'Why, and what happens next'}
@@ -334,59 +394,6 @@ function PlaybookCard({ fleet }: { fleet: Fleet }) {
   )
 }
 
-function FleetMap({ fleet }: { fleet: Fleet }) {
-  const fill = { online: 'var(--ok)', degraded: 'var(--warn)', offline: 'var(--risk)', unavailable: 'var(--neutral)' }
-  const focus = new Set(fleet.pending_incident?.cohort ?? [])
-  return (
-    <TexasMap label="Map of Texas with one dot per simulated home, coloured by status">
-      {fleet.devices.map((d) => {
-        const [x, y] = project(d.lon, d.lat)
-        const hot = focus.has(d.device_id)
-        return (
-          <g key={d.device_id}>
-            {hot && <circle cx={x} cy={y} r={11} fill="none" stroke="var(--risk)" strokeWidth={2} className="animate-pulse" />}
-            <circle cx={x} cy={y} r={fleet.devices.length > 100 ? 3 : 5} fill={fill[d.status]} stroke="var(--surface)" strokeWidth={1}>
-              <title>{`${d.device_id}, ${d.site}: ${d.status}, ${power(d.assigned_kw, 1)} assigned`}</title>
-            </circle>
-          </g>
-        )
-      })}
-    </TexasMap>
-  )
-}
-
-function PriceChart({ fleet }: { fleet: Fleet }) {
-  const data = useMemo(
-    () => fleet.prices.map((p) => ({ t: p.interval_start.slice(11, 16), spp: p.spp })),
-    [fleet.prices],
-  )
-  const start = fleet.grid_event.started_at.slice(11, 16)
-  const end = fleet.grid_event.ends_at.slice(11, 16)
-  return (
-    <div className="h-56">
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data} margin={{ top: 4, right: 8, left: -12, bottom: 0 }}>
-          <defs>
-            <linearGradient id="spp" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid vertical={false} />
-          <XAxis dataKey="t" interval={15} tickLine={false} axisLine={false} />
-          <YAxis tickLine={false} axisLine={false} width={64} tickFormatter={(v: number) => `$${v}`} />
-          <ReferenceArea x1={start} x2={end} fill="var(--chart-band)" strokeOpacity={0} label={{ value: 'event window', position: 'insideTop', fill: 'var(--fg-muted)', fontSize: 11 }} />
-          <Tooltip
-            contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--fg)', fontSize: 12 }}
-            formatter={(v) => [priceMwh(Number(v)), 'Settlement price']}
-          />
-          <Area type="monotone" dataKey="spp" stroke="var(--chart-1)" strokeWidth={2} fill="url(#spp)" isAnimationActive={false} />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  )
-}
-
 function AuditList({ fleet }: { fleet: Fleet }) {
   const [all, setAll] = useState(false)
   const rows = [...fleet.audit].reverse()
@@ -463,7 +470,7 @@ function TonightSkeleton() {
         <Skeleton className="h-4 w-96" />
       </div>
       <Skeleton className="h-24 w-full" />
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {Array.from({ length: 6 }).map((_, i) => (
           <Skeleton key={i} className="h-24" />
         ))}

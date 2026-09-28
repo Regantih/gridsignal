@@ -57,3 +57,19 @@ test.describe("Journey B: operator, Tomorrow's promise", () => {
     expect(learn.upload.synthetic).toBe(false)
   })
 })
+
+test.describe('Journey B2: storm rehearsal', () => {
+  test('a preset storm returns the same answer as the API and never dispatches', async ({ page }) => {
+    await freshSession(page)
+    await page.goto('/tomorrow')
+    await page.getByTestId('storm-gulf').click()
+    const out = page.getByTestId('storm-result')
+    await expect(out).toBeVisible()
+    const res = await page.request.post('/api/whatif/storm', { data: { lat: 29.76, lon: -95.37, radius_km: 90 } })
+    const s = (await res.json()) as { homes: number; holds: boolean }
+    await expect(out).toContainText(s.holds ? 'The promise holds' : 'The promise breaks')
+    await expect(out).toContainText(String(s.homes))
+    const f = await fleet(page)
+    expect(f.incidents.length).toBe(0)
+  })
+})

@@ -153,6 +153,40 @@ def start_feed_watch() -> threading.Event:
     return stop
 
 
+HOT_MWH = 250.0
+
+
+def feed_days(zone: str) -> dict:
+    """Settled live days for one zone, cached per last settled day (it only changes at midnight)."""
+    return _feed_days(zone, twin_feed.last_full_day())
+
+
+@lru_cache(maxsize=8)
+def _feed_days(zone: str, _last_day: str | None) -> dict:
+    days = twin_feed.live_days()
+    if days is None or len(days) == 0:
+        return {
+            "zone": zone,
+            "zones": [],
+            "dates": [],
+            "prices": [],
+            "peaks": [],
+            "hot_mwh": HOT_MWH,
+        }
+    if zone not in days.zones:
+        raise ValueError(f"zone must be one of {list(days.zones)}")
+    z = days.zones.index(zone)
+    series = days.prices[:, z, :]
+    return {
+        "zone": zone,
+        "zones": list(days.zones),
+        "dates": [d.strftime("%Y-%m-%d") for d in days.dates],
+        "prices": [[round(float(v), 1) for v in row] for row in series],
+        "peaks": [round(float(row.max()), 1) for row in series],
+        "hot_mwh": HOT_MWH,
+    }
+
+
 def last_refresh() -> FeedRefresh | None:
     return _last_refresh
 

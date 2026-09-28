@@ -23,3 +23,21 @@ export async function fleet(page: Page) {
     audit: { kind: string }[]
   }
 }
+
+/** Recovery and commitment buttons are press-and-hold. Hold past the 900 ms fill, then release. */
+export async function holdToConfirm(page: Page, testId: string) {
+  const el = page.getByTestId(testId)
+  await el.scrollIntoViewIfNeeded()
+  await el.hover()
+  await page.mouse.down()
+  await page.waitForTimeout(1150)
+  await page.mouse.up()
+}
+
+/** Keyboard version: hold Enter on the focused hold button. */
+export async function holdKey(page: Page, testId: string, key = 'Enter') {
+  await page.getByTestId(testId).focus()
+  await page.keyboard.down(key)
+  await page.waitForTimeout(1150)
+  await page.keyboard.up(key)
+}

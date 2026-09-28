@@ -68,7 +68,7 @@ if _cors:
         CORSMiddleware,
         allow_origins=_cors,
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type", sessions.HEADER],
     )
 
@@ -337,6 +337,20 @@ def get_risk(s: SessionDep) -> dict:
     }
 
 
+class StormBody(BaseModel):
+    lat: float = Field(ge=24.0, le=37.5)
+    lon: float = Field(ge=-107.5, le=-92.5)
+    radius_km: float = Field(gt=0, le=800)
+
+
+@app.post("/api/whatif/storm")
+def whatif_storm(body: StormBody, s: SessionDep) -> dict:
+    """Drop every home under a storm cell and report whether tonight's promise still holds."""
+    with s.lock:
+        result = twin_risk.storm(s.engine, body.lat, body.lon, body.radius_km)
+    return {**to_json(result), "holds": result.holds, "homes": len(result.devices)}
+
+
 def calibration_payload(cal) -> dict:
     return {
         **to_json(cal),
@@ -473,6 +487,12 @@ def refresh_feed(force: bool = False) -> dict:
 
 
 # ------------------------------------------------------------------ about
+
+
+@app.get("/api/feed/days")
+def feed_days(zone: str = "LZ_HOUSTON") -> dict:
+    """Every settled live day for one zone, 96 intervals each, for the Market ridgeline."""
+    return compute.feed_days(zone)
 
 
 @app.get("/api/about")

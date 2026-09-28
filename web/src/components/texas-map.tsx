@@ -22,7 +22,11 @@ export function project(lon: number, lat: number): [number, number] {
   return [x, y]
 }
 
-const path = TEXAS.map(([lon, lat], i) => {
+export function unproject(x: number, y: number): [number, number] {
+  return [LON[0] + (x / W) * (LON[1] - LON[0]), LAT[1] - (y / H) * (LAT[1] - LAT[0])]
+}
+
+export const texasPath = TEXAS.map(([lon, lat], i) => {
   const [x, y] = project(lon, lat)
   return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`
 }).join(' ') + ' Z'
@@ -35,7 +39,7 @@ export function TexasMap({ children, className, label }: { children: ReactNode; 
       aria-label={label}
       className={cn('h-auto w-full max-h-[480px]', className)}
     >
-      <path d={path} fill="var(--surface-2)" stroke="var(--border-strong)" strokeWidth={1.5} strokeLinejoin="round" />
+      <path d={texasPath} fill="var(--surface-2)" stroke="var(--border-strong)" strokeWidth={1.5} strokeLinejoin="round" />
       {children}
     </svg>
   )

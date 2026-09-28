@@ -1,7 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend } from 'recharts'
-import { CalendarCheck, Upload } from 'lucide-react'
+import { Upload } from 'lucide-react'
 import { api, type Plan, type Policy, type RiskGroup, type Calibration } from '@/lib/api'
 import { keys, useFleet, useFleetMutation } from '@/lib/queries'
 import { count, daysMissed, money, pct, pctPoints, power, dateLabel, clock } from '@/lib/format'
@@ -17,6 +16,10 @@ import { PageHeader, Callout } from '@/components/page'
 import { CardSkeleton, ChartSkeleton, EmptyState, ErrorState } from '@/components/states'
 import { RiskBadge, riskTone } from '@/components/status'
 import { TexasMap, project } from '@/components/texas-map'
+import { StormLab } from '@/components/storm-lab'
+import { DragCurve } from '@/components/drag-curve'
+import { HoldButton } from '@/components/hold-button'
+import { YearOfDays } from '@/components/year-of-days'
 import { Skeleton } from '@/components/ui/skeleton'
 
 const POLICY_LABEL: Record<Policy, string> = {
@@ -96,6 +99,8 @@ export function TomorrowPage() {
         <PlanView plan={plan.data} target={target} currentRatio={fleet.data.summary.commit_ratio} targetKw={fleet.data.summary.target_kw} />
       ) : null}
 
+      {fleet.data && <StormLab fleet={fleet.data} />}
+
       <Tabs defaultValue="risk">
         <TabsList aria-label="Tomorrow details">
           <TabsTrigger value="risk" data-testid="tab-risk">Homes that fail together</TabsTrigger>
@@ -133,9 +138,9 @@ function PlanView({ plan, target, currentRatio, targetKw }: { plan: Plan; target
 
   return (
     <div className="flex flex-col gap-6">
-      <div role="status" data-testid="plan-headline" className="rounded-lg border border-brand/40 bg-brand-soft p-5">
-        <div className="text-xs font-semibold uppercase tracking-widest text-brand">Recommendation</div>
-        <h2 className="mt-1 text-xl font-semibold md:text-2xl">
+      <div role="status" data-testid="plan-headline" className="rounded-3xl border border-brand/40 bg-brand-soft/60 p-6 md:p-8">
+        <div className="eyebrow text-brand">Recommendation</div>
+        <h2 className="mt-2 text-2xl font-semibold leading-tight md:text-[2.4rem]">
           Commit <span className="tabular" data-testid="recommended-ratio">{pct(rec)}</span> of measured headroom with the playbook on
         </h2>
         <p className="mt-2 text-sm text-fg-muted">{plan.headline}</p>
@@ -159,29 +164,11 @@ function PlanView({ plan, target, currentRatio, targetKw }: { plan: Plan; target
         <Card>
           <CardHeader>
             <CardTitle>Reliability curve</CardTitle>
-            <CardDescription>Share of days the promise is kept at each commitment level. The dashed line is your target; the dot is today.</CardDescription>
+            <CardDescription>Drag along the curve to choose a commitment. The shaded band is above your target: the promise is safe there.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-72" data-testid="reliability-curve">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} />
-                  <XAxis dataKey="ratio" tickFormatter={(v: number) => pct(v)} tickLine={false} axisLine={false} type="number" domain={['dataMin', 'dataMax']} ticks={data.map((d) => d.ratio)} />
-                  <YAxis domain={[Math.min(0.9, target - 0.05), 1]} tickFormatter={(v: number) => pct(v, 1)} tickLine={false} axisLine={false} width={64} />
-                  <Tooltip
-                    contentStyle={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--fg)', fontSize: 12 }}
-                    labelFormatter={(v) => `Commit ${pct(Number(v))}`}
-                    formatter={(v, name) => [pct(Number(v), 2), POLICY_LABEL[name as Policy]]}
-                  />
-                  <Legend formatter={(v) => POLICY_LABEL[v as Policy]} wrapperStyle={{ fontSize: 12 }} />
-                  <ReferenceLine y={target} stroke="var(--fg-subtle)" strokeDasharray="4 4" />
-                  <ReferenceLine x={ratioKey(currentRatio)} stroke="var(--fg-subtle)" strokeDasharray="2 4" label={{ value: 'today', position: 'insideTopLeft', fill: 'var(--fg-muted)', fontSize: 11 }} />
-                  <ReferenceLine x={rec} stroke="var(--brand)" label={{ value: 'recommended', position: 'insideTopRight', fill: 'var(--brand)', fontSize: 11 }} />
-                  {(['naive', 'gridsignal', 'gridsignal_auto'] as Policy[]).map((p) => (
-                    <Line key={p} type="monotone" dataKey={p} stroke={POLICY_COLOR[p]} strokeWidth={p === 'gridsignal_auto' ? 2.5 : 1.5} dot={false} isAnimationActive={false} />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
+            <div data-testid="reliability-curve">
+              <DragCurve data={data} ratio={ratio} onRatio={setRatio} target={target} current={ratioKey(currentRatio)} recommended={rec} />
             </div>
             <div className="mt-3 grid gap-2 text-xs text-fg-muted sm:grid-cols-3">
               {(['naive', 'gridsignal', 'gridsignal_auto'] as Policy[]).map((p) => (
@@ -226,15 +213,20 @@ function PlanView({ plan, target, currentRatio, targetKw }: { plan: Plan; target
               <dt className="text-fg-muted">Grid value per year</dt>
               <dd className="text-right tabular">{money(valueAt(ratioKey(ratio)) ?? 0, false)}</dd>
             </dl>
+            <YearOfDays
+              kept={plan.curve.gridsignal_auto[String(ratioKey(ratio))] ?? 0}
+              compare={plan.curve.gridsignal[String(ratioKey(ratio))] ?? 0}
+              label={`A simulated year at ${pct(ratio)}`}
+            />
             {ratio > rec + 0.001 && (
               <Callout tone="warn">
                 Above the recommendation. The cost of promising too much is missed days: about {daysMissed(plan.curve.gridsignal_auto[String(ratioKey(ratio))] ?? 0)} a year at this level versus {daysMissed(keptRec)} at {pct(rec)}.
               </Callout>
             )}
             <div className="flex flex-wrap gap-2">
-              <Button onClick={() => commit.mutate(ratio)} disabled={commit.isPending} data-testid="set-commitment">
-                <CalendarCheck /> Set commitment to {pct(ratio)}
-              </Button>
+              <HoldButton onConfirm={() => commit.mutate(ratio)} disabled={commit.isPending} testId="set-commitment" hint="Hold to commit">
+                {`Commit ${pct(ratio)}`}
+              </HoldButton>
               {!recommendedIsCurrent && (
                 <Button variant="secondary" onClick={() => { setRatio(rec); commit.mutate(rec) }} disabled={commit.isPending} data-testid="use-recommended">
                   Use recommended {pct(rec)}

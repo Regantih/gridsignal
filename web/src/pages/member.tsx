@@ -1,3 +1,4 @@
+import { ChargeRing } from '@/components/charge-ring'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { BatteryCharging, ShieldCheck, Sun, Home as HomeIcon, AlertTriangle } from 'lucide-react'
@@ -56,6 +57,17 @@ function MemberView({ m }: { m: Member }) {
           </div>
           <p className="text-sm text-fg-muted">{noDash(s.body)}</p>
           <p className="text-sm font-medium">{noDash(s.next_step)}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="flex flex-col items-center gap-5 p-5 sm:flex-row">
+          <ChargeRing stored={s.stored_kwh} reserve={s.reserve_kwh} shared={s.committed_kwh} capacity={s.stored_kwh} backupHours={hours(s.backup_hours)} />
+          <ul className="flex w-full flex-col gap-3 text-sm">
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-ok" /><span><span className="num">{energy(s.reserve_kwh, 1)}</span> locked for your home. Never sold.</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-flow" /><span><span className="num">{energy(s.committed_kwh, 1)}</span> shared with the grid tonight.</span></li>
+            <li className="flex items-start gap-2"><span className="mt-1.5 size-2.5 shrink-0 rounded-full bg-fg-subtle" /><span>The rest stays yours to use.</span></li>
+          </ul>
         </CardContent>
       </Card>
 

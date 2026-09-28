@@ -391,6 +391,31 @@ export interface About {
   synthetic_days: number
 }
 
+export interface StormResult {
+  lat: number
+  lon: number
+  radius_km: number
+  devices: string[]
+  homes: number
+  lost_kw: number
+  spare_kw: number
+  uncovered_kw: number
+  target_kw: number
+  kept_share: number
+  zones: string[]
+  by_zone: Record<string, { lost_kw: number; spare_kw: number; uncovered_kw: number }>
+  holds: boolean
+}
+
+export interface FeedDays {
+  zone: string
+  zones: string[]
+  dates: string[]
+  prices: number[][]
+  peaks: number[]
+  hot_mwh: number
+}
+
 // ------------------------------------------------------------------ calls
 
 export const api = {
@@ -430,4 +455,6 @@ export const api = {
   feed: () => request<Feed>('/api/feed'),
   refreshFeed: () => request<Feed>('/api/feed/refresh', json('POST')),
   about: () => request<About>('/api/about'),
+  storm: (body: { lat: number; lon: number; radius_km: number }) => request<StormResult>('/api/whatif/storm', json('POST', body)),
+  feedDays: (zone: string) => request<FeedDays>(`/api/feed/days?zone=${encodeURIComponent(zone)}`),
 }

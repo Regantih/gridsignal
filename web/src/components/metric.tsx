@@ -27,12 +27,12 @@ export function Metric({
     brand: 'text-brand',
   }[tone]
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-surface p-4', className)}>
-      <div className="text-xs font-medium uppercase tracking-wide text-fg-subtle">{label}</div>
+    <div className={cn('flex min-w-0 flex-col gap-1.5 rounded-2xl border border-border bg-surface/70 p-4', className)}>
+      <div className="eyebrow">{label}</div>
       {loading ? (
         <Skeleton className="h-8 w-24" />
       ) : (
-        <div className={cn('text-2xl font-semibold leading-none tabular truncate', color)} data-testid={testId}>
+        <div className={cn('num text-[1.7rem] font-medium leading-none truncate', color)} data-testid={testId}>
           {value}
         </div>
       )}

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { dollars, fleet, freshSession } from './helpers'
+import { dollars, fleet, freshSession, holdToConfirm, holdKey } from './helpers'
 
 const APPROVAL = 'a human operator approves every recovery action, one incident at a time or in advance through a playbook with limits'
 
@@ -23,7 +23,7 @@ test.describe('Journey A: operator, Tonight', () => {
     expect(dollars(await pending.getByTestId('incident-at-risk').innerText())).toBeCloseTo(inc.dollars_at_risk, 2)
     expect(dollars(await page.getByTestId('dollars-at-risk').innerText())).toBeCloseTo(inc.dollars_at_risk, 2)
 
-    await page.getByTestId('approve-recovery').click()
+    await holdToConfirm(page, 'approve-recovery')
     await expect(page.getByTestId('verdict')).toContainText('keep its promise')
     await expect(page.getByTestId('pending-incident')).toHaveCount(0)
 
@@ -56,15 +56,14 @@ test.describe('Journey A: operator, Tonight', () => {
     await expect(page.getByTestId('audit-list')).toContainText('playbook_execution')
   })
 
-  test('is keyboard reachable: skip link, tab to trigger, Enter opens the incident', async ({ page }) => {
+  test('is keyboard reachable: skip link, tab to trigger, holding Enter approves', async ({ page }) => {
     await freshSession(page)
     await page.keyboard.press('Tab')
     await expect(page.getByRole('link', { name: /skip to content/i })).toBeFocused()
     await page.getByTestId('trigger-incident').focus()
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('pending-incident')).toBeVisible()
-    await page.getByTestId('approve-recovery').focus()
-    await page.keyboard.press('Enter')
+    await holdKey(page, 'approve-recovery')
     await expect(page.getByTestId('pending-incident')).toHaveCount(0)
   })
 })

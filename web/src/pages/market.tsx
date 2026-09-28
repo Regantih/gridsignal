@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Metric } from '@/components/metric'
 import { PageHeader, Callout } from '@/components/page'
+import { Ridgeline } from '@/components/ridgeline'
 import { ChartSkeleton, EmptyState, ErrorState } from '@/components/states'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -50,7 +51,31 @@ export function MarketPage() {
       ) : feed.data ? (
         <FeedView f={feed.data} />
       ) : null}
+      <YearRidges />
     </div>
+  )
+}
+
+function YearRidges() {
+  const [zone, setZone] = useState('LZ_HOUSTON')
+  const days = useQuery({ queryKey: ['feed-days', zone], queryFn: () => api.feedDays(zone), staleTime: 15 * 60_000 })
+  return (
+    <Card data-testid="ridgeline">
+      <CardHeader className="flex-row flex-wrap items-start justify-between gap-3">
+        <div>
+          <CardTitle>The year so far, one ridge per day</CardTitle>
+          <CardDescription>Every settled 2026 day in {zone.replace('LZ_', '')}, midnight to midnight. Amber ridges crossed $250/MWh. Hover a ridge for its date.</CardDescription>
+        </div>
+        <div role="group" aria-label="Ridgeline zone" className="flex gap-1">
+          {(days.data?.zones ?? ['LZ_HOUSTON', 'LZ_NORTH', 'LZ_SOUTH']).map((z) => (
+            <Button key={z} size="sm" variant={zone === z ? 'secondary' : 'ghost'} aria-pressed={zone === z} onClick={() => setZone(z)}>{z.replace('LZ_', '')}</Button>
+          ))}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {days.isPending ? <ChartSkeleton /> : days.isError ? <ErrorState error={days.error} retry={() => void days.refetch()} /> : <Ridgeline d={days.data} />}
+      </CardContent>
+    </Card>
   )
 }
 
