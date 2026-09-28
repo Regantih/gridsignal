@@ -20,6 +20,7 @@ adds how often that group has actually failed together in the telemetry history.
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -169,3 +170,77 @@ def summary(risk: list[RiskGroup]) -> dict[str, int]:
     for g in risk:
         counts[g.status] += 1
     return counts
+
+
+@dataclass(frozen=True)
+class StormResult:
+    """What one storm cell does to tonight's promise if every home under it drops."""
+
+    lat: float
+    lon: float
+    radius_km: float
+    devices: tuple[str, ...]
+    lost_kw: float
+    spare_kw: float
+    uncovered_kw: float
+    target_kw: float
+    kept_share: float
+    zones: tuple[str, ...]
+    by_zone: dict[str, dict[str, float]]
+
+    @property
+    def holds(self) -> bool:
+        return self.uncovered_kw <= 1e-6
+
+
+def _km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp, dl = p2 - p1, math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def storm(engine: ControlRoomEngine, lat: float, lon: float, radius_km: float) -> StormResult:
+    """Drop every operator home within ``radius_km`` of a point and see who covers the loss.
+
+    Same arithmetic as :func:`groups`: the lost kW is what those homes were assigned; only
+    healthy homes in the same zone and outside the storm can pick it up, each up to its spare.
+    """
+    if not (0 < radius_km <= 800):
+        raise ValueError("radius_km must be between 0 and 800")
+    mine = [d for d in engine.mine if d.status.value != "offline"]
+    target = max(engine.grid_event.target_kw, 1e-9)
+    hit = {d.device_id for d in mine if _km(lat, lon, d.lat, d.lon) <= radius_km}
+    by_zone: dict[str, dict[str, float]] = {}
+    for d in mine:
+        z = by_zone.setdefault(d.zone, {"lost_kw": 0.0, "spare_kw": 0.0})
+        if d.device_id in hit:
+            z["lost_kw"] += d.assigned_kw
+        else:
+            z["spare_kw"] += max(engine.exportable_kw(d) - d.assigned_kw, 0.0)
+    lost = spare = uncovered = 0.0
+    zones = []
+    for name, z in sorted(by_zone.items()):
+        if z["lost_kw"] <= 0:
+            continue
+        zones.append(name)
+        z["uncovered_kw"] = max(z["lost_kw"] - z["spare_kw"], 0.0)
+        lost += z["lost_kw"]
+        spare += z["spare_kw"]
+        uncovered += z["uncovered_kw"]
+    return StormResult(
+        lat=lat,
+        lon=lon,
+        radius_km=radius_km,
+        devices=tuple(sorted(hit)),
+        lost_kw=round(lost, 2),
+        spare_kw=round(spare, 2),
+        uncovered_kw=round(uncovered, 2),
+        target_kw=round(target, 2),
+        kept_share=max(0.0, 1.0 - uncovered / target),
+        zones=tuple(zones),
+        by_zone={
+            k: {a: round(b, 2) for a, b in v.items()} for k, v in by_zone.items() if k in zones
+        },
+    )

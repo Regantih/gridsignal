@@ -256,7 +256,15 @@ def sweep_app(port: int) -> list[Result]:
     def select_every_option(page: Page, label: str, name: str, limit: int = 6) -> None:
         """Every option of a selectbox runs different code, so every option is clicked."""
         open_box(page, label)
-        options = page.get_by_role("option").all_inner_texts()[:limit]
+        # The list renders its options over a few frames; read it once it stops growing.
+        options = page.get_by_role("option").all_inner_texts()
+        for _ in range(10):
+            page.wait_for_timeout(200)
+            more = page.get_by_role("option").all_inner_texts()
+            if len(more) == len(options):
+                break
+            options = more
+        options = options[:limit]
         page.keyboard.press("Escape")
         print(f"  ({len(options)} options under {label!r})")
         for option in options:
