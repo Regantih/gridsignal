@@ -14,6 +14,7 @@ if (theme === 'light' && (await page.locator('html.dark').count())) await page.g
 for (const a of actions.split(',').filter(Boolean)) {
   const [kind, arg] = a.split(':')
   if (kind === 'click') await page.getByTestId(arg).click()
+  if (kind === 'select') await page.getByTestId('market-switcher').selectOption(arg)
   if (kind === 'wait') await page.waitForTimeout(Number(arg))
   if (kind === 'hold') {
     const el = page.getByTestId(arg)
