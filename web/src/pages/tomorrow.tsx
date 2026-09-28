@@ -78,7 +78,7 @@ export function TomorrowPage() {
               </div>
             </div>
           ) : (
-            <Skeleton className="h-10 w-72" />
+            <Skeleton className="h-[129px] w-full md:h-[119px] xl:h-10 xl:w-72" />
           )
         }
       />
@@ -88,7 +88,7 @@ export function TomorrowPage() {
 
       {plan.isPending || !fleet.data ? (
         <div className="flex flex-col gap-6" aria-busy>
-          <div className="flex items-center gap-5 rounded-3xl border border-border p-6">
+          <div className="flex min-h-[615px] items-center gap-5 rounded-3xl border border-border p-6 sm:min-h-[317px] xl:min-h-[228px]">
             <Skeleton className="h-24 min-w-0 flex-1" />
             {fleet.data && (
               <div className="w-[150px] shrink-0" style={{ viewTransitionName: 'promise-dial' }}>
@@ -96,12 +96,12 @@ export function TomorrowPage() {
               </div>
             )}
           </div>
-          <div className="grid gap-3 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-24" />
+              <Skeleton key={i} className="h-[146px]" />
             ))}
           </div>
-          <ChartSkeleton />
+          <Skeleton className="h-[1164px] w-full lg:h-[558px]" />
         </div>
       ) : plan.data ? (
         <PlanView plan={plan.data} target={target} summary={fleet.data.summary} />

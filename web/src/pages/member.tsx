@@ -23,7 +23,7 @@ export function MemberPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col gap-5">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex min-h-[88px] items-end justify-between gap-3">
         <div>
           <div className="text-xs font-semibold uppercase tracking-widest text-brand">Your home battery</div>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">{member.data ? member.data.summary.site : <Skeleton className="h-8 w-56" />}</h1>
@@ -203,11 +203,13 @@ function Tile({ icon: Icon, label, value, note, body, tone = 'default', testId }
 function MemberSkeleton() {
   return (
     <div className="flex flex-col gap-5" aria-busy>
-      <Skeleton className="h-32 w-full" />
-      <div className="grid grid-cols-2 gap-3">
-        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24" />)}
+      <Skeleton className="h-[450px] w-full sm:h-[302px]" />
+      <div className="flex flex-col gap-2">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-[330px] w-full sm:h-[313px]" />
       </div>
-      <Skeleton className="h-40 w-full" />
+      <Skeleton className="h-[116px] w-full" />
+      <Skeleton className="h-16 w-full" />
     </div>
   )
 }

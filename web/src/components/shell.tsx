@@ -187,7 +187,7 @@ function Frame() {
           </div>
         </div>
       </header>
-      <main id="main" className="mx-auto w-full max-w-[1440px] px-4 pb-28 pt-6 md:px-8 md:pb-14 md:pt-10" tabIndex={-1}>
+      <main id="main" className="mx-auto min-h-[calc(100dvh-3.5rem)] w-full max-w-[1440px] px-4 pb-28 pt-6 md:px-8 md:pb-14 md:pt-10" tabIndex={-1}>
         <Outlet />
       </main>
       <footer className="mx-auto hidden max-w-[1440px] border-t border-border px-8 py-5 text-xs text-fg-subtle md:block">
