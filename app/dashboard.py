@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import html
 import math
+import os
 import re
 import sys
 import threading
@@ -25,6 +26,38 @@ from streamlit.delta_generator import DeltaGenerator
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if _SRC.is_dir() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+
+
+def _drop_stale_modules() -> bool:
+    """Forget imported gridsignal modules when their source changed under a running app.
+
+    Streamlit reruns this script in the same process after a deploy, so it picks up the new
+    dashboard while ``sys.modules`` still holds the old package: the next new function is
+    an AttributeError. Stamp the source tree; when the stamp moves, drop every gridsignal
+    module so the imports below load the code that is on disk.
+    """
+    if not _SRC.is_dir():
+        return False
+    stamp = max((f.stat().st_mtime_ns for f in (_SRC / "gridsignal").rglob("*.py")), default=0)
+    previous = getattr(sys, "_gridsignal_src_stamp", None)
+    sys._gridsignal_src_stamp = stamp  # type: ignore[attr-defined]
+    if previous == stamp or "gridsignal" not in sys.modules:
+        return False
+    if previous is None:
+        # First run of this dashboard in the process. The package is only stale if an older
+        # dashboard imported it and the source has changed since this process started.
+        try:
+            started_ns = os.stat(f"/proc/{os.getpid()}").st_ctime_ns
+        except OSError:
+            return False
+        if stamp <= started_ns:
+            return False
+    for name in [m for m in sys.modules if m == "gridsignal" or m.startswith("gridsignal.")]:
+        del sys.modules[name]
+    return True
+
+
+_CODE_CHANGED = _drop_stale_modules()
 
 from gridsignal import (
     ancillary,
@@ -3800,6 +3833,12 @@ def render_planner_study() -> None:
 
 
 def main() -> None:
+    if _CODE_CHANGED:
+        # Cached objects were built from the old classes; rebuild them from the new code.
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        for key in ("engine", "engine_key", "prewarmed"):
+            st.session_state.pop(key, None)
     prewarm()
     render_header()
     render_scenario_controls()
