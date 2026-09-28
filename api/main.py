@@ -50,10 +50,27 @@ store = sessions.SessionStore()
 async def lifespan(_: FastAPI):
     if os.environ.get("GRIDSIGNAL_PREWARM", "1") == "1":
         compute.prewarm()
+    stop = compute.start_feed_watch() if os.environ.get("GRIDSIGNAL_FEED_AUTO") == "1" else None
     yield
+    if stop is not None:
+        stop.set()
 
 
 app = FastAPI(title="GridSignal API", version="0.1.0", lifespan=lifespan)
+
+# Only for a UI hosted on another origin (GRIDSIGNAL_CORS_ORIGINS="https://a,https://b" or "*").
+# Sessions then travel in the X-Session-Id header, never in a cross-site cookie.
+_cors = [o.strip() for o in os.environ.get("GRIDSIGNAL_CORS_ORIGINS", "").split(",") if o.strip()]
+if _cors:
+    from fastapi.middleware.cors import CORSMiddleware
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", sessions.HEADER],
+    )
 
 
 # ------------------------------------------------------------------ sessions
@@ -61,6 +78,8 @@ app = FastAPI(title="GridSignal API", version="0.1.0", lifespan=lifespan)
 
 def current_session(request: Request, response: Response) -> sessions.Session:
     sid = request.headers.get(sessions.HEADER) or request.cookies.get(sessions.COOKIE)
+    if sid and not sessions.valid_id(sid):
+        raise HTTPException(400, "session id must be 8 to 64 letters, digits, - or _")
     if not sid:
         sid = store.new_id()
     response.set_cookie(

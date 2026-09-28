@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from 'react'
-import { createBrowserRouter } from 'react-router-dom'
+import { createBrowserRouter, createHashRouter } from 'react-router-dom'
 import { Shell } from '@/components/shell'
 import { CardSkeleton } from '@/components/states'
 import { NotFoundPage } from '@/pages/not-found'
@@ -12,7 +12,10 @@ const HowItWorksPage = lazy(() => import('@/pages/how-it-works').then((m) => ({ 
 
 const page = (node: ReactNode) => <Suspense fallback={<CardSkeleton lines={6} />}>{node}</Suspense>
 
-export const router = createBrowserRouter([
+// Static hosts have no SPA fallback, so a hosted build uses hash routes (VITE_HASH_ROUTER=1).
+const createRouter = import.meta.env.VITE_HASH_ROUTER === '1' ? createHashRouter : createBrowserRouter
+
+export const router = createRouter([
   {
     path: '/',
     element: <Shell />,

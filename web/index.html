@@ -9,7 +9,8 @@
     <title>GridSignal</title>
     <script>
       (function () {
-        var t = localStorage.getItem('gs-theme');
+        var t = null;
+        try { var m = document.cookie.match(/(?:^|; )gs-theme=(dark|light)/); t = m && m[1]; } catch (e) {}
         if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         document.documentElement.classList.toggle('dark', t === 'dark');
       })();

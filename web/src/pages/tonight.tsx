@@ -156,7 +156,17 @@ function Tonight({ fleet }: { fleet: Fleet }) {
             </Card>
           </Section>
 
-          <Section title="Tonight's price" description={fleet.price_trace.source}>
+          <Section
+            title="Tonight's price"
+            description={
+              <>
+                {fleet.price_trace.location} real-time settlement prices, {fleet.price_trace.date}.{' '}
+                <a className="underline underline-offset-2" href={fleet.price_trace.source} target="_blank" rel="noreferrer">
+                  Source: ERCOT
+                </a>
+              </>
+            }
+          >
             <Card>
               <CardContent className="p-3 pt-4">
                 <PriceChart fleet={fleet} />

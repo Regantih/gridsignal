@@ -137,6 +137,22 @@ def refresh_feed(force: bool = False) -> FeedRefresh:
         return _last_refresh
 
 
+def start_feed_watch() -> threading.Event:
+    """Refresh the live feed now and then every 15 minutes in a daemon thread.
+
+    The Market page keeps working from stored days whenever a refresh fails.
+    """
+    stop = threading.Event()
+
+    def loop() -> None:
+        while not stop.is_set():
+            refresh_feed()
+            stop.wait(twin_feed.REFRESH_S)
+
+    threading.Thread(target=loop, name="gridsignal-feed", daemon=True).start()
+    return stop
+
+
 def last_refresh() -> FeedRefresh | None:
     return _last_refresh
 

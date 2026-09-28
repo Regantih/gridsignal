@@ -8,8 +8,21 @@ export class ApiError extends Error {
   }
 }
 
+/** Empty when the API serves this page; set VITE_API_BASE when the UI is hosted elsewhere. */
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? ''
+
+/**
+ * When the UI is hosted on another origin, cross-site cookies are unreliable, so the session
+ * travels in a header instead: one id per page load. Same-origin builds keep the server cookie.
+ */
+const HEADER_SESSION = API_BASE
+  ? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}${Math.random()}`).replace(/[^A-Za-z0-9-]/g, '')
+  : ''
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { credentials: 'same-origin', ...init })
+  const headers = new Headers(init?.headers)
+  if (HEADER_SESSION) headers.set('X-Session-Id', HEADER_SESSION)
+  const res = await fetch(API_BASE + path, { credentials: 'same-origin', ...init, headers })
   if (!res.ok) {
     let detail = res.statusText
     try {

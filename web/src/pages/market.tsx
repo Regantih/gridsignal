@@ -15,7 +15,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 
 export function MarketPage() {
   const qc = useQueryClient()
-  const feed = useQuery({ queryKey: keys.feed, queryFn: api.feed, staleTime: 60_000 })
+  // Ask the server to refresh on load and every 15 minutes while the page is open. The server
+  // caches one refresh per 15-minute bucket, so this never hits ERCOT more often than that.
+  const feed = useQuery({
+    queryKey: keys.feed,
+    queryFn: api.refreshFeed,
+    staleTime: 60_000,
+    refetchInterval: 15 * 60_000,
+    refetchIntervalInBackground: true,
+  })
   const refresh = useMutation({
     mutationFn: api.refreshFeed,
     onSuccess: (data) => qc.setQueryData(keys.feed, data),

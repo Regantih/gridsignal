@@ -7,6 +7,7 @@ switched on, and a lock so two clicks cannot mutate the same simulation at once.
 
 from __future__ import annotations
 
+import re
 import secrets
 import threading
 import time
@@ -17,6 +18,14 @@ from gridsignal.prices import DEFAULT_SCENARIO, load_scenario
 
 COOKIE = "gs_session"
 HEADER = "X-Session-Id"
+_ID = re.compile(r"[A-Za-z0-9_-]{8,64}")
+
+
+def valid_id(session_id: str) -> bool:
+    """Client-chosen ids are allowed (the UI keeps one per browser), but only this shape."""
+    return bool(_ID.fullmatch(session_id))
+
+
 FLEET_SIZES: tuple[int, ...] = (48, 1_000)
 LEARN_NONE = "none"
 LEARN_SYNTHETIC = "synthetic"

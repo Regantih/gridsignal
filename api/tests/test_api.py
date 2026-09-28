@@ -199,3 +199,24 @@ def test_reset_rebuilds_the_fleet_at_the_requested_size(client: TestClient) -> N
     body = client.post("/api/session/reset", json={"fleet_size": 1000}).json()
     assert body["fleet_size"] == 1000
     assert client.get("/api/fleet").json()["summary"]["total_devices"] == 1000
+
+
+def test_a_client_chosen_session_id_is_kept_and_a_malformed_one_is_refused(
+    client: TestClient,
+) -> None:
+    ok = client.get("/api/session", headers={"X-Session-Id": "browser-abc12345"})
+    assert ok.status_code == 200 and ok.json()["session_id"] == "browser-abc12345"
+    bad = client.get("/api/session", headers={"X-Session-Id": "../../etc"})
+    assert bad.status_code == 400
+
+
+def test_the_feed_watch_refreshes_once_then_stops(monkeypatch) -> None:
+    import threading
+
+    from api import compute
+
+    calls = threading.Event()
+    monkeypatch.setattr(compute, "refresh_feed", lambda force=False: calls.set())
+    stop = compute.start_feed_watch()
+    assert calls.wait(5)
+    stop.set()

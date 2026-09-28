@@ -11,7 +11,11 @@ export function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(() => current())
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark')
-    localStorage.setItem(KEY, theme)
+    try {
+      document.cookie = `${KEY}=${theme}; path=/; max-age=31536000; samesite=lax`
+    } catch {
+      /* sandboxed frame: the theme still applies for this visit */
+    }
   }, [theme])
   const toggle = useCallback(() => setTheme((t) => (t === 'dark' ? 'light' : 'dark')), [])
   return [theme, toggle]
